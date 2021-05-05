@@ -124,6 +124,8 @@ set(SRC
   intern/MOD_ui_common.h
   intern/MOD_util.h
   intern/MOD_weightvg_util.h
+  
+  intern/MOD_quarterpipe.h
 )
 
 set(LIB
