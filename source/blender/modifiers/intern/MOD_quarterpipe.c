@@ -111,7 +111,6 @@ static Mesh *modifyMesh(struct ModifierData *md,
       heightDir[i][j] = origin[i * 2].co[j] - origin[i * 2 + 1].co[j];
     }
     height[i] = vLength(heightDir[i]);
-    printf("h% ", height[i]);
   }
 
   float widthFactor = 1.f;
@@ -133,6 +132,8 @@ static Mesh *modifyMesh(struct ModifierData *md,
     }
   }
 
+  // TODO: fix rotation on object
+
 
   setCoord2(mvert[0].co, pipeStart[0]);  // top left
   setCoord2(mvert[1].co, pipeStart[1]);  // top right
@@ -153,8 +154,15 @@ static Mesh *modifyMesh(struct ModifierData *md,
       }
     }
 
-    for (int i = 0; i < faceVs; i++) {
-      mloop[i].v = step * 2 + i;
+    if (step % 2 == 0) {
+      for (int i = 0; i < faceVs; i++) {
+        mloop[i].v = step * 2 + i;
+      }
+    }
+    else {
+      for (int i = 0; i < faceVs; i++) {
+        mloop[i].v = step * 2 + 3 - i;
+      }
     }
     result->mpoly[step].loopstart = step * 4;
     result->mpoly[step].totloop = 4;
