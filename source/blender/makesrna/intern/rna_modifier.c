@@ -298,6 +298,11 @@ const EnumPropertyItem rna_enum_object_modifier_type_items[] = {
      "Spawn particles from the shape"},
     {eModifierType_Softbody, "SOFT_BODY", ICON_MOD_SOFT, "Soft Body", ""},
     {eModifierType_Surface, "SURFACE", ICON_MODIFIER, "Surface", ""},
+    {eModifierType_QuarterPipe,
+     "QUARTERPIPE",
+     ICON_MOD_SOLIDIFY,
+     "QuarterPipe",
+     "Quarter Pipe description"},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -7262,6 +7267,27 @@ static void rna_def_modifier_volume_to_mesh(BlenderRNA *brna)
   RNA_define_lib_overridable(false);
 }
 
+static void rna_def_modifier_quarterpipe(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  // Define the RNA and bind it to the PizzaModifierData DNA struct
+  srna = RNA_def_struct(brna, "QuarterPipeModifier", "Modifier");
+  RNA_def_struct_ui_text(srna, "Quarter Pipe", "");
+  RNA_def_struct_sdna(srna, "QuarterPipeModifierData");
+  RNA_def_struct_ui_icon(srna, ICON_MOD_SOLIDIFY);
+
+  // There will be such a block for each data field of PizzaModifierData
+  prop = RNA_def_property(srna, "num_olives", PROP_INT, PROP_NONE);
+  RNA_def_property_range(prop, 0, 100);
+  RNA_def_property_ui_range(prop, 0, 100, 1, -1);
+  RNA_def_property_ui_text(prop,
+                           "Olives",
+                           "The number of olives on the pizza");
+  RNA_def_property_update(prop, 0, "rna_Modifier_update");
+}
+
 void RNA_def_modifier(BlenderRNA *brna)
 {
   StructRNA *srna;
@@ -7413,6 +7439,7 @@ void RNA_def_modifier(BlenderRNA *brna)
   rna_def_modifier_mesh_to_volume(brna);
   rna_def_modifier_volume_displace(brna);
   rna_def_modifier_volume_to_mesh(brna);
+  rna_def_modifier_quarterpipe(brna);
 }
 
 #endif

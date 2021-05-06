@@ -21,6 +21,9 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         layout = self.layout
         layout.operator_menu_enum("object.modifier_add", "type")
         layout.template_modifiers()
+    
+    def QUARTERPIPE(self, layout, ob, md): # not sure if used
+        layout.prop(md, "num_olives")
 
 
 class DATA_PT_gpencil_modifiers(ModifierButtonsPanel, Panel):

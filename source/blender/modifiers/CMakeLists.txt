@@ -100,6 +100,7 @@ set(SRC
   intern/MOD_weightvgproximity.cc
   intern/MOD_weld.cc
   intern/MOD_wireframe.c
+  intern/MOD_quarterpipe.c
 
   MOD_modifiertypes.h
   MOD_nodes.h
@@ -108,8 +109,6 @@ set(SRC
   intern/MOD_ui_common.h
   intern/MOD_util.h
   intern/MOD_weightvg_util.h
-  
-  intern/MOD_quarterpipe.h
 )
 
 set(LIB
