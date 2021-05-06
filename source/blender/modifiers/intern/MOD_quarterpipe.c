@@ -55,23 +55,78 @@ static Mesh *modifyMesh(struct ModifierData *md,
   MVert *mvert = result->mvert;
   MLoop *mloop = result->mloop;
 
-  MVert *origin = mesh->mvert;
-
   const int faceVs = 4;
 
   float anglePlus = M_PI_2 / steps;
   float angle = anglePlus;
-  MVert *top = (MVert[]){origin[0], origin[2]};
 
   float size = 1.f;
   float height[2];
-  float *pipeStart[2] = {origin[0].co, origin[2].co};
+
+  // get pipeStart vertices
+
+  // get two heighest vertices
+  int heighestV = 0;
+  int secondHeighestV = -1;
+  int heighestVChild = -1;
+  int secondHeighestVChild = -1;
+  for (int i = 1; i < 4; i++) {
+    float h = mesh->mvert[i].co[2];
+    if (h > mesh->mvert[heighestV].co[2]) {
+      heighestV = i;
+    }
+  }
+  for (int i = 0; i < 4; i++) {
+    if (heighestV == i)
+      continue;
+    float h = mesh->mvert[i].co[2];
+    if (secondHeighestV == -1 || h > mesh->mvert[secondHeighestV].co[2]) {
+      secondHeighestV = i;
+    }
+  }
+
+  // swap two heighest indices, if the vertex order says so
+  if (heighestV > secondHeighestV) {
+    SWAP(int, heighestV, secondHeighestV);
+  }
+  // get children
+  bool foundFristChild = false;
+  for (int i = 0; i < 4; i++) {
+    if (i != heighestV && i != secondHeighestV) {
+
+      if (!foundFristChild) {
+        if (len_squared_v2v2(mesh->mvert[i].co, mesh->mvert[heighestV].co) <
+            len_squared_v2v2(mesh->mvert[i].co, mesh->mvert[secondHeighestV].co))
+          heighestVChild = i;
+        else
+          secondHeighestVChild = i;
+        foundFristChild = true;
+      }
+      else {
+        if (heighestVChild == -1)
+          heighestVChild = i;
+        else
+          secondHeighestVChild = i;
+      }
+    }
+  }
+
+  float *originVertices[4] = {
+      mesh->mvert[heighestV].co,
+      mesh->mvert[secondHeighestV].co,
+      mesh->mvert[heighestVChild].co,
+      mesh->mvert[secondHeighestVChild].co,
+  };
+
+  
+  float *pipeStart[2] = {originVertices[0], originVertices[1]};
+
   float lengthDir[3];
   sub_v3_v3v3(lengthDir, pipeStart[1], pipeStart[0]);
   float heightDir[2][3];  // points upwards
   for (int i = 0; i < 2; i++) {
     for (int j = 0; j < 3; j++) {
-      heightDir[i][j] = origin[i * 2].co[j] - origin[i * 2 + 1].co[j];
+      heightDir[i][j] = originVertices[i][j] - originVertices[i + 2][j];
     }
     height[i] = len_v3(heightDir[i]);
   }
