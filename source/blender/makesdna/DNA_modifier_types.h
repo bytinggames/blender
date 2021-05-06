@@ -98,6 +98,7 @@ typedef enum ModifierType {
   eModifierType_MeshToVolume = 58,
   eModifierType_VolumeDisplace = 59,
   eModifierType_VolumeToMesh = 60,
+  eModifierType_QuarterPipe = 61,
   NUM_MODIFIER_TYPES,
 } ModifierType;
 
@@ -2342,6 +2343,13 @@ typedef enum VolumeToMeshResolutionMode {
 typedef enum VolumeToMeshFlag {
   VOLUME_TO_MESH_USE_SMOOTH_SHADE = 1 << 0,
 } VolumeToMeshFlag;
+
+/** QuarterPipe */
+typedef struct QuarterPipeModifierData {
+  ModifierData modifier;
+  int num_olives;
+  int _pad0;
+} QuarterPipeModifierData;
 
 #ifdef __cplusplus
 }

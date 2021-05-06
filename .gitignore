@@ -49,3 +49,7 @@ waveletNoiseTile.bin
 
 # testing environment
 /Testing
+
+
+# CUSTOM
+/out
