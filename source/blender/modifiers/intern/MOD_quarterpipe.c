@@ -34,6 +34,8 @@
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 
+#include <math.h>
+
 const float PI = 3.1415926535897932384626433832795;
 
 
@@ -50,15 +52,28 @@ static void setCoord2(float coTarget[], float coSource[])
   coTarget[2] = coSource[2];
 }
 
+static float *subtract(float from[], float amount[])
+{
+  float value[3];
+  value[0] = from[0] - amount[0];
+  value[1] = from[1] - amount[1];
+  value[2] = from[2] - amount[2];
+  return value;
+}
+
 static Mesh *modifyMesh(struct ModifierData *md,
                         const struct ModifierEvalContext *ctx,
                         struct Mesh *mesh)
 {// Convert the generic ModifierData to our modifier's DNA data.
 // This is ensured to be valid by the architecture.
+
+  if (mesh->totpoly == 0 || mesh->mpoly[0].totloop < 4)
+    return mesh;
+
+
   QuarterPipeModifierData *pmd = (QuarterPipeModifierData *)md;
   int steps = pmd->num_olives;
 
-  float size = 1.f;
 
   Mesh *result = BKE_mesh_new_nomain(
       2 + 2 * steps /* vertices */, 0, 0, 4 * steps /* loops */, steps /* face */);
@@ -69,17 +84,61 @@ static Mesh *modifyMesh(struct ModifierData *md,
 
   const int faceVs = 4;
 
-  float anglePlus = steps / PI / 2.f;
-  float angle = 0.f;
+  float anglePlus = PI / 2.f / steps;
+  float angle = anglePlus;
   MVert *top = (MVert[]){origin[0], origin[2]};
 
-  setCoord2(mvert[0].co, top[0].co);  // top left
-  setCoord2(mvert[1].co, top[1].co);  // top right
+
+  
+  float size = 1.f;
+  float height = 1.f;  // |
+  float widthFactor = 1.f;
+  float width[] = {height * widthFactor, height * widthFactor};  // _
+  float *pipeStart[2] = {origin[0].co, origin[2].co};
+  float *lengthDir = subtract(pipeStart[1], pipeStart[0]);
+  // float heightDir_1[3];
+  // float widthDir_1[3];
+  float heightDir[2][3];  // points upwards
+  for (int i = 0; i < 2; i++) {
+    for (int j = 0; j < 3; j++) {
+      heightDir[i][j] = origin[i * 2].co[j] - origin[i * 2 + 1].co[j];
+    }
+  }
+
+  
+  float lengthDir2D[2] = {lengthDir[0], lengthDir[1]};
+  float lengthDir2D_N[2] = {-lengthDir[1], lengthDir[0]};
+  float *widthDir[2]; // points in width direction
+  for (int i = 0; i < 2; i++) {
+    widthDir[i] = (float[]){lengthDir2D_N[0], lengthDir2D_N[1], 0.f};
+  }
+
+  float pipeOrigin[2][3];
+  for (int i = 0; i < 2; i++) {
+    for (int j = 0; j < 3; j++) {
+      pipeOrigin[i][j] = pipeStart[i][j] + widthDir[i][j];
+    }
+  }
+
+
+  setCoord2(mvert[0].co, pipeStart[0]);  // top left
+  setCoord2(mvert[1].co, pipeStart[1]);  // top right
 
   mvert += 2;
   for (int step = 0; step < steps; step++, angle += anglePlus, mvert += 2, mloop += faceVs) {
-    setCoord(mvert[0].co, top[1].co[0], top[1].co[1], top[1].co[2] - size);  // bottom right
-    setCoord(mvert[1].co, top[0].co[0], top[0].co[1], top[0].co[2] - size);  // bottom left
+
+    float w = -cosf(angle);
+    float h = -sinf(angle);
+
+    for (int i = 0; i < 2; i++) {
+      int vI = i;
+      if (step % 2 == 0)
+        vI = 1 - vI;
+
+      for (int j = 0; j < 3; j++) {
+        mvert[vI].co[j] = pipeOrigin[i][j] + w * widthDir[i][j] + h * heightDir[i][j];
+      }
+    }
 
     for (int i = 0; i < faceVs; i++) {
       mloop[i].v = step * 2 + i;
@@ -87,7 +146,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
     result->mpoly[step].loopstart = step * 4;
     result->mpoly[step].totloop = 4;
 
-    top = mvert;
+    //top = mvert;
   }
 
 
