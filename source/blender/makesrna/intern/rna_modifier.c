@@ -7280,8 +7280,8 @@ static void rna_def_modifier_quarterpipe(BlenderRNA *brna)
 
   // There will be such a block for each data field of PizzaModifierData
   prop = RNA_def_property(srna, "num_olives", PROP_INT, PROP_NONE);
-  RNA_def_property_range(prop, 0, 100);
-  RNA_def_property_ui_range(prop, 0, 100, 1, -1);
+  RNA_def_property_range(prop, 1, 100);
+  RNA_def_property_ui_range(prop, 1, 100, 1, -1);
   RNA_def_property_ui_text(prop,
                            "Olives",
                            "The number of olives on the pizza");
