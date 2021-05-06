@@ -192,6 +192,12 @@ static void panelRegister(ARegionType *region_type)
   modifier_panel_register(region_type, eModifierType_QuarterPipe, panel_draw);
 }
 
+static void initData(ModifierData *md)
+{
+  QuarterPipeModifierData *qmd = (QuarterPipeModifierData *)md;
+  qmd->num_olives = 4;
+}
+
 ModifierTypeInfo modifierType_QuarterPipe = {
     /* name */ "QuarterPipe",
     /* structName */ "QuarterPipeModifierData",
@@ -217,7 +223,7 @@ ModifierTypeInfo modifierType_QuarterPipe = {
     /* modifyHair */ NULL,
     /* modifyGeometrySet */ NULL,
 
-    /* initData */ NULL,
+    /* initData */ initData,
     /* requiredDataMask */ NULL,
     /* freeData */ NULL,
     /* isDisabled */ NULL,
