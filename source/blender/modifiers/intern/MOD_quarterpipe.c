@@ -121,18 +121,20 @@ static int isect_ray_bmesh(const float ray_start[3], const float ray_dir[3], BMe
   return hit;
 }
 
-static BMVert *extrude(BMesh *bm, BMVert *vert, const float co[3])
+static BMVert *extrude(BMesh *bm, BMVert *vert, const float co[3], BMEdge **r_edge)
 {
   BMVert *v = BM_vert_create(bm, co, NULL, BM_CREATE_NOP);
-  BM_edge_create(bm, vert, v, NULL, BM_CREATE_NOP);
+  BMEdge* e = BM_edge_create(bm, vert, v, NULL, BM_CREATE_NOP);
+  if (r_edge != NULL)
+    *r_edge = e;
   return v;
 }
-static BMVert *extrudeRelative(BMesh *bm, BMVert *vert, const float offset[3])
+static BMVert *extrudeRelative(BMesh *bm, BMVert *vert, const float offset[3], BMEdge *r_edge)
 {
   float co[3];
   copy_v3_v3(co, vert->co);
   add_v3_v3(co, offset);
-  return extrude(bm, vert, co);
+  return extrude(bm, vert, co, r_edge);
 }
 
 static bool isThereANeighbourLineOnVertex(BMEdge* edgeWithoutFace, bool v1)
@@ -184,7 +186,8 @@ static bool isEndOfRail(nodeRail_t *rails, BMEdge *edge)
   return false;
 }
 
-static void extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir[3], const int steps)
+// returns first vreated edge
+static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir[3], const int steps)
 {
   float bestNormal[3];
   float distance;
@@ -214,6 +217,7 @@ static void extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir[3]
   float t[3];
   float r[3];
   BMVert *vLast = v;
+  BMEdge *firstGenEdge = NULL;
   for (int step = 0; step < steps; step++, angle += anglePlus) {
     // calc v from pipe center +
     float s = sinf(angle);
@@ -224,13 +228,13 @@ static void extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir[3]
     copy_v3_v3(vGenerate, pipeCenter);
     sub_v3_v3(vGenerate, t);
     add_v3_v3(vGenerate, r);
-    vLast = extrude(bm, vLast, vGenerate);
+    if (firstGenEdge == NULL)
+      vLast = extrude(bm, vLast, vGenerate, &firstGenEdge);
+    else
+      vLast = extrude(bm, vLast, vGenerate, NULL);
+
   }
-
-
-  /*BMVert *v2 = extrudeRelative(bm, v, extrudeDir);
-
-  extrudeRelative(bm, v2, tangent);*/
+  return firstGenEdge;
 }
 
 static void getSlopeDir(float slopeDir[3], BMEdge* edge, float rayDir[3])
@@ -239,6 +243,21 @@ static void getSlopeDir(float slopeDir[3], BMEdge* edge, float rayDir[3])
   sub_v3_v3v3(edgeDir, edge->v2->co, edge->v1->co);
   cross_v3_v3v3(slopeDir, rayDir, edgeDir);
   normalize_v3(slopeDir);
+}
+
+static void fillMain(BMesh *bm, BMEdge *baseEdge, BMEdge *edge1, BMEdge *edge2, int steps)
+{
+  for (int step = 0; step < steps; step++) {
+
+    BMEdge *newBaseEdge = BM_edge_create(bm, edge1->v2, edge2->v2, NULL, BM_CREATE_NOP);
+    BMEdge *edges[4] = {edge2, newBaseEdge, edge1, baseEdge};
+    BMVert *verts[4] = {edge2->v1, edge2->v2, edge1->v2, edge1->v1};
+    BM_face_create(bm, verts, edges, 4, NULL, BM_CREATE_NOP);
+
+    edge1 = edge1->v2_disk_link.next;
+    edge2 = edge2->v2_disk_link.next;
+    baseEdge = newBaseEdge;
+  }
 }
 
 static Mesh *modifyMesh(struct ModifierData *md,
@@ -398,8 +417,10 @@ static Mesh *modifyMesh(struct ModifierData *md,
       slopeDirv2 = slopeDir1;
     }
 
-    extrudeMain(bm, edgeIter->val->v1, rayDir, slopeDirv1, steps);
-    extrudeMain(bm, edgeIter->val->v2, rayDir, slopeDirv2, steps);
+    BMEdge *edge1 = extrudeMain(bm, edgeIter->val->v1, rayDir, slopeDirv1, steps);
+    BMEdge *edge2 = extrudeMain(bm, edgeIter->val->v2, rayDir, slopeDirv2, steps);
+    fillMain(bm, edgeIter->val, edge1, edge2, steps);
+
     edgePrev = edgeIter;
     edgeIter = edgeIter->next;
     while (edgeIter != NULL) {
@@ -418,8 +439,10 @@ static Mesh *modifyMesh(struct ModifierData *md,
         normalize_v3(slopeDir2);
       }
 
+      edge1 = edge2;
+      edge2 = extrudeMain(bm, v, rayDir, slopeDir2, steps);
 
-      extrudeMain(bm, v, rayDir, slopeDir2, steps);
+      fillMain(bm, edgeIter->val, edge1, edge2, steps);
 
       edgePrev = edgeIter;
       edgeIter = edgeIter->next;
