@@ -56,7 +56,8 @@ typedef struct nodeRail {
 static int isect_ray_poly(const float ray_start[3],
                           const float ray_dir[3],
                           BMFace *f,
-                          float *r_lambda)
+                          float *r_lambda,
+                          float r_normal[3])
 {
   BMVert *v, *v_first = NULL, *v_prev = NULL;
   BMIter iter;
@@ -70,11 +71,17 @@ static int isect_ray_poly(const float ray_start[3],
     else if (v_prev != v_first) {
       float dist;
       bool curhit;
-
-      curhit = isect_ray_tri_v3(ray_start, ray_dir, v_first->co, v_prev->co, v->co, &dist, NULL);
+      float uv[2];
+      curhit = isect_ray_tri_v3(ray_start, ray_dir, v_first->co, v_prev->co, v->co, &dist, &uv);
       if (curhit && dist < best_dist) {
         hit = true;
         best_dist = dist;
+
+        float a[3], b[3];
+        sub_v3_v3v3(a, v_prev->co, v_first->co);
+        sub_v3_v3v3(b, v->co, v_first->co);
+
+        cross_v3_v3v3(r_normal, a, b);
       }
     }
 
@@ -82,10 +89,14 @@ static int isect_ray_poly(const float ray_start[3],
   }
 
   *r_lambda = best_dist;
+
+  if (best_dist != FLT_MAX)
+    normalize_v3(r_normal);
+
   return hit;
 }
 
-static int isect_ray_bmesh(const float ray_start[3], const float ray_dir[3], BMesh *bm, float *r_lambda)
+static int isect_ray_bmesh(const float ray_start[3], const float ray_dir[3], BMesh *bm, float *r_lambda, float r_normal[3])
 {
   BMIter iter;
   float best_dist = FLT_MAX;
@@ -97,10 +108,12 @@ static int isect_ray_bmesh(const float ray_start[3], const float ray_dir[3], BMe
     float dist;
     bool curhit;
 
-    curhit = isect_ray_poly(ray_start, ray_dir, f, &dist);
+    float normal[3];
+    curhit = isect_ray_poly(ray_start, ray_dir, f, &dist, normal);
     if (curhit && dist < best_dist) {
       hit = true;
       best_dist = dist;
+      copy_v3_v3(r_normal, normal);
     }
   }
 
@@ -108,14 +121,15 @@ static int isect_ray_bmesh(const float ray_start[3], const float ray_dir[3], BMe
   return hit;
 }
 
-static void extrude(BMesh *bm, BMVert *vert, const float *offset)
+static BMVert *extrude(BMesh *bm, BMVert *vert, const float *offset)
 {
   float co[3];
   copy_v3_v3(co, vert->co);
   add_v3_v3(co, offset);
 
-  BMVert* v2 = BM_vert_create(bm, co, NULL, BM_CREATE_NOP);
+  BMVert *v2 = BM_vert_create(bm, co, NULL, BM_CREATE_NOP);
   BM_edge_create(bm, vert, v2, NULL, BM_CREATE_NOP);
+  return v2;
 }
 
 static bool isThereANeighbourLineOnVertex(BMEdge* edgeWithoutFace, bool v1)
@@ -167,14 +181,37 @@ static bool isEndOfRail(nodeRail_t *rails, BMEdge *edge)
   return false;
 }
 
-static void extrudeMain(BMesh *bm, BMVert *v)
+static void extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir[3])
 {
-  float rayDir[3] = {0.f, 0.f, -1.f};
+  float bestNormal[3];
   float distance;
-  if (!isect_ray_bmesh(v->co, rayDir, bm, &distance))
+  if (!isect_ray_bmesh(v->co, rayDir, bm, &distance, bestNormal))
     distance = 1.f;
-  mul_v3_fl(rayDir, distance);
-  extrude(bm, v, rayDir);
+
+  float tangentU[3];
+  float tangent[3];
+
+  cross_v3_v3v3(tangentU, slopeDir, bestNormal);
+  cross_v3_v3v3(tangent, tangentU, bestNormal);
+  normalize_v3(tangent);
+
+
+  float extrudeDir[3];
+  mul_v3_v3fl(extrudeDir, rayDir, distance);
+  mul_v3_fl(tangent, distance);
+  //add_v3_v3(rayDir, tangent);
+
+  BMVert *v2 = extrude(bm, v, extrudeDir);
+
+  extrude(bm, v2, tangent);
+}
+
+static void getSlopeDir(float slopeDir[3], BMEdge* edge, float rayDir[3])
+{
+  float edgeDir[3];
+  sub_v3_v3v3(edgeDir, edge->v2->co, edge->v1->co);
+  cross_v3_v3v3(slopeDir, rayDir, edgeDir);
+  normalize_v3(slopeDir);
 }
 
 static Mesh *modifyMesh(struct ModifierData *md,
@@ -297,13 +334,42 @@ static Mesh *modifyMesh(struct ModifierData *md,
       }
   }
 
+  float rayDir[3] = {0.f, 0.f, -1.f};
+  float slopeDirNext[3];  // slope dir for prev v
+  float slopeDir1[3]; // slope dir for prev v
+  float slopeDir2[3]; // slope dir for next v
+  float *slopeDirv1;  // slope dir for v1
+  float *slopeDirv2;  // slope dir for v2
+
+  float store[3];
+
   nodeRail_t *railIter = rails;
   while (railIter != NULL) {
 
     nodeEdge_t *edgeIter = railIter->val;
     nodeEdge_t *edgePrev = NULL;
-    extrudeMain(bm, edgeIter->val->v1);
-    extrudeMain(bm, edgeIter->val->v2);
+
+    // slopeDir =  normalize(rayDir x edgeDir)
+    getSlopeDir(slopeDir1, edgeIter->val, rayDir);
+    copy_v3_v3(slopeDir2, slopeDir1);
+    if (edgeIter->next != NULL) {
+      // slopeDir =  normalize(rayDir x edgeDir + rayDir x next.edgeDir)
+      getSlopeDir(slopeDirNext, edgeIter->next->val, rayDir);
+      add_v3_v3(slopeDir2, slopeDirNext);
+      normalize_v3(slopeDir2);
+    }
+
+    if (edgeIter->val->v1_disk_link.next == edgeIter->val) {
+      slopeDirv1 = slopeDir1;
+      slopeDirv2 = slopeDir2;
+    }
+    else {
+      slopeDirv1 = slopeDir2;
+      slopeDirv2 = slopeDir1;
+    }
+
+    extrudeMain(bm, edgeIter->val->v1, rayDir, slopeDirv1);
+    extrudeMain(bm, edgeIter->val->v2, rayDir, slopeDirv2);
     edgePrev = edgeIter;
     edgeIter = edgeIter->next;
     while (edgeIter != NULL) {
@@ -314,7 +380,16 @@ static Mesh *modifyMesh(struct ModifierData *md,
       else
         v = edgeIter->val->v1;
 
-      extrudeMain(bm, v);
+      copy_v3_v3(slopeDir2, slopeDirNext);
+      if (edgeIter->next != NULL) {
+        // slopeDir =  normalize(rayDir x edgeDir + rayDir x next.edgeDir)
+        getSlopeDir(slopeDirNext, edgeIter->next->val, rayDir);
+        add_v3_v3(slopeDir2, slopeDirNext);
+        normalize_v3(slopeDir2);
+      }
+
+
+      extrudeMain(bm, v, rayDir, slopeDir2);
 
       edgePrev = edgeIter;
       edgeIter = edgeIter->next;
