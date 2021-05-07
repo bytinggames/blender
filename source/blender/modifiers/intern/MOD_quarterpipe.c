@@ -121,15 +121,18 @@ static int isect_ray_bmesh(const float ray_start[3], const float ray_dir[3], BMe
   return hit;
 }
 
-static BMVert *extrude(BMesh *bm, BMVert *vert, const float *offset)
+static BMVert *extrude(BMesh *bm, BMVert *vert, const float co[3])
+{
+  BMVert *v = BM_vert_create(bm, co, NULL, BM_CREATE_NOP);
+  BM_edge_create(bm, vert, v, NULL, BM_CREATE_NOP);
+  return v;
+}
+static BMVert *extrudeRelative(BMesh *bm, BMVert *vert, const float offset[3])
 {
   float co[3];
   copy_v3_v3(co, vert->co);
   add_v3_v3(co, offset);
-
-  BMVert *v2 = BM_vert_create(bm, co, NULL, BM_CREATE_NOP);
-  BM_edge_create(bm, vert, v2, NULL, BM_CREATE_NOP);
-  return v2;
+  return extrude(bm, vert, co);
 }
 
 static bool isThereANeighbourLineOnVertex(BMEdge* edgeWithoutFace, bool v1)
@@ -181,7 +184,7 @@ static bool isEndOfRail(nodeRail_t *rails, BMEdge *edge)
   return false;
 }
 
-static void extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir[3])
+static void extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir[3], const int steps)
 {
   float bestNormal[3];
   float distance;
@@ -201,9 +204,33 @@ static void extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir[3]
   mul_v3_fl(tangent, distance);
   //add_v3_v3(rayDir, tangent);
 
-  BMVert *v2 = extrude(bm, v, extrudeDir);
+  float pipeCenter[3];
+  copy_v3_v3(pipeCenter, v->co);
+  add_v3_v3(pipeCenter, tangent);
+  float anglePlus = M_PI_2 / steps;
+  float angle = anglePlus;
 
-  extrude(bm, v2, tangent);
+  float vGenerate[3];
+  float t[3];
+  float r[3];
+  BMVert *vLast = v;
+  for (int step = 0; step < steps; step++, angle += anglePlus) {
+    // calc v from pipe center +
+    float s = sinf(angle);
+    float c = cosf(angle);
+    // pipeCenter - tangent * c + rayDir * s;
+    mul_v3_v3fl(t, tangent, c);
+    mul_v3_v3fl(r, extrudeDir, s);
+    copy_v3_v3(vGenerate, pipeCenter);
+    sub_v3_v3(vGenerate, t);
+    add_v3_v3(vGenerate, r);
+    vLast = extrude(bm, vLast, vGenerate);
+  }
+
+
+  /*BMVert *v2 = extrudeRelative(bm, v, extrudeDir);
+
+  extrudeRelative(bm, v2, tangent);*/
 }
 
 static void getSlopeDir(float slopeDir[3], BMEdge* edge, float rayDir[3])
@@ -218,6 +245,9 @@ static Mesh *modifyMesh(struct ModifierData *md,
                          const struct ModifierEvalContext *ctx,
                          struct Mesh *mesh)
 {
+  QuarterPipeModifierData *pmd = (QuarterPipeModifierData *)md;
+  int steps = pmd->num_olives;
+
   Mesh *result;
   BMesh *bm;
   CustomData_MeshMasks cd_mask_extra = {
@@ -368,8 +398,8 @@ static Mesh *modifyMesh(struct ModifierData *md,
       slopeDirv2 = slopeDir1;
     }
 
-    extrudeMain(bm, edgeIter->val->v1, rayDir, slopeDirv1);
-    extrudeMain(bm, edgeIter->val->v2, rayDir, slopeDirv2);
+    extrudeMain(bm, edgeIter->val->v1, rayDir, slopeDirv1, steps);
+    extrudeMain(bm, edgeIter->val->v2, rayDir, slopeDirv2, steps);
     edgePrev = edgeIter;
     edgeIter = edgeIter->next;
     while (edgeIter != NULL) {
@@ -389,7 +419,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
       }
 
 
-      extrudeMain(bm, v, rayDir, slopeDir2);
+      extrudeMain(bm, v, rayDir, slopeDir2, steps);
 
       edgePrev = edgeIter;
       edgeIter = edgeIter->next;
@@ -397,69 +427,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
 
     railIter = railIter->next;
   }
-  
 
-  //currentEdge = starterEdges;
-
-  //while (currentEdge != NULL) {
-
-  //  e = currentEdge->val;
-  //  // extrude all verts on the following edges that have no faces
-  //  while (true) { // iterate through next edges without faces
-  //    BMEdge *eBefore = e;
-  //    // get next edge without faces
-  //    BMEdge *eIter = e->v2_disk_link.next;
-  //    while (eIter != e) {
-  //      if (eIter->l == NULL) {  // found edge without faces
-  //        break;
-  //      }
-  //      // check which disk link contains the last edge, then continue on that disk link (see https://wiki.blender.org/wiki/Source/Modeling/BMesh/Design)
-  //      bool v1 = eIter->v1_disk_link.prev == eBefore;
-
-  //      eBefore = eIter;
-
-  //      if (v1)
-  //        eIter = eIter->v1_disk_link.next;
-  //      else
-  //        eIter = eIter->v2_disk_link.next;
-  //    }
-
-  //    extrude(bm, e->v2);
-
-  //    if (eIter == e)
-  //      break;
-
-  //    e = eIter;
-  //  }
-
-  //  // extrude first vert
-  //  extrude(bm, currentEdge->val->v1);
-
-  //  currentEdge = currentEdge->next;
-  //}
-
-  //printf(e->l);
-  /*if (e->l)
-  float dist;
-  bool curhit;
-
-  curhit = isect_ray_poly(ray_start, ray_dir, f, &dist);
-  if (curhit && dist < best_dist) {
-    hit = true;
-    best_dist = dist;
-  }*/
-
-  // Later: check uv if thats possible?
-
-  // iterate through all "vertical" edges
-  // split the faces on these edges
-  // move vertices
-
-  // iterate through the (any) face strip
-  // split faces
-  // move vertices
-
-  //BM_edge_split(bm, bm->epool->free);
   result = BKE_mesh_from_bmesh_for_eval_nomain(bm, &cd_mask_extra, mesh);
   BM_mesh_free(bm);
 
