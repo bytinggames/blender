@@ -408,6 +408,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
       normalize_v3(slopeDir2);
     }
 
+    bool invert = false;
     if (edgeIter->val->v1_disk_link.next == edgeIter->val) {
       slopeDirv1 = slopeDir1;
       slopeDirv2 = slopeDir2;
@@ -415,10 +416,18 @@ static Mesh *modifyMesh(struct ModifierData *md,
     else {
       slopeDirv1 = slopeDir2;
       slopeDirv2 = slopeDir1;
+      invert = true;
     }
 
     BMEdge *edge1 = extrudeMain(bm, edgeIter->val->v1, rayDir, slopeDirv1, steps);
     BMEdge *edge2 = extrudeMain(bm, edgeIter->val->v2, rayDir, slopeDirv2, steps);
+
+    if (invert) {
+      BMEdge *store = edge1;
+      edge1 = edge2;
+      edge2 = store;
+    }
+
     fillMain(bm, edgeIter->val, edge1, edge2, steps);
 
     edgePrev = edgeIter;
