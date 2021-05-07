@@ -108,12 +108,11 @@ static int isect_ray_bmesh(const float ray_start[3], const float ray_dir[3], BMe
   return hit;
 }
 
-static void extrude(BMesh *bm, BMVert *vert)
+static void extrude(BMesh *bm, BMVert *vert, const float *offset)
 {
   float co[3];
-  float extrudeOffset[3] = {0.f, 0.f, -3.f};
   copy_v3_v3(co, vert->co);
-  add_v3_v3(co, extrudeOffset);
+  add_v3_v3(co, offset);
 
   BMVert* v2 = BM_vert_create(bm, co, NULL, BM_CREATE_NOP);
   BM_edge_create(bm, vert, v2, NULL, BM_CREATE_NOP);
@@ -168,6 +167,16 @@ static bool isEndOfRail(nodeRail_t *rails, BMEdge *edge)
   return false;
 }
 
+static void extrudeMain(BMesh *bm, BMVert *v)
+{
+  float rayDir[3] = {0.f, 0.f, -1.f};
+  float distance;
+  if (!isect_ray_bmesh(v->co, rayDir, bm, &distance))
+    distance = 1.f;
+  mul_v3_fl(rayDir, distance);
+  extrude(bm, v, rayDir);
+}
+
 static Mesh *modifyMesh(struct ModifierData *md,
                          const struct ModifierEvalContext *ctx,
                          struct Mesh *mesh)
@@ -184,57 +193,9 @@ static Mesh *modifyMesh(struct ModifierData *md,
                                 .cd_mask_extra = cd_mask_extra,
                             }));
 
-  BMEdge **newEdge = NULL;
 
-  //BMEdge *edge = BM_edge_at_index_find(bm, 0);
-  //BMEdge **newEdge = NULL;
-  ////BMVert *vert2 = bmesh_kernel_split_edge_make_vert(bm, edge->v1, edge, newEdge);
-  //BMVert *vert2 = BM_edge_split(bm, edge, edge->v1, newEdge, 0.5f);
-
-  //BMFace *face = BM_face_at_index_find(bm, 0);
-  //BMLoop *l_last, *l_iter;
-  //l_iter = l_last = BM_FACE_FIRST_LOOP(face);
-  //l_last = l_last->next;
-  //BMEdge *edges;
-  //while (true)
-  //{
-  //  BM_edge_split(bm, l_iter->e, l_iter->v, newEdge, 0.5f);
-  //  if (l_iter == l_last)
-  //    break;
-  //  l_iter = l_iter->prev;
-  //}
-
-  BMFace *face = BM_face_at_index_find(bm, 0);
-
-
-  /*BMLoop *l_first, *l_iter;
-  l_iter = l_first = face->l_first->e->l;
-  do
-  {
-  } while ((l_iter = l_iter->next) != l_first);*/
-
-  float distance;
-  float ray_start[] = {0.f, 0.f, 0.f};
-  float ray_dir[] = {0.f, 0.f, 1.f};
-  isect_ray_bmesh(ray_start, ray_dir, bm, &distance);
-  printf("%.1f ", distance);
-
-
-  // iterate through all edges without faces
-  BMIter iter;
-  float best_dist = FLT_MAX;
-  bool hit = false;
-
-  //List<Edge> starters
-
-  nodeEdge_t *starterEdges = NULL;
-  nodeEdge_t *currentEdge;
-
-  //List<List<Edge>> list of contiguous edges
   nodeRail_t *rails = NULL;
   nodeRail_t *lastRail = NULL;
-
-
 
   // for each edge
   //  that has no faces (referred as line)
@@ -246,6 +207,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
 
   BMEdge *e;
   // for each edge
+  BMIter iter;
   BM_ITER_MESH (e, &iter, bm, BM_EDGES_OF_MESH) {
     if (e->l != NULL)  // ...that has no faces (check if no loops attached -> no faces on the edge)
       continue;
@@ -333,63 +295,6 @@ static Mesh *modifyMesh(struct ModifierData *md,
           diskLink = &current->v1_disk_link;
         prev = current;
       }
-
-
-      //// if no neighbours are there, simple create a rail with a single line
-      //if (neighbourLinesCount == 0) {
-      //  
-      //}
-      //// check if there are any v1 lines
-      //neighbourOnV1 =
-
-
-
-
-      //// check if no previous edge without faces exists
-      //
-      //// check if there are neighbouring edges(without faces) that are the start or the end of a rail
-      //// if so, connect
-      //// else: create new rail
-
-
-      //bool previousEdgeWithoutFaces = false;
-      //BMEdge *eBefore = e;
-      //BMEdge *eIter = e->v1_disk_link.next;
-      //while (eIter != e) {
-      //  if (eIter->l == NULL) {
-      //    previousEdgeWithoutFaces = true;
-      //    break;
-      //  }
-
-      //  // check which disk link contains the last edge, then continue on that disk link (see
-      //  // https://wiki.blender.org/wiki/Source/Modeling/BMesh/Design)
-      //  bool v1 = eIter->v1_disk_link.prev == eBefore;
-
-      //  eBefore = eIter;
-
-      //  if (v1)
-      //    eIter = eIter->v1_disk_link.next;
-      //  else
-      //    eIter = eIter->v2_disk_link.next;
-      //}
-      //// ...if no exists extrude v1
-      //if (!previousEdgeWithoutFaces) {
-
-      //  if (starterEdges == NULL) {
-      //    starterEdges = malloc(sizeof(nodeEdge_t));
-      //    if (starterEdges == NULL)
-      //      printf("well... starterEdges == NULL, malloc didn't work");
-      //    currentEdge = starterEdges;
-      //  }
-      //  else {
-      //    currentEdge->next = malloc(sizeof(nodeEdge_t));
-      //    currentEdge = currentEdge->next;
-      //  }
-
-      //  currentEdge->val = e;
-      //  currentEdge->next = NULL;
-      //}
-    
   }
 
   nodeRail_t *railIter = rails;
@@ -397,16 +302,19 @@ static Mesh *modifyMesh(struct ModifierData *md,
 
     nodeEdge_t *edgeIter = railIter->val;
     nodeEdge_t *edgePrev = NULL;
-    extrude(bm, edgeIter->val->v1);
-    extrude(bm, edgeIter->val->v2);
+    extrudeMain(bm, edgeIter->val->v1);
+    extrudeMain(bm, edgeIter->val->v2);
     edgePrev = edgeIter;
     edgeIter = edgeIter->next;
     while (edgeIter != NULL) {
 
+      BMVert *v;
       if (edgeIter->val->v1 == edgePrev->val->v1 || edgeIter->val->v1 == edgePrev->val->v2)
-        extrude(bm, edgeIter->val->v2);
+        v = edgeIter->val->v2;
       else
-        extrude(bm, edgeIter->val->v1);
+        v = edgeIter->val->v1;
+
+      extrudeMain(bm, v);
 
       edgePrev = edgeIter;
       edgeIter = edgeIter->next;
