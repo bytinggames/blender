@@ -36,9 +36,454 @@
 #include <stdlib.h>
 
 #include "BLI_math.h"
+#include "bmesh.h"
 
+#include "DNA_customdata_types.h"
+
+
+typedef struct nodeEdge {
+  BMEdge *val;
+  struct nodeEdge *next;
+} nodeEdge_t;
+
+typedef struct nodeRail {
+  nodeEdge_t *val;
+  struct nodeRail *next;
+} nodeRail_t;
+
+/* Does crappy fan triangulation of poly, may not be so accurate for
+ * concave faces */
+static int isect_ray_poly(const float ray_start[3],
+                          const float ray_dir[3],
+                          BMFace *f,
+                          float *r_lambda)
+{
+  BMVert *v, *v_first = NULL, *v_prev = NULL;
+  BMIter iter;
+  float best_dist = FLT_MAX;
+  bool hit = false;
+
+  BM_ITER_ELEM (v, &iter, f, BM_VERTS_OF_FACE) {
+    if (!v_first) {
+      v_first = v;
+    }
+    else if (v_prev != v_first) {
+      float dist;
+      bool curhit;
+
+      curhit = isect_ray_tri_v3(ray_start, ray_dir, v_first->co, v_prev->co, v->co, &dist, NULL);
+      if (curhit && dist < best_dist) {
+        hit = true;
+        best_dist = dist;
+      }
+    }
+
+    v_prev = v;
+  }
+
+  *r_lambda = best_dist;
+  return hit;
+}
+
+static int isect_ray_bmesh(const float ray_start[3], const float ray_dir[3], BMesh *bm, float *r_lambda)
+{
+  BMIter iter;
+  float best_dist = FLT_MAX;
+  bool hit = false;
+
+  BMFace *f;
+
+  BM_ITER_MESH (f, &iter, bm, BM_FACES_OF_MESH) {
+    float dist;
+    bool curhit;
+
+    curhit = isect_ray_poly(ray_start, ray_dir, f, &dist);
+    if (curhit && dist < best_dist) {
+      hit = true;
+      best_dist = dist;
+    }
+  }
+
+  *r_lambda = best_dist;
+  return hit;
+}
+
+static void extrude(BMesh *bm, BMVert *vert)
+{
+  float co[3];
+  float extrudeOffset[3] = {0.f, 0.f, -3.f};
+  copy_v3_v3(co, vert->co);
+  add_v3_v3(co, extrudeOffset);
+
+  BMVert* v2 = BM_vert_create(bm, co, NULL, BM_CREATE_NOP);
+  BM_edge_create(bm, vert, v2, NULL, BM_CREATE_NOP);
+}
+
+static bool isThereANeighbourLineOnVertex(BMEdge* edgeWithoutFace, bool v1)
+{
+  BMEdge *e = edgeWithoutFace;
+
+  BMEdge *eBefore = e;
+  BMEdge *eIter;
+  if (v1)
+    eIter = e->v1_disk_link.next;
+  else
+    eIter = e->v2_disk_link.next;
+
+  while (eIter != e) {
+    if (eIter->l == NULL) {
+      return true;
+    }
+
+    // check which disk link contains the last edge, then continue on that disk link (see
+    // https://wiki.blender.org/wiki/Source/Modeling/BMesh/Design)
+    bool _v1 = eIter->v1_disk_link.prev == eBefore;
+
+    eBefore = eIter;
+
+    if (_v1)
+      eIter = eIter->v1_disk_link.next;
+    else
+      eIter = eIter->v2_disk_link.next;
+  }
+  return false;
+}
+
+static bool isEndOfRail(nodeRail_t *rails, BMEdge *edge)
+{
+  nodeRail_t *it = rails;
+  while (it != NULL) {
+    nodeEdge_t *itEdge = it->val;
+    if (itEdge == NULL)
+      continue;
+    while (itEdge->next != NULL) {
+        itEdge = itEdge->next;
+    }
+
+    if (itEdge->val == edge)
+      return true;
+
+    it = it->next;
+  }
+  return false;
+}
 
 static Mesh *modifyMesh(struct ModifierData *md,
+                         const struct ModifierEvalContext *ctx,
+                         struct Mesh *mesh)
+{
+  Mesh *result;
+  BMesh *bm;
+  CustomData_MeshMasks cd_mask_extra = {
+      .vmask = CD_MASK_ORIGINDEX, .emask = CD_MASK_ORIGINDEX, .pmask = CD_MASK_ORIGINDEX};
+
+  bm = BKE_mesh_to_bmesh_ex(mesh,
+                            &((struct BMeshCreateParams){0}),
+                            &((struct BMeshFromMeshParams){
+                                .calc_face_normal = true,
+                                .cd_mask_extra = cd_mask_extra,
+                            }));
+
+  BMEdge **newEdge = NULL;
+
+  //BMEdge *edge = BM_edge_at_index_find(bm, 0);
+  //BMEdge **newEdge = NULL;
+  ////BMVert *vert2 = bmesh_kernel_split_edge_make_vert(bm, edge->v1, edge, newEdge);
+  //BMVert *vert2 = BM_edge_split(bm, edge, edge->v1, newEdge, 0.5f);
+
+  //BMFace *face = BM_face_at_index_find(bm, 0);
+  //BMLoop *l_last, *l_iter;
+  //l_iter = l_last = BM_FACE_FIRST_LOOP(face);
+  //l_last = l_last->next;
+  //BMEdge *edges;
+  //while (true)
+  //{
+  //  BM_edge_split(bm, l_iter->e, l_iter->v, newEdge, 0.5f);
+  //  if (l_iter == l_last)
+  //    break;
+  //  l_iter = l_iter->prev;
+  //}
+
+  BMFace *face = BM_face_at_index_find(bm, 0);
+
+
+  /*BMLoop *l_first, *l_iter;
+  l_iter = l_first = face->l_first->e->l;
+  do
+  {
+  } while ((l_iter = l_iter->next) != l_first);*/
+
+  float distance;
+  float ray_start[] = {0.f, 0.f, 0.f};
+  float ray_dir[] = {0.f, 0.f, 1.f};
+  isect_ray_bmesh(ray_start, ray_dir, bm, &distance);
+  printf("%.1f ", distance);
+
+
+  // iterate through all edges without faces
+  BMIter iter;
+  float best_dist = FLT_MAX;
+  bool hit = false;
+
+  //List<Edge> starters
+
+  nodeEdge_t *starterEdges = NULL;
+  nodeEdge_t *currentEdge;
+
+  //List<List<Edge>> list of contiguous edges
+  nodeRail_t *rails = NULL;
+  nodeRail_t *lastRail = NULL;
+
+
+
+  // for each edge
+  //  that has no faces (referred as line)
+  //   that has max 1 neighbouring edge
+  //    that is not already the end of a rail (continuous lines)
+  //     create a rail recursively
+  //      iterate until you reach a vertex that has not two neighbours
+  
+
+  BMEdge *e;
+  // for each edge
+  BM_ITER_MESH (e, &iter, bm, BM_EDGES_OF_MESH) {
+    if (e->l != NULL)  // ...that has no faces (check if no loops attached -> no faces on the edge)
+      continue;
+
+      // ...that has max 1 neighbouring edge
+    // check for an end point
+    bool v1EndPoint = e->v1_disk_link.next == e;
+    bool v2EndPoint = e->v2_disk_link.next == e;
+    if (!v1EndPoint && !v2EndPoint)
+      continue;
+
+    //  int neighbourLinesCount = 0;
+    //bool neighbourOnV1 = false;
+    //  if (isThereANeighbourLineOnVertex(e, true)) {
+    //  neighbourLinesCount++;
+    //    neighbourOnV1 = true;
+    //}
+    //  if (isThereANeighbourLineOnVertex(e, false))
+    //    neighbourLinesCount++;
+
+      //// ...that has max 1 neighbouring line
+      //if (neighbourLinesCount > 1) 
+      //  continue;
+
+      // ...that is not already the end of a rail (continuous lines)
+      if (isEndOfRail(rails, e))
+        continue;
+
+      // ...create rail recursively
+      // ...iterate until you reach a vertex that has not two neighbours
+
+      // add a new rail
+      if (rails == NULL) {
+        rails = malloc(sizeof(nodeRail_t));
+        if (rails == NULL)
+          printf("well... rails == NULL, malloc didn't work"); // TODO: ask bernie
+        lastRail = rails;
+      }
+      else {
+        lastRail->next = malloc(sizeof(nodeRail_t));
+        lastRail = lastRail->next;
+      }
+
+      lastRail->next = NULL;
+
+      nodeEdge_t *currentEdgeList = malloc(sizeof(nodeEdge_t));
+      if (currentEdgeList == NULL)
+        printf("well... rails == NULL, malloc didn't work");  // TODO: ask bernie
+      lastRail->val = currentEdgeList;
+
+      currentEdgeList->next = NULL;
+      currentEdgeList->val = e;
+
+
+      // iterate through next edges
+      if (v1EndPoint && v2EndPoint) // but first check if there are any edges
+        continue;
+
+      BMDiskLink *diskLink;
+      if (v1EndPoint)
+        diskLink = &e->v2_disk_link;
+      else
+        diskLink = &e->v1_disk_link;
+
+      BMEdge *prev = e;
+      BMEdge *current = NULL;
+      while (true) {
+        if (diskLink->next == current)
+          break;
+          current = diskLink->next;
+        if (current->l != NULL)  // check if next edge has no faces
+          break;
+
+        // add edge to the rail
+        currentEdgeList->next = malloc(sizeof(nodeEdge_t));
+        if (currentEdgeList->next == NULL)
+          printf("well... currentEdgeList->next == NULL, malloc didn't work");  // TODO: ask bernie
+        currentEdgeList = currentEdgeList->next;
+        currentEdgeList->val = current;
+        currentEdgeList->next = NULL;
+
+        if (current->v1_disk_link.next == prev)
+          diskLink = &current->v2_disk_link;
+        else
+          diskLink = &current->v1_disk_link;
+        prev = current;
+      }
+
+
+      //// if no neighbours are there, simple create a rail with a single line
+      //if (neighbourLinesCount == 0) {
+      //  
+      //}
+      //// check if there are any v1 lines
+      //neighbourOnV1 =
+
+
+
+
+      //// check if no previous edge without faces exists
+      //
+      //// check if there are neighbouring edges(without faces) that are the start or the end of a rail
+      //// if so, connect
+      //// else: create new rail
+
+
+      //bool previousEdgeWithoutFaces = false;
+      //BMEdge *eBefore = e;
+      //BMEdge *eIter = e->v1_disk_link.next;
+      //while (eIter != e) {
+      //  if (eIter->l == NULL) {
+      //    previousEdgeWithoutFaces = true;
+      //    break;
+      //  }
+
+      //  // check which disk link contains the last edge, then continue on that disk link (see
+      //  // https://wiki.blender.org/wiki/Source/Modeling/BMesh/Design)
+      //  bool v1 = eIter->v1_disk_link.prev == eBefore;
+
+      //  eBefore = eIter;
+
+      //  if (v1)
+      //    eIter = eIter->v1_disk_link.next;
+      //  else
+      //    eIter = eIter->v2_disk_link.next;
+      //}
+      //// ...if no exists extrude v1
+      //if (!previousEdgeWithoutFaces) {
+
+      //  if (starterEdges == NULL) {
+      //    starterEdges = malloc(sizeof(nodeEdge_t));
+      //    if (starterEdges == NULL)
+      //      printf("well... starterEdges == NULL, malloc didn't work");
+      //    currentEdge = starterEdges;
+      //  }
+      //  else {
+      //    currentEdge->next = malloc(sizeof(nodeEdge_t));
+      //    currentEdge = currentEdge->next;
+      //  }
+
+      //  currentEdge->val = e;
+      //  currentEdge->next = NULL;
+      //}
+    
+  }
+
+  nodeRail_t *railIter = rails;
+  while (railIter != NULL) {
+
+    nodeEdge_t *edgeIter = railIter->val;
+    nodeEdge_t *edgePrev = NULL;
+    extrude(bm, edgeIter->val->v1);
+    extrude(bm, edgeIter->val->v2);
+    edgePrev = edgeIter;
+    edgeIter = edgeIter->next;
+    while (edgeIter != NULL) {
+
+      if (edgeIter->val->v1 == edgePrev->val->v1 || edgeIter->val->v1 == edgePrev->val->v2)
+        extrude(bm, edgeIter->val->v2);
+      else
+        extrude(bm, edgeIter->val->v1);
+
+      edgePrev = edgeIter;
+      edgeIter = edgeIter->next;
+    }
+
+    railIter = railIter->next;
+  }
+  
+
+  //currentEdge = starterEdges;
+
+  //while (currentEdge != NULL) {
+
+  //  e = currentEdge->val;
+  //  // extrude all verts on the following edges that have no faces
+  //  while (true) { // iterate through next edges without faces
+  //    BMEdge *eBefore = e;
+  //    // get next edge without faces
+  //    BMEdge *eIter = e->v2_disk_link.next;
+  //    while (eIter != e) {
+  //      if (eIter->l == NULL) {  // found edge without faces
+  //        break;
+  //      }
+  //      // check which disk link contains the last edge, then continue on that disk link (see https://wiki.blender.org/wiki/Source/Modeling/BMesh/Design)
+  //      bool v1 = eIter->v1_disk_link.prev == eBefore;
+
+  //      eBefore = eIter;
+
+  //      if (v1)
+  //        eIter = eIter->v1_disk_link.next;
+  //      else
+  //        eIter = eIter->v2_disk_link.next;
+  //    }
+
+  //    extrude(bm, e->v2);
+
+  //    if (eIter == e)
+  //      break;
+
+  //    e = eIter;
+  //  }
+
+  //  // extrude first vert
+  //  extrude(bm, currentEdge->val->v1);
+
+  //  currentEdge = currentEdge->next;
+  //}
+
+  //printf(e->l);
+  /*if (e->l)
+  float dist;
+  bool curhit;
+
+  curhit = isect_ray_poly(ray_start, ray_dir, f, &dist);
+  if (curhit && dist < best_dist) {
+    hit = true;
+    best_dist = dist;
+  }*/
+
+  // Later: check uv if thats possible?
+
+  // iterate through all "vertical" edges
+  // split the faces on these edges
+  // move vertices
+
+  // iterate through the (any) face strip
+  // split faces
+  // move vertices
+
+  //BM_edge_split(bm, bm->epool->free);
+  result = BKE_mesh_from_bmesh_for_eval_nomain(bm, &cd_mask_extra, mesh);
+  BM_mesh_free(bm);
+
+  return result;
+}
+
+static Mesh *modifyMesh2(struct ModifierData *md,
                         const struct ModifierEvalContext *ctx,
                         struct Mesh *mesh)
 {  // Convert the generic ModifierData to our modifier's DNA data.
@@ -50,10 +495,15 @@ static Mesh *modifyMesh(struct ModifierData *md,
   QuarterPipeModifierData *pmd = (QuarterPipeModifierData *)md;
   int steps = pmd->num_olives;
 
-  Mesh *result = BKE_mesh_new_nomain(
+  Mesh *result = BKE_mesh_new_nomain_from_template(mesh,
       2 + 2 * steps /* vertices */, 0, 0, 4 * steps /* loops */, steps /* face */);
+  BKE_mesh_copy_settings(result, mesh);
   MVert *mvert = result->mvert;
   MLoop *mloop = result->mloop;
+  MLoopUV *mloopuv = NULL;
+  if (mesh->mloopuv != NULL) {
+    mloopuv = malloc(result->totloop * sizeof(MLoopUV));
+  }
 
   const int faceVs = 4;
 
@@ -152,6 +602,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
   }
 
   // TODO: fix rotation on object
+  // TODO: add texture coords
 
   copy_v3_v3(mvert[0].co, pipeStart[0]);
   copy_v3_v3(mvert[1].co, pipeStart[1]);
@@ -182,9 +633,26 @@ static Mesh *modifyMesh(struct ModifierData *md,
         mloop[i].v = step * 2 + 3 - i;
       }
     }
+
+    if (mloopuv != NULL) {
+
+      for (int i = 0; i < faceVs; i++) {
+        mloopuv[i] = mesh->mloopuv[0];  // just copy the first uv
+      }
+      mloopuv += faceVs;
+    }
+
     result->mpoly[step].loopstart = step * 4;
     result->mpoly[step].totloop = 4;
   }
+
+  if (mloopuv != NULL) {
+    result->mloopuv = mloopuv;
+  }
+  //result->mat = mesh->mat;
+  //result->texflag = mesh->texflag;
+  //result->flag = mesh->flag;
+  //result->totcol = mesh->totcol;
 
   // Fill edge data automatically
   BKE_mesh_calc_edges(result, true, false);
