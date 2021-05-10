@@ -463,6 +463,15 @@ static Mesh *modifyMesh(struct ModifierData *md,
   result = BKE_mesh_from_bmesh_for_eval_nomain(bm, &cd_mask_extra, mesh);
   BM_mesh_free(bm);
 
+  if (result->mloopuv != NULL) {
+    for (int i = 0; i < result->totloop; i++) {
+      if (result->mloopuv[i].uv[0] == 0 && result->mloopuv[i].uv[1] == 0) {
+        result->mloopuv[i].uv[0] = 6.5f / 8.f;
+        result->mloopuv[i].uv[1] = 3.5f / 8.f;
+      }
+    }
+  }
+
   return result;
 }
 
@@ -585,7 +594,7 @@ static Mesh *modifyMesh2(struct ModifierData *md,
   }
 
   // TODO: fix rotation on object
-  // TODO: add texture coords
+  // TODO: determine normal flip somehow
 
   copy_v3_v3(mvert[0].co, pipeStart[0]);
   copy_v3_v3(mvert[1].co, pipeStart[1]);
