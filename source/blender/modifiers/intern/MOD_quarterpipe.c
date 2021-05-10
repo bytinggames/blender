@@ -201,7 +201,10 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
 {
   float bestNormal[3];
   float distance;
-  if (!isect_ray_bmesh(v->co, rayDir, bm, &distance, bestNormal)) {
+  float rayStart[3];
+  mul_v3_v3fl(rayStart, slopeDir, 0.1f);
+  add_v3_v3(rayStart, v->co);
+  if (!isect_ray_bmesh(rayStart, rayDir, bm, &distance, bestNormal)) {
     distance = 1.f;
     bestNormal[0] = 0.f;
     bestNormal[1] = 0.f;
@@ -219,16 +222,26 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
     negate_v3(tangent);
   }
 
+  float solidifyThickness[3];
+  mul_v3_v3fl(solidifyThickness, tangent, 0.1f);
 
+  float wallFraction = 0.331f;
+  float wallDistance = distance * wallFraction;
+  float slopeHeight = distance * (1.f - wallFraction);
+
+  float wallDir[3];
   float extrudeDir[3];
-  mul_v3_v3fl(extrudeDir, rayDir, distance);
-  mul_v3_fl(tangent, distance);
+  mul_v3_v3fl(wallDir, rayDir, wallDistance);
+  mul_v3_v3fl(extrudeDir, rayDir, slopeHeight);
+  mul_v3_fl(tangent, slopeHeight);
   //add_v3_v3(rayDir, tangent);
 
   float pipeCenter[3];
   copy_v3_v3(pipeCenter, v->co);
   add_v3_v3(pipeCenter, tangent);
-  float anglePlus = M_PI_2 / steps;
+  add_v3_v3(pipeCenter, solidifyThickness);
+  int slopeSteps = steps - 1;
+  float anglePlus = M_PI_2 / slopeSteps;
   float angle = anglePlus;
 
   float vGenerate[3];
@@ -236,7 +249,17 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
   float r[3];
   BMVert *vLast = v;
   BMEdge *firstGenEdge = NULL;
-  for (int step = 0; step < steps; step++, angle += anglePlus) {
+
+  // move base vertex by solidify thickness
+  add_v3_v3(v->co, solidifyThickness);
+
+  // generate wall vertex
+  copy_v3_v3(vGenerate, pipeCenter);
+  sub_v3_v3(vGenerate, tangent);
+  add_v3_v3(vGenerate, wallDir);
+  vLast = extrude(bm, vLast, vGenerate, &firstGenEdge);
+
+  for (int step = 0; step < slopeSteps; step++, angle += anglePlus) {
     // calc v from pipe center +
     float s = sinf(angle);
     float c = cosf(angle);
@@ -246,6 +269,7 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
     copy_v3_v3(vGenerate, pipeCenter);
     sub_v3_v3(vGenerate, t);
     add_v3_v3(vGenerate, r);
+    add_v3_v3(vGenerate, wallDir);
     if (firstGenEdge == NULL)
       vLast = extrude(bm, vLast, vGenerate, &firstGenEdge);
     else
@@ -491,181 +515,6 @@ static Mesh *modifyMesh(struct ModifierData *md,
     }
   }
 
-  return result;
-}
-
-static Mesh *modifyMesh2(struct ModifierData *md,
-                        const struct ModifierEvalContext *ctx,
-                        struct Mesh *mesh)
-{  // Convert the generic ModifierData to our modifier's DNA data.
-   // This is ensured to be valid by the architecture.
-
-  if (mesh->totpoly == 0 || mesh->mpoly[0].totloop < 4)
-    return mesh;
-
-  QuarterPipeModifierData *pmd = (QuarterPipeModifierData *)md;
-  int steps = pmd->num_olives;
-
-  Mesh *result = BKE_mesh_new_nomain_from_template(mesh,
-      2 + 2 * steps /* vertices */, 0, 0, 4 * steps /* loops */, steps /* face */);
-  BKE_mesh_copy_settings(result, mesh);
-  MVert *mvert = result->mvert;
-  MLoop *mloop = result->mloop;
-  MLoopUV *mloopuv = NULL;
-  if (mesh->mloopuv != NULL) {
-    mloopuv = malloc(result->totloop * sizeof(MLoopUV));
-  }
-
-  const int faceVs = 4;
-
-  float anglePlus = M_PI_2 / steps;
-  float angle = anglePlus;
-
-  float size = 1.f;
-  float height[2];
-
-  // get pipeStart vertices
-
-  // get two heighest vertices
-  int heighestV = 0;
-  int secondHeighestV = -1;
-  int heighestVChild = -1;
-  int secondHeighestVChild = -1;
-  for (int i = 1; i < 4; i++) {
-    float h = mesh->mvert[i].co[2];
-    if (h > mesh->mvert[heighestV].co[2]) {
-      heighestV = i;
-    }
-  }
-  for (int i = 0; i < 4; i++) {
-    if (heighestV == i)
-      continue;
-    float h = mesh->mvert[i].co[2];
-    if (secondHeighestV == -1 || h > mesh->mvert[secondHeighestV].co[2]) {
-      secondHeighestV = i;
-    }
-  }
-
-  // swap two heighest indices, if the vertex order says so
-  if (heighestV > secondHeighestV) {
-    SWAP(int, heighestV, secondHeighestV);
-  }
-  // get children
-  bool foundFristChild = false;
-  for (int i = 0; i < 4; i++) {
-    if (i != heighestV && i != secondHeighestV) {
-
-      if (!foundFristChild) {
-        if (len_squared_v2v2(mesh->mvert[i].co, mesh->mvert[heighestV].co) <
-            len_squared_v2v2(mesh->mvert[i].co, mesh->mvert[secondHeighestV].co))
-          heighestVChild = i;
-        else
-          secondHeighestVChild = i;
-        foundFristChild = true;
-      }
-      else {
-        if (heighestVChild == -1)
-          heighestVChild = i;
-        else
-          secondHeighestVChild = i;
-      }
-    }
-  }
-
-  float *originVertices[4] = {
-      mesh->mvert[heighestV].co,
-      mesh->mvert[secondHeighestV].co,
-      mesh->mvert[heighestVChild].co,
-      mesh->mvert[secondHeighestVChild].co,
-  };
-
-  
-  float *pipeStart[2] = {originVertices[0], originVertices[1]};
-
-  float lengthDir[3];
-  sub_v3_v3v3(lengthDir, pipeStart[1], pipeStart[0]);
-  float heightDir[2][3];  // points upwards
-  for (int i = 0; i < 2; i++) {
-    for (int j = 0; j < 3; j++) {
-      heightDir[i][j] = originVertices[i][j] - originVertices[i + 2][j];
-    }
-    height[i] = len_v3(heightDir[i]);
-  }
-
-  float widthFactor = 1.f;
-  float width[] = {height[0] * widthFactor, height[1] * widthFactor};  // _
-
-  float lengthDir2D[2] = {lengthDir[0], lengthDir[1]};
-  float lengthDir2D_1N[2] = {-lengthDir[1], lengthDir[0]};
-  normalize_v2(lengthDir2D_1N);
-  float widthDir[2][3];  // points in width direction
-  for (int i = 0; i < 2; i++) {
-    widthDir[i][0] = lengthDir2D_1N[0] * width[i];
-    widthDir[i][1] = lengthDir2D_1N[1] * width[i];
-    widthDir[i][2] = 0.f;
-  }
-
-  float pipeOrigin[2][3];
-  for (int i = 0; i < 2; i++) {
-    for (int j = 0; j < 3; j++) {
-      pipeOrigin[i][j] = pipeStart[i][j] + widthDir[i][j];
-    }
-  }
-
-  // TODO: fix rotation on object
-
-  copy_v3_v3(mvert[0].co, pipeStart[0]);
-  copy_v3_v3(mvert[1].co, pipeStart[1]);
-
-  mvert += 2;
-  for (int step = 0; step < steps; step++, angle += anglePlus, mvert += 2, mloop += faceVs) {
-
-    float w = -cosf(angle);
-    float h = -sinf(angle);
-
-    for (int i = 0; i < 2; i++) {
-      int vI = i;
-      if (step % 2 == 0)
-        vI = 1 - vI;
-
-      for (int j = 0; j < 3; j++) {
-        mvert[vI].co[j] = pipeOrigin[i][j] + w * widthDir[i][j] + h * heightDir[i][j];
-      }
-    }
-
-    if (step % 2 == 0) {
-      for (int i = 0; i < faceVs; i++) {
-        mloop[i].v = step * 2 + i;
-      }
-    }
-    else {
-      for (int i = 0; i < faceVs; i++) {
-        mloop[i].v = step * 2 + 3 - i;
-      }
-    }
-
-    if (mloopuv != NULL) {
-
-      for (int i = 0; i < faceVs; i++) {
-        mloopuv[i] = mesh->mloopuv[0];  // just copy the first uv
-      }
-      mloopuv += faceVs;
-    }
-
-    result->mpoly[step].loopstart = step * 4;
-    result->mpoly[step].totloop = 4;
-  }
-
-  if (mloopuv != NULL) {
-    result->mloopuv = mloopuv;
-  }
-  //result->mat = mesh->mat;
-  //result->texflag = mesh->texflag;
-  //result->flag = mesh->flag;
-  //result->totcol = mesh->totcol;
-
-  // Fill edge data automatically
-  BKE_mesh_calc_edges(result, true, false);
   return result;
 }
 
