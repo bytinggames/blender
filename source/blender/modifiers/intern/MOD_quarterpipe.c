@@ -410,9 +410,12 @@ static Mesh *modifyMesh(struct ModifierData *md,
       BMEdge *prev = e;
       BMEdge *current = NULL;
       while (true) {
-        if (diskLink->next == current)
+        if (diskLink->next == current) // dead end
           break;
-          current = diskLink->next;
+        if (!(diskLink->next->v1_disk_link.next == diskLink->next->v1_disk_link.prev &&
+            diskLink->next->v2_disk_link.next == diskLink->next->v2_disk_link.prev)) // detected branch: not allowed
+          break;
+        current = diskLink->next;
         if (current->l != NULL)  // check if next edge has no faces
           break;
 
