@@ -204,12 +204,17 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
   float rayStart[3];
   mul_v3_v3fl(rayStart, slopeDir, 0.1f);
   add_v3_v3(rayStart, v->co);
+  float overGroundOffset = 0.1f;
+  rayStart[2] += overGroundOffset;  // start the ray a bit higher, in case the vertex is directly
+                                    // positioned on the ground
   if (!isect_ray_bmesh(rayStart, rayDir, bm, &distance, bestNormal)) {
     distance = 1.f;
     bestNormal[0] = 0.f;
     bestNormal[1] = 0.f;
     bestNormal[2] = 1.f;
   }
+  else
+    distance -= overGroundOffset;
 
   float tangentU[3];
   float tangent[3];
