@@ -44,7 +44,17 @@
 typedef struct nodeEdge {
   BMEdge *val;
   struct nodeEdge *next;
+  bool v1AfterV2;
 } nodeEdge_t;
+
+nodeEdge_t *nodeEdge_t_new()
+{
+  nodeEdge_t *n = malloc(sizeof(nodeEdge_t));
+  if (n == NULL)
+    printf("well... rails == NULL, malloc didn't work");  // TODO: ask bernie
+  n->v1AfterV2 = false;
+  return n;
+}
 
 typedef struct nodeRail {
   nodeEdge_t *val;
@@ -191,8 +201,12 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
 {
   float bestNormal[3];
   float distance;
-  if (!isect_ray_bmesh(v->co, rayDir, bm, &distance, bestNormal))
+  if (!isect_ray_bmesh(v->co, rayDir, bm, &distance, bestNormal)) {
     distance = 1.f;
+    bestNormal[0] = 0.f;
+    bestNormal[1] = 0.f;
+    bestNormal[2] = 1.f;
+  }
 
   float tangentU[3];
   float tangent[3];
@@ -200,6 +214,10 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
   cross_v3_v3v3(tangentU, slopeDir, bestNormal);
   cross_v3_v3v3(tangent, tangentU, bestNormal);
   normalize_v3(tangent);
+
+  if (dot_v3v3(tangent, slopeDir) < 0) {
+    negate_v3(tangent);
+  }
 
 
   float extrudeDir[3];
@@ -237,10 +255,13 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
   return firstGenEdge;
 }
 
-static void getSlopeDir(float slopeDir[3], BMEdge* edge, float rayDir[3])
+static void getSlopeDir(float slopeDir[3], BMEdge *edge, float rayDir[3], bool v1AfterV2)
 {
   float edgeDir[3];
-  sub_v3_v3v3(edgeDir, edge->v2->co, edge->v1->co);
+  if (v1AfterV2)
+    sub_v3_v3v3(edgeDir, edge->v1->co, edge->v2->co);
+  else
+    sub_v3_v3v3(edgeDir, edge->v2->co, edge->v1->co);
   cross_v3_v3v3(slopeDir, rayDir, edgeDir);
   normalize_v3(slopeDir);
 }
@@ -250,8 +271,8 @@ static void fillMain(BMesh *bm, BMEdge *baseEdge, BMEdge *edge1, BMEdge *edge2, 
   for (int step = 0; step < steps; step++) {
 
     BMEdge *newBaseEdge = BM_edge_create(bm, edge1->v2, edge2->v2, NULL, BM_CREATE_NOP);
-    BMEdge *edges[4] = {edge2, newBaseEdge, edge1, baseEdge};
-    BMVert *verts[4] = {edge2->v1, edge2->v2, edge1->v2, edge1->v1};
+    BMEdge *edges[4] = {edge1, newBaseEdge, edge2, baseEdge};
+    BMVert *verts[4] = {edge1->v1, edge1->v2, edge2->v2, edge2->v1};
     BM_face_create(bm, verts, edges, 4, NULL, BM_CREATE_NOP);
 
     edge1 = edge1->v2_disk_link.next;
@@ -298,7 +319,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
     if (e->l != NULL)  // ...that has no faces (check if no loops attached -> no faces on the edge)
       continue;
 
-      // ...that has max 1 neighbouring edge
+    // ...that has max 1 neighbouring edge
     // check for an end point
     bool v1EndPoint = e->v1_disk_link.next == e;
     bool v2EndPoint = e->v2_disk_link.next == e;
@@ -306,7 +327,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
       continue;
 
     //  int neighbourLinesCount = 0;
-    //bool neighbourOnV1 = false;
+    // bool neighbourOnV1 = false;
     //  if (isThereANeighbourLineOnVertex(e, true)) {
     //  neighbourLinesCount++;
     //    neighbourOnV1 = true;
@@ -314,49 +335,48 @@ static Mesh *modifyMesh(struct ModifierData *md,
     //  if (isThereANeighbourLineOnVertex(e, false))
     //    neighbourLinesCount++;
 
-      //// ...that has max 1 neighbouring line
-      //if (neighbourLinesCount > 1) 
-      //  continue;
+    //// ...that has max 1 neighbouring line
+    // if (neighbourLinesCount > 1)
+    //  continue;
 
-      // ...that is not already the end of a rail (continuous lines)
-      if (isEndOfRail(rails, e))
-        continue;
+    // ...that is not already the end of a rail (continuous lines)
+    if (isEndOfRail(rails, e))
+      continue;
 
-      // ...create rail recursively
-      // ...iterate until you reach a vertex that has not two neighbours
+    // ...create rail recursively
+    // ...iterate until you reach a vertex that has not two neighbours
 
-      // add a new rail
-      if (rails == NULL) {
-        rails = malloc(sizeof(nodeRail_t));
-        if (rails == NULL)
-          printf("well... rails == NULL, malloc didn't work"); // TODO: ask bernie
-        lastRail = rails;
-      }
-      else {
-        lastRail->next = malloc(sizeof(nodeRail_t));
-        lastRail = lastRail->next;
-      }
-
-      lastRail->next = NULL;
-
-      nodeEdge_t *currentEdgeList = malloc(sizeof(nodeEdge_t));
-      if (currentEdgeList == NULL)
+    // add a new rail
+    if (rails == NULL) {
+      rails = malloc(sizeof(nodeRail_t));
+      if (rails == NULL)
         printf("well... rails == NULL, malloc didn't work");  // TODO: ask bernie
-      lastRail->val = currentEdgeList;
+      lastRail = rails;
+    }
+    else {
+      lastRail->next = malloc(sizeof(nodeRail_t));
+      lastRail = lastRail->next;
+    }
 
-      currentEdgeList->next = NULL;
-      currentEdgeList->val = e;
+    lastRail->next = NULL;
 
+    nodeEdge_t *currentEdgeList = nodeEdge_t_new();
+    lastRail->val = currentEdgeList;
 
-      // iterate through next edges
-      if (v1EndPoint && v2EndPoint) // but first check if there are any edges
-        continue;
+    currentEdgeList->next = NULL;
+    currentEdgeList->val = e;
 
-      BMDiskLink *diskLink;
-      if (v1EndPoint)
-        diskLink = &e->v2_disk_link;
-      else
-        diskLink = &e->v1_disk_link;
+    // iterate through next edges
+    if (v1EndPoint && v2EndPoint)  // but first check if there are any edges
+      continue;
+
+    BMDiskLink *diskLink;
+    if (v1EndPoint)
+      diskLink = &e->v2_disk_link;
+    else {
+      diskLink = &e->v1_disk_link;
+      currentEdgeList->v1AfterV2 = true;
+    }
 
       BMEdge *prev = e;
       BMEdge *current = NULL;
@@ -368,17 +388,17 @@ static Mesh *modifyMesh(struct ModifierData *md,
           break;
 
         // add edge to the rail
-        currentEdgeList->next = malloc(sizeof(nodeEdge_t));
-        if (currentEdgeList->next == NULL)
-          printf("well... currentEdgeList->next == NULL, malloc didn't work");  // TODO: ask bernie
+        currentEdgeList->next = nodeEdge_t_new();
         currentEdgeList = currentEdgeList->next;
         currentEdgeList->val = current;
         currentEdgeList->next = NULL;
 
         if (current->v1_disk_link.next == prev)
           diskLink = &current->v2_disk_link;
-        else
+        else {
           diskLink = &current->v1_disk_link;
+          currentEdgeList->v1AfterV2 = true;
+        }
         prev = current;
       }
   }
@@ -399,24 +419,23 @@ static Mesh *modifyMesh(struct ModifierData *md,
     nodeEdge_t *edgePrev = NULL;
 
     // slopeDir =  normalize(rayDir x edgeDir)
-    getSlopeDir(slopeDir1, edgeIter->val, rayDir);
+    getSlopeDir(slopeDir1, edgeIter->val, rayDir, edgeIter->v1AfterV2);
     copy_v3_v3(slopeDir2, slopeDir1);
     if (edgeIter->next != NULL) {
       // slopeDir =  normalize(rayDir x edgeDir + rayDir x next.edgeDir)
-      getSlopeDir(slopeDirNext, edgeIter->next->val, rayDir);
+      getSlopeDir(slopeDirNext, edgeIter->next->val, rayDir, edgeIter->next->v1AfterV2);
       add_v3_v3(slopeDir2, slopeDirNext);
       normalize_v3(slopeDir2);
     }
 
-    bool invert = false;
-    if (edgeIter->val->v1_disk_link.next == edgeIter->val) {
-      slopeDirv1 = slopeDir1;
-      slopeDirv2 = slopeDir2;
-    }
-    else {
+    bool invert = edgeIter->v1AfterV2;
+    if (invert) {
       slopeDirv1 = slopeDir2;
       slopeDirv2 = slopeDir1;
-      invert = true;
+    }
+    else {
+      slopeDirv1 = slopeDir1;
+      slopeDirv2 = slopeDir2;
     }
 
     BMEdge *edge1 = extrudeMain(bm, edgeIter->val->v1, rayDir, slopeDirv1, steps);
@@ -443,7 +462,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
       copy_v3_v3(slopeDir2, slopeDirNext);
       if (edgeIter->next != NULL) {
         // slopeDir =  normalize(rayDir x edgeDir + rayDir x next.edgeDir)
-        getSlopeDir(slopeDirNext, edgeIter->next->val, rayDir);
+        getSlopeDir(slopeDirNext, edgeIter->next->val, rayDir, edgeIter->next->v1AfterV2);
         add_v3_v3(slopeDir2, slopeDirNext);
         normalize_v3(slopeDir2);
       }
@@ -594,7 +613,6 @@ static Mesh *modifyMesh2(struct ModifierData *md,
   }
 
   // TODO: fix rotation on object
-  // TODO: determine normal flip somehow
 
   copy_v3_v3(mvert[0].co, pipeStart[0]);
   copy_v3_v3(mvert[1].co, pipeStart[1]);
