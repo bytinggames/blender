@@ -58,6 +58,8 @@ nodeEdge_t *nodeEdge_t_new()
 
 typedef struct nodeRail {
   nodeEdge_t *val;
+  bool ring;
+  nodeEdge_t *lastEdgeInRing;
   struct nodeRail *next;
 } nodeRail_t;
 
@@ -388,6 +390,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
     }
 
     lastRail->next = NULL;
+    lastRail->ring = false;
 
     nodeEdge_t *currentEdgeList = nodeEdge_t_new();
     lastRail->val = currentEdgeList;
@@ -411,7 +414,28 @@ static Mesh *modifyMesh(struct ModifierData *md,
       BMEdge *current = NULL;
       while (true) {
         if (diskLink->next == current) // dead end
+        {
+          // check if last vertex has the same position as the first vertex (ring detection)
+          // get last vertex
+          float *lastVertex;
+          if (currentEdgeList->v1AfterV2)
+            lastVertex = current->v1->co;
+          else
+            lastVertex = current->v2->co;
+          // get first vertex
+          float *firstVertex;
+          if (lastRail->val->v1AfterV2)
+            firstVertex = lastRail->val->val->v2->co;
+          else
+            firstVertex = lastRail->val->val->v1->co;
+
+          if (equals_v3v3(lastVertex, firstVertex)) {
+            // then a ring is detected
+            lastRail->ring = true;
+            lastRail->lastEdgeInRing = currentEdgeList;
+          }
           break;
+        }
         if (!(diskLink->next->v1_disk_link.next == diskLink->next->v1_disk_link.prev &&
             diskLink->next->v2_disk_link.next == diskLink->next->v2_disk_link.prev)) // detected branch: not allowed
           break;
@@ -449,6 +473,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
 
     nodeEdge_t *edgeIter = railIter->val;
     nodeEdge_t *edgePrev = NULL;
+    BMEdge *firstExtrudeEdge = NULL;
 
     // slopeDir =  normalize(rayDir x edgeDir)
     getSlopeDir(slopeDir1, edgeIter->val, rayDir, edgeIter->v1AfterV2);
@@ -458,6 +483,14 @@ static Mesh *modifyMesh(struct ModifierData *md,
       getSlopeDir(slopeDirNext, edgeIter->next->val, rayDir, edgeIter->next->v1AfterV2);
       add_v3_v3(slopeDir2, slopeDirNext);
       normalize_v3(slopeDir2);
+    }
+    // if it is a ring, modify the slope dir by regarding the last edge too
+    if (railIter->ring) {
+      nodeEdge_t *last = railIter->lastEdgeInRing;
+      float slopeDirLast[3];
+      getSlopeDir(slopeDirLast, last->val, rayDir, last->v1AfterV2);
+      add_v3_v3(slopeDir1, slopeDirLast);
+      normalize_v3(slopeDir1);
     }
 
     bool invert = edgeIter->v1AfterV2;
@@ -478,6 +511,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
       edge1 = edge2;
       edge2 = store;
     }
+    firstExtrudeEdge = edge1;
 
     fillMain(bm, edgeIter->val, edge1, edge2, steps);
 
@@ -492,15 +526,36 @@ static Mesh *modifyMesh(struct ModifierData *md,
         v = edgeIter->val->v1;
 
       copy_v3_v3(slopeDir2, slopeDirNext);
+      bool fillRing = false;
       if (edgeIter->next != NULL) {
         // slopeDir =  normalize(rayDir x edgeDir + rayDir x next.edgeDir)
         getSlopeDir(slopeDirNext, edgeIter->next->val, rayDir, edgeIter->next->v1AfterV2);
         add_v3_v3(slopeDir2, slopeDirNext);
         normalize_v3(slopeDir2);
       }
+      else if (railIter->ring) {
+        fillRing = true;
+      }
 
       edge1 = edge2;
-      edge2 = extrudeMain(bm, v, rayDir, slopeDir2, steps);
+      if (!fillRing)
+        edge2 = extrudeMain(bm, v, rayDir, slopeDir2, steps);
+      else {
+        edge2 = firstExtrudeEdge;  // use existing first edge instead to close the ring
+        // connect last vertex with first one (merge last to first)
+        // instead of merging, delete the last edge, and draw a new one to the first vertex
+        copy_v3_v3(v->co, edge2->v1->co);
+        BM_edge_kill(bm, edgeIter->val);
+        BM_vert_kill(bm, v);
+        BMVert *vPrev;
+        if (edgeIter->val->v1 == edgePrev->val->v1 || edgeIter->val->v1 == edgePrev->val->v2)
+          vPrev = edgeIter->val->v1;
+        else
+          vPrev = edgeIter->val->v2;
+
+        edgeIter->val = BM_edge_create(bm, vPrev, edge2->v1, NULL, BM_CREATE_NOP);
+        edgeIter->v1AfterV2 = false;
+      }
 
       fillMain(bm, edgeIter->val, edge1, edge2, steps);
 
