@@ -1,4 +1,6 @@
 
+const float growTopVertPlank = 0.1f; // grows the top plank by 10% of the distance to the ground (from the top)
+
 /** \file
  * \ingroup modifiers
  */
@@ -218,6 +220,15 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
   else
     distance -= overGroundOffset;
 
+  
+  float loweredCo[3]; // for making the top plank higher (starting the quarter a little bit deeper)
+  copy_v3_v3(loweredCo, v->co);
+  if (growTopVertPlank != 0) {
+    float growTopPlank = distance * growTopVertPlank;
+    distance -= growTopPlank;
+    loweredCo[2] -= growTopPlank;
+  }
+
   float tangentU[3];
   float tangent[3];
 
@@ -244,7 +255,7 @@ static BMEdge *extrudeMain(BMesh *bm, BMVert *v, float rayDir[3], float slopeDir
   //add_v3_v3(rayDir, tangent);
 
   float pipeCenter[3];
-  copy_v3_v3(pipeCenter, v->co);
+  copy_v3_v3(pipeCenter, loweredCo);
   add_v3_v3(pipeCenter, tangent);
   add_v3_v3(pipeCenter, solidifyThickness);
   int slopeSteps = steps - 1;
@@ -469,6 +480,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
   float store[3];
 
   nodeRail_t *railIter = rails;
+
   while (railIter != NULL) {
 
     nodeEdge_t *edgeIter = railIter->val;
@@ -562,6 +574,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
       edgePrev = edgeIter;
       edgeIter = edgeIter->next;
     }
+
 
     railIter = railIter->next;
   }
