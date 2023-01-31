@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 Blender Foundation, Joshua Leung
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 Blender Foundation, Joshua Leung. All rights reserved. */
 
 /** \file
  * \ingroup DNA
@@ -51,7 +35,7 @@ typedef struct FModifier {
   /** Pointer to modifier data. */
   void *data;
 
-  /** User-defined description for the modifier - MAX_ID_NAME-2. */
+  /** User-defined description for the modifier - `MAX_ID_NAME - 2`. */
   char name[64];
   /** Type of f-curve modifier. */
   short type;
@@ -185,7 +169,7 @@ typedef enum eFMod_Generator_Functions {
 
 /* envelope modifier - envelope data */
 typedef struct FCM_EnvelopeData {
-  /** Min/max values for envelope at this point (absolute values) . */
+  /** Min/max values for envelope at this point (absolute values). */
   float min, max;
   /** Time for that this sample-point occurs. */
   float time;
@@ -198,7 +182,7 @@ typedef struct FCM_EnvelopeData {
 
 /* envelope-like adjustment to values (for fade in/out) */
 typedef struct FMod_Envelope {
-  /** Data-points defining envelope to apply (array) . */
+  /** Data-points defining envelope to apply (array). */
   FCM_EnvelopeData *data;
   /** Number of envelope points. */
   int totvert;
@@ -210,7 +194,7 @@ typedef struct FMod_Envelope {
 } FMod_Envelope;
 
 /* cycling/repetition modifier data */
-// TODO: we can only do complete cycles...
+/* TODO: we can only do complete cycles. */
 typedef struct FMod_Cycles {
   /** Extrapolation mode to use before first keyframe. */
   short before_mode;
@@ -320,11 +304,11 @@ typedef struct DriverTarget {
   char *rna_path;
 
   /**
-   * Name of the posebone to use
-   * (for vars where DTAR_FLAG_STRUCT_REF is used) - MAX_ID_NAME-2.
+   * Name of the pose-bone to use
+   * (for vars where DTAR_FLAG_STRUCT_REF is used) - `MAX_ID_NAME - 2`.
    */
   char pchan_name[64];
-  /** Transform channel index (for DVAR_TYPE_TRANSFORM_CHAN.)*/
+  /** Transform channel index (for #DVAR_TYPE_TRANSFORM_CHAN). */
   short transChan;
 
   /** Rotation channel calculation type. */
@@ -348,7 +332,7 @@ typedef enum eDriverTarget_Flag {
   /** idtype can only be 'Object' */
   DTAR_FLAG_ID_OB_ONLY = (1 << 1),
 
-  /* "localspace" flags */
+  /* "local-space" flags. */
   /** base flag - basically "pre parent+constraints" */
   DTAR_FLAG_LOCALSPACE = (1 << 2),
   /** include constraints transformed to space including parents */
@@ -418,7 +402,7 @@ typedef struct DriverVar {
 
   /**
    * Name of the variable to use in py-expression
-   * (must be valid python identifier) - MAX_ID_NAME-2.
+   * (must be valid python identifier) - `MAX_ID_NAME - 2`.
    */
   char name[64];
 
@@ -543,7 +527,7 @@ typedef enum eDriver_Types {
 
 /** Driver flags. */
 typedef enum eDriver_Flags {
-  /** Driver has invalid settings (internal flag)  */
+  /** Driver has invalid settings (internal flag). */
   DRIVER_FLAG_INVALID = (1 << 0),
   DRIVER_FLAG_DEPRECATED = (1 << 1),
   /** Driver does replace value, but overrides (for layering of animation over driver) */
@@ -647,20 +631,21 @@ typedef struct FCurve {
 
 /* user-editable flags/settings */
 typedef enum eFCurve_Flags {
-  /** curve/keyframes are visible in editor */
+  /** Curve/keyframes are visible in editor */
   FCURVE_VISIBLE = (1 << 0),
-  /** curve is selected for editing  */
+  /** Curve is selected for editing. */
   FCURVE_SELECTED = (1 << 1),
-  /** curve is active one */
+  /** Curve is active one. */
   FCURVE_ACTIVE = (1 << 2),
-  /** keyframes (beztriples) cannot be edited */
+  /** Keyframes (beztriples) cannot be edited. */
   FCURVE_PROTECTED = (1 << 3),
-  /** fcurve will not be evaluated for the next round */
+  /** FCurve will not be evaluated for the next round. */
   FCURVE_MUTED = (1 << 4),
 
+#ifdef DNA_DEPRECATED_ALLOW
   /** fcurve uses 'auto-handles', which stay horizontal... */
-  // DEPRECATED
-  FCURVE_AUTO_HANDLES = (1 << 5),
+  FCURVE_AUTO_HANDLES = (1 << 5), /* Dirty. */
+#endif
   FCURVE_MOD_OFF = (1 << 6),
   /** skip evaluation, as RNA-path cannot be resolved
    * (similar to muting, but cannot be set by user) */
@@ -677,9 +662,9 @@ typedef enum eFCurve_Flags {
 
 /* extrapolation modes (only simple value 'extending') */
 typedef enum eFCurve_Extend {
-  /** just extend min/max keyframe value  */
+  /** Just extend min/max keyframe value. */
   FCURVE_EXTRAPOLATE_CONSTANT = 0,
-  /** just extend gradient of segment between first segment keyframes */
+  /** Just extend gradient of segment between first segment keyframes. */
   FCURVE_EXTRAPOLATE_LINEAR,
 } eFCurve_Extend;
 
@@ -734,7 +719,7 @@ typedef struct NlaStrip {
   /** F-Curve modifiers to be applied to the entire strip's referenced F-Curves. */
   ListBase modifiers;
 
-  /** User-Visible Identifier for Strip - MAX_ID_NAME-2. */
+  /** User-Visible Identifier for Strip - `MAX_ID_NAME - 2`. */
   char name[64];
 
   /** Influence of strip. */
@@ -786,7 +771,7 @@ typedef enum eNlaStrip_Blend_Mode {
   NLASTRIP_MODE_COMBINE,
 } eNlaStrip_Blend_Mode;
 
-/** NLA Strip Extrpolation Mode. */
+/** NLA Strip Extrapolation Mode. */
 typedef enum eNlaStrip_Extrapolate_Mode {
   /* extend before first frame if no previous strips in track,
    * and always hold+extend last frame */
@@ -873,7 +858,7 @@ typedef struct NlaTrack {
    * \note not really useful, but we need a '_pad' var anyways! */
   int index;
 
-  /** Short user-description of this track - MAX_ID_NAME-2. */
+  /** Short user-description of this track - `MAX_ID_NAME - 2`. */
   char name[64];
 } NlaTrack;
 
@@ -917,7 +902,7 @@ typedef struct KS_Path {
 
   /** ID block that keyframes are for. */
   ID *id;
-  /** Name of the group to add to - MAX_ID_NAME-2. */
+  /** Name of the group to add to - `MAX_ID_NAME - 2`. */
   char group[64];
 
   /** ID-type that path can be used on. */
@@ -933,9 +918,9 @@ typedef struct KS_Path {
   /** Index that path affects. */
   int array_index;
 
-  /** (eInsertKeyFlags) settings to supply insertkey() with. */
+  /** (#eInsertKeyFlags) settings to supply insert-key() with. */
   short keyingflag;
-  /** (eInsertKeyFlags) for each flag set, the relevant keyingflag bit overrides the default. */
+  /** (#eInsertKeyFlags) for each flag set, the relevant keying-flag bit overrides the default. */
   short keyingoverride;
 } KS_Path;
 
@@ -977,13 +962,13 @@ typedef struct KeyingSet {
   /** (KS_Path) paths to keyframe to. */
   ListBase paths;
 
-  /** Unique name (for search, etc.) - MAX_ID_NAME-2 . */
+  /** Unique name (for search, etc.) - `MAX_ID_NAME - 2`. */
   char idname[64];
-  /** User-viewable name for KeyingSet (for menus, etc.) - MAX_ID_NAME-2. */
+  /** User-viewable name for KeyingSet (for menus, etc.) - `MAX_ID_NAME - 2`. */
   char name[64];
   /** (RNA_DYN_DESCR_MAX) short help text. */
   char description[240];
-  /** Name of the typeinfo data used for the relative paths - MAX_ID_NAME-2. */
+  /** Name of the typeinfo data used for the relative paths - `MAX_ID_NAME - 2`. */
   char typeinfo[64];
 
   /** Index of the active path. */
@@ -1143,6 +1128,8 @@ typedef enum eAnimData_Flag {
   ADT_NLA_EDIT_NOMAP = (1 << 3),
   /** NLA-Strip F-Curves are expanded in UI. */
   ADT_NLA_SKEYS_COLLAPSED = (1 << 4),
+  /* Evaluate tracks above tweaked strip. Only relevant in tweak mode. */
+  ADT_NLA_EVAL_UPPER_TRACKS = (1 << 5),
 
   /** Drivers expanded in UI. */
   ADT_DRIVERS_COLLAPSED = (1 << 10),
@@ -1172,6 +1159,9 @@ typedef struct IdAdtTemplate {
   ID id;
   AnimData *adt;
 } IdAdtTemplate;
+
+/* From: `DNA_object_types.h`, see it's doc-string there. */
+#define SELECT 1
 
 /* ************************************************ */
 

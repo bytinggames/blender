@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -53,6 +39,8 @@
 #  include "BKE_node.h"
 #  include "BKE_scene.h"
 
+#  include "NOD_composite.h"
+
 #  include "BLI_listbase.h"
 
 #  include "DEG_depsgraph_build.h"
@@ -62,8 +50,10 @@
 
 static PointerRNA rna_ViewLayer_active_layer_collection_get(PointerRNA *ptr)
 {
+  const Scene *scene = (const Scene *)ptr->owner_id;
   ViewLayer *view_layer = (ViewLayer *)ptr->data;
-  LayerCollection *lc = view_layer->active_collection;
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  LayerCollection *lc = BKE_view_layer_active_collection_get(view_layer);
   return rna_pointer_inherit_refine(ptr, &RNA_LayerCollection, lc);
 }
 
@@ -71,8 +61,10 @@ static void rna_ViewLayer_active_layer_collection_set(PointerRNA *ptr,
                                                       PointerRNA value,
                                                       struct ReportList *UNUSED(reports))
 {
+  const Scene *scene = (const Scene *)ptr->owner_id;
   ViewLayer *view_layer = (ViewLayer *)ptr->data;
   LayerCollection *lc = (LayerCollection *)value.data;
+  BKE_view_layer_synced_ensure(scene, view_layer);
   const int index = BKE_layer_collection_findindex(view_layer, lc);
   if (index != -1) {
     BKE_layer_collection_activate(view_layer, lc);
@@ -81,18 +73,22 @@ static void rna_ViewLayer_active_layer_collection_set(PointerRNA *ptr,
 
 static PointerRNA rna_LayerObjects_active_object_get(PointerRNA *ptr)
 {
+  const Scene *scene = (Scene *)ptr->owner_id;
   ViewLayer *view_layer = (ViewLayer *)ptr->data;
+  BKE_view_layer_synced_ensure(scene, view_layer);
   return rna_pointer_inherit_refine(
-      ptr, &RNA_Object, view_layer->basact ? view_layer->basact->object : NULL);
+      ptr, &RNA_Object, BKE_view_layer_active_object_get(view_layer));
 }
 
 static void rna_LayerObjects_active_object_set(PointerRNA *ptr,
                                                PointerRNA value,
                                                struct ReportList *reports)
 {
+  const Scene *scene = (Scene *)ptr->owner_id;
   ViewLayer *view_layer = (ViewLayer *)ptr->data;
   if (value.data) {
     Object *ob = value.data;
+    BKE_view_layer_synced_ensure(scene, view_layer);
     Base *basact_test = BKE_view_layer_base_find(view_layer, ob);
     if (basact_test != NULL) {
       view_layer->basact = basact_test;
@@ -110,25 +106,30 @@ static void rna_LayerObjects_active_object_set(PointerRNA *ptr,
   }
 }
 
-static char *rna_ViewLayer_path(PointerRNA *ptr)
+size_t rna_ViewLayer_path_buffer_get(const ViewLayer *view_layer,
+                                     char *r_rna_path,
+                                     const size_t rna_path_buffer_size)
 {
-  ViewLayer *srl = (ViewLayer *)ptr->data;
-  char name_esc[sizeof(srl->name) * 2];
+  char name_esc[sizeof(view_layer->name) * 2];
+  BLI_str_escape(name_esc, view_layer->name, sizeof(name_esc));
 
-  BLI_str_escape(name_esc, srl->name, sizeof(name_esc));
-  return BLI_sprintfN("view_layers[\"%s\"]", name_esc);
+  return BLI_snprintf_rlen(r_rna_path, rna_path_buffer_size, "view_layers[\"%s\"]", name_esc);
 }
 
-static IDProperty *rna_ViewLayer_idprops(PointerRNA *ptr, bool create)
+static char *rna_ViewLayer_path(const PointerRNA *ptr)
+{
+  const ViewLayer *view_layer = (ViewLayer *)ptr->data;
+  char rna_path[sizeof(view_layer->name) * 3];
+
+  rna_ViewLayer_path_buffer_get(view_layer, rna_path, sizeof(rna_path));
+
+  return BLI_strdup(rna_path);
+}
+
+static IDProperty **rna_ViewLayer_idprops(PointerRNA *ptr)
 {
   ViewLayer *view_layer = (ViewLayer *)ptr->data;
-
-  if (create && !view_layer->id_properties) {
-    IDPropertyTemplate val = {0};
-    view_layer->id_properties = IDP_New(IDP_GROUP, &val, "ViewLayer ID properties");
-  }
-
-  return view_layer->id_properties;
+  return &view_layer->id_properties;
 }
 
 static bool rna_LayerCollection_visible_get(LayerCollection *layer_collection, bContext *C)
@@ -140,7 +141,7 @@ static bool rna_LayerCollection_visible_get(LayerCollection *layer_collection, b
   }
 
   if (v3d->local_collections_uuid & layer_collection->local_collections_bits) {
-    return (layer_collection->runtime_flag & LAYER_COLLECTION_RESTRICT_VIEWPORT) == 0;
+    return (layer_collection->runtime_flag & LAYER_COLLECTION_HIDE_VIEWPORT) == 0;
   }
 
   return false;
@@ -204,7 +205,7 @@ static void rna_LayerObjects_selected_begin(CollectionPropertyIterator *iter, Po
 {
   ViewLayer *view_layer = (ViewLayer *)ptr->data;
   rna_iterator_listbase_begin(
-      iter, &view_layer->object_bases, rna_ViewLayer_objects_selected_skip);
+      iter, BKE_view_layer_object_bases_get(view_layer), rna_ViewLayer_objects_selected_skip);
 }
 
 static void rna_ViewLayer_update_tagged(ID *id_ptr,
@@ -252,7 +253,7 @@ static void rna_ObjectBase_hide_viewport_update(bContext *C, PointerRNA *UNUSED(
 {
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  BKE_layer_collection_sync(scene, view_layer);
+  BKE_view_layer_need_resync_tag(view_layer);
   DEG_id_tag_update(&scene->id, ID_RECALC_BASE_FLAGS);
   WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 }
@@ -316,13 +317,13 @@ static void rna_LayerCollection_exclude_update(Main *bmain, Scene *UNUSED(scene)
   const bool exclude = (lc->flag & LAYER_COLLECTION_EXCLUDE) != 0;
   BKE_layer_collection_set_flag(lc, LAYER_COLLECTION_EXCLUDE, exclude);
 
-  BKE_layer_collection_sync(scene, view_layer);
+  BKE_view_layer_need_resync_tag(view_layer);
 
   DEG_id_tag_update(&scene->id, ID_RECALC_BASE_FLAGS);
   if (!exclude) {
     /* We need to update animation of objects added back to the scene through enabling this view
      * layer. */
-    FOREACH_OBJECT_BEGIN (view_layer, ob) {
+    FOREACH_OBJECT_BEGIN (scene, view_layer, ob) {
       DEG_id_tag_update(&ob->id, ID_RECALC_ANIMATION);
     }
     FOREACH_OBJECT_END;
@@ -341,11 +342,12 @@ static void rna_LayerCollection_update(Main *UNUSED(bmain), Scene *UNUSED(scene)
   LayerCollection *lc = (LayerCollection *)ptr->data;
   ViewLayer *view_layer = BKE_view_layer_find_from_collection(scene, lc);
 
-  BKE_layer_collection_sync(scene, view_layer);
+  BKE_view_layer_need_resync_tag(view_layer);
 
   DEG_id_tag_update(&scene->id, ID_RECALC_BASE_FLAGS);
 
   WM_main_add_notifier(NC_SCENE | ND_LAYER_CONTENT, NULL);
+  WM_main_add_notifier(NC_IMAGE | ND_LAYER_CONTENT, NULL);
 }
 
 static bool rna_LayerCollection_has_objects(LayerCollection *lc)
@@ -353,9 +355,63 @@ static bool rna_LayerCollection_has_objects(LayerCollection *lc)
   return (lc->runtime_flag & LAYER_COLLECTION_HAS_OBJECTS) != 0;
 }
 
-static bool rna_LayerCollection_has_selected_objects(LayerCollection *lc, ViewLayer *view_layer)
+static bool rna_LayerCollection_has_selected_objects(LayerCollection *lc,
+                                                     Main *bmain,
+                                                     ViewLayer *view_layer)
 {
-  return BKE_layer_collection_has_selected_objects(view_layer, lc);
+  LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
+    LISTBASE_FOREACH (ViewLayer *, scene_view_layer, &scene->view_layers) {
+      if (scene_view_layer == view_layer) {
+        return BKE_layer_collection_has_selected_objects(scene, view_layer, lc);
+      }
+    }
+  }
+  return false;
+}
+
+void rna_LayerCollection_children_begin(CollectionPropertyIterator *iter, PointerRNA *ptr)
+{
+  Scene *scene = (Scene *)ptr->owner_id;
+  LayerCollection *lc = (LayerCollection *)ptr->data;
+  ViewLayer *view_layer = BKE_view_layer_find_from_collection(scene, lc);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+
+  rna_iterator_listbase_begin(iter, &lc->layer_collections, NULL);
+}
+
+static bool rna_LayerCollection_children_lookupint(struct PointerRNA *ptr,
+                                                   int key,
+                                                   struct PointerRNA *r_ptr)
+{
+  Scene *scene = (Scene *)ptr->owner_id;
+  LayerCollection *lc = (LayerCollection *)ptr->data;
+  ViewLayer *view_layer = BKE_view_layer_find_from_collection(scene, lc);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+
+  LayerCollection *child = BLI_findlink(&lc->layer_collections, key);
+  if (!child) {
+    return false;
+  }
+  RNA_pointer_create(ptr->owner_id, &RNA_LayerCollection, child, r_ptr);
+  return true;
+}
+
+static bool rna_LayerCollection_children_lookupstring(struct PointerRNA *ptr,
+                                                      const char *key,
+                                                      struct PointerRNA *r_ptr)
+{
+  Scene *scene = (Scene *)ptr->owner_id;
+  LayerCollection *lc = (LayerCollection *)ptr->data;
+  ViewLayer *view_layer = BKE_view_layer_find_from_collection(scene, lc);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+
+  LISTBASE_FOREACH (LayerCollection *, child, &lc->layer_collections) {
+    if (STREQ(child->collection->id.name + 2, key)) {
+      RNA_pointer_create(ptr->owner_id, &RNA_LayerCollection, child, r_ptr);
+      return true;
+    }
+  }
+  return false;
 }
 
 #else
@@ -388,6 +444,15 @@ static void rna_def_layer_collection(BlenderRNA *brna)
   RNA_def_property_collection_sdna(prop, NULL, "layer_collections", NULL);
   RNA_def_property_struct_type(prop, "LayerCollection");
   RNA_def_property_ui_text(prop, "Children", "Child layer collections");
+  RNA_def_property_collection_funcs(prop,
+                                    "rna_LayerCollection_children_begin",
+                                    NULL,
+                                    NULL,
+                                    NULL,
+                                    NULL,
+                                    "rna_LayerCollection_children_lookupint",
+                                    "rna_LayerCollection_children_lookupstring",
+                                    NULL);
 
   /* Restriction flags. */
   prop = RNA_def_property(srna, "exclude", PROP_BOOLEAN, PROP_NONE);
@@ -448,6 +513,7 @@ static void rna_def_layer_collection(BlenderRNA *brna)
 
   func = RNA_def_function(
       srna, "has_selected_objects", "rna_LayerCollection_has_selected_objects");
+  RNA_def_function_flag(func, FUNC_USE_MAIN);
   RNA_def_function_ui_description(func, "");
   prop = RNA_def_pointer(
       func, "view_layer", "ViewLayer", "", "View layer the layer collection belongs to");
@@ -604,7 +670,7 @@ void RNA_def_view_layer(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Dependency Graph", "Dependencies in the scene data");
   RNA_def_property_pointer_funcs(prop, "rna_ViewLayer_depsgraph_get", NULL, NULL, NULL);
 
-  /* Nested Data  */
+  /* Nested Data. */
   /* *** Non-Animated *** */
   RNA_define_animate_sdna(false);
   rna_def_layer_collection(brna);

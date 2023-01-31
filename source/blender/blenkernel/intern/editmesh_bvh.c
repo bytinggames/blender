@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2010 by Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2010 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -117,7 +101,7 @@ BMBVHTree *BKE_bmbvh_new_ex(BMesh *bm,
 
   for (int i = 0; i < looptris_tot; i++) {
     if (test_fn) {
-      /* note, the arrays wont align now! take care */
+      /* NOTE: the arrays won't align now! Take care. */
       f_test = looptris[i][0]->f;
       if (f_test != f_test_prev) {
         test_fn_ret = test_fn(f_test, user_data);
@@ -221,7 +205,7 @@ static void bmbvh_tri_from_face(const float *cos[3],
   }
 }
 
-/* taken from bvhutils.c */
+/* Taken from `bvhutils.c`. */
 
 /* -------------------------------------------------------------------- */
 /* BKE_bmbvh_ray_cast */
@@ -565,12 +549,9 @@ static bool bmbvh_overlap_cb(void *userdata, int index_a, int index_b, int UNUSE
           ((verts_shared == 0) || (len_squared_v3v3(ix_pair[0], ix_pair[1]) > data->epsilon)));
 }
 
-/**
- * Overlap indices reference the looptri's
- */
 BVHTreeOverlap *BKE_bmbvh_overlap(const BMBVHTree *bmtree_a,
                                   const BMBVHTree *bmtree_b,
-                                  unsigned int *r_overlap_tot)
+                                  uint *r_overlap_tot)
 {
   struct BMBVHTree_OverlapData data;
 
@@ -591,10 +572,7 @@ static bool bmbvh_overlap_self_cb(void *userdata, int index_a, int index_b, int 
   return false;
 }
 
-/**
- * Overlap indices reference the looptri's
- */
-BVHTreeOverlap *BKE_bmbvh_overlap_self(const BMBVHTree *bmtree, unsigned int *r_overlap_tot)
+BVHTreeOverlap *BKE_bmbvh_overlap_self(const BMBVHTree *bmtree, uint *r_overlap_tot)
 {
   struct BMBVHTree_OverlapData data;
 

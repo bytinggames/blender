@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup sptext
@@ -32,6 +16,7 @@
 #include "BKE_context.h"
 #include "BKE_global.h"
 #include "BKE_lib_id.h"
+#include "BKE_lib_remap.h"
 #include "BKE_screen.h"
 
 #include "ED_screen.h"
@@ -44,7 +29,10 @@
 #include "UI_resources.h"
 #include "UI_view2d.h"
 
+#include "BLO_read_write.h"
+
 #include "RNA_access.h"
+#include "RNA_path.h"
 
 #include "text_format.h"
 #include "text_intern.h" /* own include */
@@ -123,7 +111,7 @@ static SpaceLink *text_duplicate(SpaceLink *sl)
 static void text_listener(const wmSpaceTypeListenerParams *params)
 {
   ScrArea *area = params->area;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
   SpaceText *st = area->spacedata.first;
 
   /* context changes */
@@ -302,7 +290,7 @@ static void text_cursor(wmWindow *win, ScrArea *area, ARegion *region)
   int wmcursor = WM_CURSOR_TEXT_EDIT;
 
   if (st->text && BLI_rcti_isect_pt(&st->runtime.scroll_region_handle,
-                                    win->eventstate->x - region->winrct.xmin,
+                                    win->eventstate->xy[0] - region->winrct.xmin,
                                     st->runtime.scroll_region_handle.ymin)) {
     wmcursor = WM_CURSOR_DEFAULT;
   }
@@ -312,10 +300,7 @@ static void text_cursor(wmWindow *win, ScrArea *area, ARegion *region)
 
 /* ************* dropboxes ************* */
 
-static bool text_drop_poll(bContext *UNUSED(C),
-                           wmDrag *drag,
-                           const wmEvent *UNUSED(event),
-                           const char **UNUSED(r_tooltip))
+static bool text_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event))
 {
   if (drag->type == WM_DRAG_PATH) {
     /* rule might not work? */
@@ -326,27 +311,24 @@ static bool text_drop_poll(bContext *UNUSED(C),
   return false;
 }
 
-static void text_drop_copy(wmDrag *drag, wmDropBox *drop)
+static void text_drop_copy(bContext *UNUSED(C), wmDrag *drag, wmDropBox *drop)
 {
   /* copy drag path to properties */
   RNA_string_set(drop->ptr, "filepath", drag->path);
 }
 
-static bool text_drop_paste_poll(bContext *UNUSED(C),
-                                 wmDrag *drag,
-                                 const wmEvent *UNUSED(event),
-                                 const char **UNUSED(r_tooltip))
+static bool text_drop_paste_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event))
 {
   return (drag->type == WM_DRAG_ID);
 }
 
-static void text_drop_paste(wmDrag *drag, wmDropBox *drop)
+static void text_drop_paste(bContext *UNUSED(C), wmDrag *drag, wmDropBox *drop)
 {
   char *text;
   ID *id = WM_drag_get_local_ID(drag, 0);
 
   /* copy drag path to properties */
-  text = RNA_path_full_ID_py(G_MAIN, id);
+  text = RNA_path_full_ID_py(id);
   RNA_string_set(drop->ptr, "text", text);
   MEM_freeN(text);
 }
@@ -356,8 +338,8 @@ static void text_dropboxes(void)
 {
   ListBase *lb = WM_dropboxmap_find("Text", SPACE_TEXT, RGN_TYPE_WINDOW);
 
-  WM_dropbox_add(lb, "TEXT_OT_open", text_drop_poll, text_drop_copy, NULL);
-  WM_dropbox_add(lb, "TEXT_OT_insert", text_drop_paste_poll, text_drop_paste, NULL);
+  WM_dropbox_add(lb, "TEXT_OT_open", text_drop_poll, text_drop_copy, NULL, NULL);
+  WM_dropbox_add(lb, "TEXT_OT_insert", text_drop_paste_poll, text_drop_paste, NULL, NULL);
 }
 
 /* ************* end drop *********** */
@@ -407,30 +389,40 @@ static void text_properties_region_draw(const bContext *C, ARegion *region)
   }
 }
 
-static void text_id_remap(ScrArea *UNUSED(area), SpaceLink *slink, ID *old_id, ID *new_id)
+static void text_id_remap(ScrArea *UNUSED(area),
+                          SpaceLink *slink,
+                          const struct IDRemapper *mappings)
 {
   SpaceText *stext = (SpaceText *)slink;
+  BKE_id_remapper_apply(mappings, (ID **)&stext->text, ID_REMAP_APPLY_ENSURE_REAL);
+}
 
-  if (!ELEM(GS(old_id->name), ID_TXT)) {
-    return;
-  }
+static void text_blend_read_data(BlendDataReader *UNUSED(reader), SpaceLink *sl)
+{
+  SpaceText *st = (SpaceText *)sl;
+  memset(&st->runtime, 0x0, sizeof(st->runtime));
+}
 
-  if ((ID *)stext->text == old_id) {
-    stext->text = (Text *)new_id;
-    id_us_ensure_real(new_id);
-  }
+static void text_blend_read_lib(BlendLibReader *reader, ID *parent_id, SpaceLink *sl)
+{
+  SpaceText *st = (SpaceText *)sl;
+  BLO_read_id_address(reader, parent_id->lib, &st->text);
+}
+
+static void text_blend_write(BlendWriter *writer, SpaceLink *sl)
+{
+  BLO_write_struct(writer, SpaceText, sl);
 }
 
 /********************* registration ********************/
 
-/* only called once, from space/spacetypes.c */
 void ED_spacetype_text(void)
 {
   SpaceType *st = MEM_callocN(sizeof(SpaceType), "spacetype text");
   ARegionType *art;
 
   st->spaceid = SPACE_TEXT;
-  strncpy(st->name, "Text", BKE_ST_MAXNAME);
+  STRNCPY(st->name, "Text");
 
   st->create = text_create;
   st->free = text_free;
@@ -442,6 +434,9 @@ void ED_spacetype_text(void)
   st->context = text_context;
   st->dropboxes = text_dropboxes;
   st->id_remap = text_id_remap;
+  st->blend_read_data = text_blend_read_data;
+  st->blend_read_lib = text_blend_read_lib;
+  st->blend_write = text_blend_write;
 
   /* regions: main window */
   art = MEM_callocN(sizeof(ARegionType), "spacetype text region");

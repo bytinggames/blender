@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # This script updates icons from the SVG file
 import os
@@ -6,15 +7,25 @@ import subprocess
 import sys
 
 
-def run(cmd):
+def run(cmd, *, env=None):
     print("   ", " ".join(cmd))
-    subprocess.check_call(cmd)
+    subprocess.check_call(cmd, env=env)
 
 
 BASEDIR = os.path.abspath(os.path.dirname(__file__))
 
-inkscape_bin = os.environ.get("INKSCAPE_BIN", "inkscape")
-blender_bin = os.environ.get("BLENDER_BIN", "blender")
+env = {}
+# Developers may have ASAN enabled, avoid non-zero exit codes.
+env["ASAN_OPTIONS"] = "exitcode=0:" + os.environ.get("ASAN_OPTIONS", "")
+
+# These NEED to be set on windows for python to initialize properly.
+if sys.platform[:3] == "win":
+    env["PATHEXT"] = os.environ.get("PATHEXT", "")
+    env["SystemDrive"] = os.environ.get("SystemDrive", "")
+    env["SystemRoot"] = os.environ.get("SystemRoot", "")
+
+inkscape_bin = "inkscape"
+blender_bin = "blender"
 
 if sys.platform == 'darwin':
     inkscape_app_path = '/Applications/Inkscape.app/Contents/MacOS/inkscape'
@@ -23,6 +34,11 @@ if sys.platform == 'darwin':
     blender_app_path = '/Applications/Blender.app/Contents/MacOS/Blender'
     if os.path.exists(blender_app_path):
         blender_bin = blender_app_path
+    else:
+        blender_bin = "Blender"
+
+inkscape_bin = os.environ.get("INKSCAPE_BIN", inkscape_bin)
+blender_bin = os.environ.get("BLENDER_BIN", blender_bin)
 
 cmd = (
     inkscape_bin,
@@ -32,7 +48,7 @@ cmd = (
     "--export-type=png",
     "--export-filename=" + os.path.join(BASEDIR, "blender_icons16.png"),
 )
-run(cmd)
+run(cmd, env=env)
 
 cmd = (
     inkscape_bin,
@@ -42,7 +58,7 @@ cmd = (
     "--export-type=png",
     "--export-filename=" + os.path.join(BASEDIR, "blender_icons32.png"),
 )
-run(cmd)
+run(cmd, env=env)
 
 
 # For testing it can be good to clear all old
@@ -64,7 +80,7 @@ cmd = (
     "--minx_icon", "2", "--maxx_icon", "2", "--miny_icon", "2", "--maxy_icon", "2",
     "--spacex_icon", "1", "--spacey_icon", "1",
 )
-run(cmd)
+run(cmd, env=env)
 
 cmd = (
     blender_bin, "--background", "--factory-startup", "-noaudio",
@@ -78,7 +94,7 @@ cmd = (
     "--minx_icon", "4", "--maxx_icon", "4", "--miny_icon", "4", "--maxy_icon", "4",
     "--spacex_icon", "2", "--spacey_icon", "2",
 )
-run(cmd)
+run(cmd, env=env)
 
 os.remove(os.path.join(BASEDIR, "blender_icons16.png"))
 os.remove(os.path.join(BASEDIR, "blender_icons32.png"))

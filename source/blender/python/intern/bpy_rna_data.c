@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pythonintern
@@ -35,13 +21,14 @@
 #include "BKE_main.h"
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "bpy_rna.h"
 #include "bpy_rna_data.h"
 
 typedef struct {
-  PyObject_HEAD /* required python macro */
-      BPy_StructRNA *data_rna;
+  PyObject_HEAD /* Required Python macro. */
+  BPy_StructRNA *data_rna;
   char filepath[1024];
 } BPy_DataContext;
 
@@ -99,7 +86,7 @@ static PyTypeObject bpy_rna_data_context_Type = {
     NULL, /* ternaryfunc tp_call; */
     NULL, /* reprfunc tp_str; */
 
-    /* will only use these if this is a subtype of a py class */
+    /* Will only use these if this is a sub-type of a Python class. */
     NULL, /* getattrofunc tp_getattro; */
     NULL, /* setattrofunc tp_setattro; */
 
@@ -141,12 +128,12 @@ static PyTypeObject bpy_rna_data_context_Type = {
     NULL,                         /* allocfunc tp_alloc; */
     NULL,                         /* newfunc tp_new; */
     /*  Low-level free-memory routine */
-    NULL, /* freefunc tp_free;  */
+    NULL, /* freefunc tp_free; */
     /* For PyObject_IS_GC */
-    NULL, /* inquiry tp_is_gc;  */
+    NULL, /* inquiry tp_is_gc; */
     NULL, /* PyObject *tp_bases; */
     /* method resolution order */
-    NULL, /* PyObject *tp_mro;  */
+    NULL, /* PyObject *tp_mro; */
     NULL, /* PyObject *tp_cache; */
     NULL, /* PyObject *tp_subclasses; */
     NULL, /* PyObject *tp_weaklist; */
@@ -170,14 +157,20 @@ static PyObject *bpy_rna_data_temp_data(PyObject *UNUSED(self), PyObject *args, 
   BPy_DataContext *ret;
   const char *filepath = NULL;
   static const char *_keywords[] = {"filepath", NULL};
-  static _PyArg_Parser _parser = {"|$z:temp_data", _keywords, 0};
+  static _PyArg_Parser _parser = {
+      "|$" /* Optional keyword only arguments. */
+      "z"  /* `filepath` */
+      ":temp_data",
+      _keywords,
+      0,
+  };
   if (!_PyArg_ParseTupleAndKeywordsFast(args, kw, &_parser, &filepath)) {
     return NULL;
   }
 
   ret = PyObject_GC_New(BPy_DataContext, &bpy_rna_data_context_Type);
 
-  STRNCPY(ret->filepath, filepath ? filepath : G_MAIN->name);
+  STRNCPY(ret->filepath, filepath ? filepath : G_MAIN->filepath);
 
   return (PyObject *)ret;
 }
@@ -190,6 +183,7 @@ static PyObject *bpy_rna_data_context_enter(BPy_DataContext *self)
 
   self->data_rna = (BPy_StructRNA *)pyrna_struct_CreatePyObject(&ptr);
 
+  BLI_assert(!PyObject_GC_IsTracked((PyObject *)self));
   PyObject_GC_Track(self);
 
   return (PyObject *)self->data_rna;

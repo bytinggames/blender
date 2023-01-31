@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edmesh
@@ -67,11 +53,14 @@ static void edbm_selectmode_ensure(Scene *scene, BMEditMesh *em, short selectmod
 }
 
 /* Could make public, for now just keep here. */
-static void edbm_flag_disable_all_multi(ViewLayer *view_layer, View3D *v3d, const char hflag)
+static void edbm_flag_disable_all_multi(const Scene *scene,
+                                        ViewLayer *view_layer,
+                                        View3D *v3d,
+                                        const char hflag)
 {
   uint objects_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, v3d, &objects_len);
+      scene, view_layer, v3d, &objects_len);
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *ob_iter = objects[ob_index];
     BMEditMesh *em_iter = BKE_editmesh_from_object(ob_iter);
@@ -84,11 +73,11 @@ static void edbm_flag_disable_all_multi(ViewLayer *view_layer, View3D *v3d, cons
   MEM_freeN(objects);
 }
 
-/* When accessed as a tool, get the active edge from the preselection gizmo. */
+/** When accessed as a tool, get the active edge from the pre-selection gizmo. */
 static bool edbm_preselect_or_active(bContext *C, const View3D *v3d, Base **r_base, BMElem **r_ele)
 {
   ARegion *region = CTX_wm_region(C);
-  const bool show_gizmo = !((v3d->gizmo_flag & (V3D_GIZMO_HIDE | V3D_GIZMO_HIDE_TOOL)));
+  const bool show_gizmo = !(v3d->gizmo_flag & (V3D_GIZMO_HIDE | V3D_GIZMO_HIDE_TOOL));
 
   wmGizmoMap *gzmap = show_gizmo ? region->gizmo_map : NULL;
   wmGizmoGroup *gzgroup = gzmap ? WM_gizmomap_group_find(gzmap, "VIEW3D_GGT_mesh_preselect_elem") :
@@ -98,8 +87,10 @@ static bool edbm_preselect_or_active(bContext *C, const View3D *v3d, Base **r_ba
     ED_view3d_gizmo_mesh_preselect_get_active(C, gz, r_base, r_ele);
   }
   else {
+    const Scene *scene = CTX_data_scene(C);
     ViewLayer *view_layer = CTX_data_view_layer(C);
-    Base *base = view_layer->basact;
+    BKE_view_layer_synced_ensure(scene, view_layer);
+    Base *base = BKE_view_layer_active_base_get(view_layer);
     Object *obedit = base->object;
     BMEditMesh *em = BKE_editmesh_from_object(obedit);
     BMesh *bm = em->bm;
@@ -133,7 +124,7 @@ static int edbm_polybuild_transform_at_cursor_invoke(bContext *C,
   BMEditMesh *em = vc.em;
   BMesh *bm = em->bm;
 
-  invert_m4_m4(vc.obedit->imat, vc.obedit->obmat);
+  invert_m4_m4(vc.obedit->world_to_object, vc.obedit->object_to_world);
   ED_view3d_init_mats_rv3d(vc.obedit, vc.rv3d);
 
   if (!ele_act) {
@@ -142,7 +133,7 @@ static int edbm_polybuild_transform_at_cursor_invoke(bContext *C,
 
   edbm_selectmode_ensure(vc.scene, vc.em, SCE_SELECT_VERTEX);
 
-  edbm_flag_disable_all_multi(vc.view_layer, vc.v3d, BM_ELEM_SELECT);
+  edbm_flag_disable_all_multi(vc.scene, vc.view_layer, vc.v3d, BM_ELEM_SELECT);
 
   if (ele_act->head.htype == BM_VERT) {
     BM_vert_select_set(bm, (BMVert *)ele_act, true);
@@ -154,10 +145,15 @@ static int edbm_polybuild_transform_at_cursor_invoke(bContext *C,
     BM_face_select_set(bm, (BMFace *)ele_act, true);
   }
 
-  EDBM_mesh_normals_update(em);
-  EDBM_update_generic(vc.obedit->data, true, true);
+  EDBM_update(vc.obedit->data,
+              &(const struct EDBMUpdate_Params){
+                  .calc_looptri = true,
+                  .calc_normals = true,
+                  .is_destructive = true,
+              });
   if (basact != NULL) {
-    if (vc.view_layer->basact != basact) {
+    BKE_view_layer_synced_ensure(vc.scene, vc.view_layer);
+    if (BKE_view_layer_active_base_get(vc.view_layer) != basact) {
       ED_object_base_activate(C, basact);
     }
   }
@@ -196,7 +192,7 @@ static int edbm_polybuild_delete_at_cursor_invoke(bContext *C,
   BMEditMesh *em = vc.em;
   BMesh *bm = em->bm;
 
-  invert_m4_m4(vc.obedit->imat, vc.obedit->obmat);
+  invert_m4_m4(vc.obedit->world_to_object, vc.obedit->object_to_world);
   ED_view3d_init_mats_rv3d(vc.obedit, vc.rv3d);
 
   if (!ele_act) {
@@ -237,10 +233,15 @@ static int edbm_polybuild_delete_at_cursor_invoke(bContext *C,
   }
 
   if (changed) {
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(vc.obedit->data, true, true);
+    EDBM_update(vc.obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
     if (basact != NULL) {
-      if (vc.view_layer->basact != basact) {
+      BKE_view_layer_synced_ensure(vc.scene, vc.view_layer);
+      if (BKE_view_layer_active_base_get(vc.view_layer) != basact) {
         ED_object_base_activate(C, basact);
       }
     }
@@ -285,7 +286,7 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
   BMEditMesh *em = vc.em;
   BMesh *bm = em->bm;
 
-  invert_m4_m4(vc.obedit->imat, vc.obedit->obmat);
+  invert_m4_m4(vc.obedit->world_to_object, vc.obedit->object_to_world);
   ED_view3d_init_mats_rv3d(vc.obedit, vc.rv3d);
 
   edbm_selectmode_ensure(vc.scene, vc.em, SCE_SELECT_VERTEX);
@@ -293,12 +294,12 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
   if (ele_act == NULL || ele_act->head.htype == BM_FACE) {
     /* Just add vert */
     copy_v3_v3(center, vc.scene->cursor.location);
-    mul_v3_m4v3(center, vc.obedit->obmat, center);
+    mul_v3_m4v3(center, vc.obedit->object_to_world, center);
     ED_view3d_win_to_3d_int(vc.v3d, vc.region, center, event->mval, center);
-    mul_m4_v3(vc.obedit->imat, center);
+    mul_m4_v3(vc.obedit->world_to_object, center);
 
     BMVert *v_new = BM_vert_create(bm, center, NULL, BM_CREATE_NOP);
-    edbm_flag_disable_all_multi(vc.view_layer, vc.v3d, BM_ELEM_SELECT);
+    edbm_flag_disable_all_multi(vc.scene, vc.view_layer, vc.v3d, BM_ELEM_SELECT);
     BM_vert_select_set(bm, v_new, true);
     BM_select_history_store(bm, v_new);
     changed = true;
@@ -308,14 +309,14 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
     BMFace *f_reference = e_act->l ? e_act->l->f : NULL;
 
     mid_v3_v3v3(center, e_act->v1->co, e_act->v2->co);
-    mul_m4_v3(vc.obedit->obmat, center);
+    mul_m4_v3(vc.obedit->object_to_world, center);
     ED_view3d_win_to_3d_int(vc.v3d, vc.region, center, event->mval, center);
-    mul_m4_v3(vc.obedit->imat, center);
+    mul_m4_v3(vc.obedit->world_to_object, center);
     if (f_reference->len == 3 && RNA_boolean_get(op->ptr, "create_quads")) {
       const float fac = line_point_factor_v3(center, e_act->v1->co, e_act->v2->co);
       BMVert *v_new = BM_edge_split(bm, e_act, e_act->v1, NULL, CLAMPIS(fac, 0.0f, 1.0f));
       copy_v3_v3(v_new->co, center);
-      edbm_flag_disable_all_multi(vc.view_layer, vc.v3d, BM_ELEM_SELECT);
+      edbm_flag_disable_all_multi(vc.scene, vc.view_layer, vc.v3d, BM_ELEM_SELECT);
       BM_vert_select_set(bm, v_new, true);
       BM_select_history_store(bm, v_new);
     }
@@ -328,7 +329,7 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
         SWAP(BMVert *, v_tri[0], v_tri[1]);
       }
       BM_face_create_verts(bm, v_tri, 3, f_reference, BM_CREATE_NOP, true);
-      edbm_flag_disable_all_multi(vc.view_layer, vc.v3d, BM_ELEM_SELECT);
+      edbm_flag_disable_all_multi(vc.scene, vc.view_layer, vc.v3d, BM_ELEM_SELECT);
       BM_vert_select_set(bm, v_tri[2], true);
       BM_select_history_store(bm, v_tri[2]);
     }
@@ -363,9 +364,9 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
 
       BMFace *f_reference = e_pair[0]->l ? e_pair[0]->l->f : NULL;
 
-      mul_v3_m4v3(center, vc.obedit->obmat, v_act->co);
+      mul_v3_m4v3(center, vc.obedit->object_to_world, v_act->co);
       ED_view3d_win_to_3d_int(vc.v3d, vc.region, center, event->mval, center);
-      mul_m4_v3(vc.obedit->imat, center);
+      mul_m4_v3(vc.obedit->world_to_object, center);
 
       BMVert *v_quad[4];
       v_quad[0] = v_act;
@@ -378,16 +379,16 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
       // BMFace *f_new =
       BM_face_create_verts(bm, v_quad, 4, f_reference, BM_CREATE_NOP, true);
 
-      edbm_flag_disable_all_multi(vc.view_layer, vc.v3d, BM_ELEM_SELECT);
+      edbm_flag_disable_all_multi(vc.scene, vc.view_layer, vc.v3d, BM_ELEM_SELECT);
       BM_vert_select_set(bm, v_quad[2], true);
       BM_select_history_store(bm, v_quad[2]);
       changed = true;
     }
     else {
       /* Just add edge */
-      mul_m4_v3(vc.obedit->obmat, center);
+      mul_m4_v3(vc.obedit->object_to_world, center);
       ED_view3d_win_to_3d_int(vc.v3d, vc.region, v_act->co, event->mval, center);
-      mul_m4_v3(vc.obedit->imat, center);
+      mul_m4_v3(vc.obedit->world_to_object, center);
 
       BMVert *v_new = BM_vert_create(bm, center, NULL, BM_CREATE_NOP);
 
@@ -400,11 +401,16 @@ static int edbm_polybuild_face_at_cursor_invoke(bContext *C, wmOperator *op, con
   }
 
   if (changed) {
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(vc.obedit->data, true, true);
+    EDBM_update(vc.obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
 
     if (basact != NULL) {
-      if (vc.view_layer->basact != basact) {
+      BKE_view_layer_synced_ensure(vc.scene, vc.view_layer);
+      if (BKE_view_layer_active_base_get(vc.view_layer) != basact) {
         ED_object_base_activate(C, basact);
       }
     }
@@ -458,7 +464,7 @@ static int edbm_polybuild_split_at_cursor_invoke(bContext *C,
   BMEditMesh *em = vc.em;
   BMesh *bm = em->bm;
 
-  invert_m4_m4(vc.obedit->imat, vc.obedit->obmat);
+  invert_m4_m4(vc.obedit->world_to_object, vc.obedit->object_to_world);
   ED_view3d_init_mats_rv3d(vc.obedit, vc.rv3d);
 
   edbm_selectmode_ensure(vc.scene, vc.em, SCE_SELECT_VERTEX);
@@ -469,15 +475,15 @@ static int edbm_polybuild_split_at_cursor_invoke(bContext *C,
   if (ele_act->head.htype == BM_EDGE) {
     BMEdge *e_act = (BMEdge *)ele_act;
     mid_v3_v3v3(center, e_act->v1->co, e_act->v2->co);
-    mul_m4_v3(vc.obedit->obmat, center);
+    mul_m4_v3(vc.obedit->object_to_world, center);
     ED_view3d_win_to_3d_int(vc.v3d, vc.region, center, event->mval, center);
-    mul_m4_v3(vc.obedit->imat, center);
+    mul_m4_v3(vc.obedit->world_to_object, center);
 
     const float fac = line_point_factor_v3(center, e_act->v1->co, e_act->v2->co);
     BMVert *v_new = BM_edge_split(bm, e_act, e_act->v1, NULL, CLAMPIS(fac, 0.0f, 1.0f));
     copy_v3_v3(v_new->co, center);
 
-    edbm_flag_disable_all_multi(vc.view_layer, vc.v3d, BM_ELEM_SELECT);
+    edbm_flag_disable_all_multi(vc.scene, vc.view_layer, vc.v3d, BM_ELEM_SELECT);
     BM_vert_select_set(bm, v_new, true);
     BM_select_history_store(bm, v_new);
     changed = true;
@@ -488,12 +494,17 @@ static int edbm_polybuild_split_at_cursor_invoke(bContext *C,
   }
 
   if (changed) {
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(vc.obedit->data, true, true);
+    EDBM_update(vc.obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
 
     WM_event_add_mousemove(vc.win);
 
-    if (vc.view_layer->basact != basact) {
+    BKE_view_layer_synced_ensure(vc.scene, vc.view_layer);
+    if (BKE_view_layer_active_base_get(vc.view_layer) != basact) {
       ED_object_base_activate(C, basact);
     }
 
@@ -559,7 +570,7 @@ static int edbm_polybuild_dissolve_at_cursor_invoke(bContext *C,
     else {
       /* too involved to do inline */
 
-      /* Avoid using selection so failure wont leave modified state. */
+      /* Avoid using selection so failure won't leave modified state. */
       EDBM_flag_disable_all(em, BM_ELEM_TAG);
       BM_elem_flag_enable(v_act, BM_ELEM_TAG);
 
@@ -576,12 +587,17 @@ static int edbm_polybuild_dissolve_at_cursor_invoke(bContext *C,
   }
 
   if (changed) {
-    edbm_flag_disable_all_multi(vc.view_layer, vc.v3d, BM_ELEM_SELECT);
+    edbm_flag_disable_all_multi(vc.scene, vc.view_layer, vc.v3d, BM_ELEM_SELECT);
 
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(vc.obedit->data, true, true);
+    EDBM_update(vc.obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
 
-    if (vc.view_layer->basact != basact) {
+    BKE_view_layer_synced_ensure(vc.scene, vc.view_layer);
+    if (BKE_view_layer_active_base_get(vc.view_layer) != basact) {
       ED_object_base_activate(C, basact);
     }
 

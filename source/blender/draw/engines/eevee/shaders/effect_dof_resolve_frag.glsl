@@ -34,13 +34,13 @@ out vec4 fragColor;
 
 void dof_slight_focus_gather(float radius, out vec4 out_color, out float out_weight)
 {
-  /* offset coord to avoid correlation with sampling pattern.  */
+  /* offset coord to avoid correlation with sampling pattern. */
   vec4 noise = texelfetch_noise_tex(gl_FragCoord.xy + 7.0);
 
   DofGatherData fg_accum = GATHER_DATA_INIT;
   DofGatherData bg_accum = GATHER_DATA_INIT;
 
-  int i_radius = clamp(int(radius), 0, int(layer_threshold));
+  int i_radius = clamp(int(radius + 0.5), 0, int(layer_threshold));
   const int resolve_ring_density = DOF_SLIGHT_FOCUS_DENSITY;
   ivec2 texel = ivec2(gl_FragCoord.xy);
 
@@ -124,7 +124,7 @@ void dof_slight_focus_gather(float radius, out vec4 out_color, out float out_wei
   dof_gather_accumulate_resolve(total_sample_count, bg_accum, bg_col, bg_weight, unused_occlusion);
   dof_gather_accumulate_resolve(total_sample_count, fg_accum, fg_col, fg_weight, unused_occlusion);
 
-  /* Fix weighting issues on perfectly focus > slight focus transitionning areas. */
+  /* Fix weighting issues on perfectly focus > slight focus transitioning areas. */
   if (abs(center_data.coc) < 0.5) {
     bg_col = center_data.color;
     bg_weight = 1.0;
@@ -142,7 +142,7 @@ void dof_resolve_load_layer(sampler2D color_tex,
                             out float out_weight)
 {
   vec2 pixel_co = gl_FragCoord.xy / 2.0;
-  vec2 uv = pixel_co / textureSize(color_tex, 0).xy;
+  vec2 uv = pixel_co / vec2(textureSize(color_tex, 0).xy);
   out_color = textureLod(color_tex, uv, 0.0);
   out_weight = textureLod(weight_tex, uv, 0.0).r;
 }
@@ -199,7 +199,7 @@ void main(void)
     fragColor = fragColor * (1.0 - layer_weight) + layer_color;
   }
 
-  /* Fix float precision issue in alpha compositing.  */
+  /* Fix float precision issue in alpha compositing. */
   if (fragColor.a > 0.99) {
     fragColor.a = 1.0;
   }

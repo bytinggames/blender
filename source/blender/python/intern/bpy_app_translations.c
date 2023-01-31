@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pythonintern
@@ -51,8 +37,8 @@
 
 typedef struct {
   PyObject_HEAD
-      /** The string used to separate context from actual message in PY_TRANSLATE RNA props. */
-      const char *context_separator;
+  /** The string used to separate context from actual message in PY_TRANSLATE RNA props. */
+  const char *context_separator;
   /** A "named tuple" (StructSequence actually...) containing all C-defined contexts. */
   PyObject *contexts;
   /** A readonly mapping {C context id: python id}  (actually, a MappingProxy). */
@@ -69,11 +55,11 @@ static BlenderAppTranslations *_translations = NULL;
 
 /** \} */
 
-#ifdef WITH_INTERNATIONAL
-
 /* ------------------------------------------------------------------- */
 /** \name Helpers for GHash
  * \{ */
+
+#ifdef WITH_INTERNATIONAL
 
 typedef struct GHashKey {
   const char *msgctxt;
@@ -101,7 +87,7 @@ static bool _ghashutil_keycmp(const void *a, const void *b)
   const GHashKey *A = a;
   const GHashKey *B = b;
 
-  /* Note: comparing msgid first, most of the time it will be enough! */
+  /* NOTE: comparing msgid first, most of the time it will be enough! */
   if (BLI_ghashutil_strcmp(A->msgid, B->msgid) == false) {
     return BLI_ghashutil_strcmp(A->msgctxt, B->msgctxt);
   }
@@ -438,7 +424,7 @@ static PyObject *app_translations_contexts_make(void)
   }
 
 #define SetObjString(item) \
-  PyStructSequence_SET_ITEM(translations_contexts, pos++, PyUnicode_FromString((item)))
+  PyStructSequence_SET_ITEM(translations_contexts, pos++, PyUnicode_FromString(item))
 #define SetObjNone() \
   PyStructSequence_SET_ITEM(translations_contexts, pos++, Py_INCREF_RET(Py_None))
 
@@ -497,7 +483,7 @@ static PyObject *app_translations_locale_get(PyObject *UNUSED(self), void *UNUSE
   return PyUnicode_FromString(BLT_lang_get());
 }
 
-/* Note: defining as getter, as (even if quite unlikely), this *may* change during runtime... */
+/* NOTE: defining as getter, as (even if quite unlikely), this *may* change during runtime... */
 PyDoc_STRVAR(app_translations_locales_doc,
              "All locales currently known by Blender (i.e. available as translations).");
 static PyObject *app_translations_locales_get(PyObject *UNUSED(self), void *UNUSED(userdata))
@@ -746,7 +732,7 @@ static PyObject *app_translations_new(PyTypeObject *type,
                                       PyObject *UNUSED(args),
                                       PyObject *UNUSED(kw))
 {
-  /*  printf("%s (%p)\n", __func__, _translations); */
+  // printf("%s (%p)\n", __func__, _translations);
 
   if (!_translations) {
     _translations = (BlenderAppTranslations *)type->tp_alloc(type, 0);
@@ -855,12 +841,12 @@ static PyTypeObject BlenderAppTranslationsType = {
                                 /* newfunc tp_new; */
     (newfunc)app_translations_new,
     /*  Low-level free-memory routine */
-    app_translations_free, /* freefunc tp_free;  */
+    app_translations_free, /* freefunc tp_free; */
     /* For PyObject_IS_GC */
-    NULL, /* inquiry tp_is_gc;  */
+    NULL, /* inquiry tp_is_gc; */
     NULL, /* PyObject *tp_bases; */
     /* method resolution order */
-    NULL, /* PyObject *tp_mro;  */
+    NULL, /* PyObject *tp_mro; */
     NULL, /* PyObject *tp_cache; */
     NULL, /* PyObject *tp_subclasses; */
     NULL, /* PyObject *tp_weaklist; */

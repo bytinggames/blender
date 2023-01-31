@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2004-2005 by Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2004-2005 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup DNA
@@ -30,7 +14,9 @@
 extern "C" {
 #endif
 
-/* pd->forcefield:  Effector Fields types */
+struct BodySpring;
+
+/** #PartDeflect.forcefield: Effector Fields types. */
 typedef enum ePFieldType {
   /** (this is used for general effector weight). */
   PFIELD_NULL = 0,
@@ -182,8 +168,8 @@ typedef struct EffectorWeights {
   /** Effector type specific weights. */
   float weight[14];
   float global_gravity;
-  short flag, rt[3];
-  char _pad[4];
+  short flag;
+  char _pad[2];
 } EffectorWeights;
 
 /* EffectorWeights->flag */
@@ -267,10 +253,9 @@ typedef struct SoftBody {
   char namedVG_Spring_K[64];
 
   /* baking */
-  int sfra, efra;
-  int interval;
+  char _pad1[6];
   /** Local==1: use local coords for baking. */
-  short local, solverflags;
+  char local, solverflags;
 
   /* -- these must be kept for backwards compatibility -- */
   /** Array of size totpointkey. */
@@ -280,7 +265,7 @@ typedef struct SoftBody {
   /* ---------------------------------------------------- */
   float secondspring;
 
-  /* self collision*/
+  /* Self collision. */
   /** Fixed collision ball size if > 0. */
   float colball;
   /** Cooling down collision response. */
@@ -320,7 +305,7 @@ typedef struct SoftBody {
 
 /* pd->flag: various settings */
 #define PFIELD_USEMAX (1 << 0)
-/*#define PDEFLE_DEFORM         (1 << 1)*/ /*UNUSED*/
+// #define PDEFLE_DEFORM         (1 << 1) /* UNUSED */
 /** TODO: do_versions for below */
 #define PFIELD_GUIDE_PATH_ADD (1 << 2)
 /** used for do_versions */

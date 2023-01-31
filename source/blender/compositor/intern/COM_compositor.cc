@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2011, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2011 Blender Foundation. */
 
 #include "BLI_threads.h"
 
@@ -24,10 +9,8 @@
 #include "BKE_scene.h"
 
 #include "COM_ExecutionSystem.h"
-#include "COM_MovieDistortionOperation.h"
 #include "COM_WorkScheduler.h"
 #include "COM_compositor.h"
-#include "clew.h"
 
 static struct {
   bool is_initialized = false;
@@ -42,18 +25,18 @@ static void compositor_init_node_previews(const RenderData *render_data, bNodeTr
   /* We fit the aspect into COM_PREVIEW_SIZE x COM_PREVIEW_SIZE image to avoid
    * insane preview resolution, which might even overflow preview dimensions. */
   const float aspect = render_data->xsch > 0 ?
-                           (float)render_data->ysch / (float)render_data->xsch :
+                           float(render_data->ysch) / float(render_data->xsch) :
                            1.0f;
   int preview_width, preview_height;
   if (aspect < 1.0f) {
     preview_width = blender::compositor::COM_PREVIEW_SIZE;
-    preview_height = (int)(blender::compositor::COM_PREVIEW_SIZE * aspect);
+    preview_height = int(blender::compositor::COM_PREVIEW_SIZE * aspect);
   }
   else {
-    preview_width = (int)(blender::compositor::COM_PREVIEW_SIZE / aspect);
+    preview_width = int(blender::compositor::COM_PREVIEW_SIZE / aspect);
     preview_height = blender::compositor::COM_PREVIEW_SIZE;
   }
-  BKE_node_preview_init_tree(node_tree, preview_width, preview_height, false);
+  BKE_node_preview_init_tree(node_tree, preview_width, preview_height);
 }
 
 static void compositor_reset_node_tree_status(bNodeTree *node_tree)
@@ -66,11 +49,9 @@ void COM_execute(RenderData *render_data,
                  Scene *scene,
                  bNodeTree *node_tree,
                  int rendering,
-                 const ColorManagedViewSettings *viewSettings,
-                 const ColorManagedDisplaySettings *displaySettings,
-                 const char *viewName)
+                 const char *view_name)
 {
-  /* Initialize mutex, TODO this mutex init is actually not thread safe and
+  /* Initialize mutex, TODO: this mutex init is actually not thread safe and
    * should be done somewhere as part of blender startup, all the other
    * initializations can be done lazily. */
   if (!g_compositor.is_initialized) {
@@ -98,7 +79,7 @@ void COM_execute(RenderData *render_data,
   const bool twopass = (node_tree->flag & NTREE_TWO_PASS) && !rendering;
   if (twopass) {
     blender::compositor::ExecutionSystem fast_pass(
-        render_data, scene, node_tree, rendering, true, viewSettings, displaySettings, viewName);
+        render_data, scene, node_tree, rendering, true, view_name);
     fast_pass.execute();
 
     if (node_tree->test_break(node_tree->tbh)) {
@@ -108,7 +89,7 @@ void COM_execute(RenderData *render_data,
   }
 
   blender::compositor::ExecutionSystem system(
-      render_data, scene, node_tree, rendering, false, viewSettings, displaySettings, viewName);
+      render_data, scene, node_tree, rendering, false, view_name);
   system.execute();
 
   BLI_mutex_unlock(&g_compositor.mutex);

@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 import time
 
@@ -111,7 +93,7 @@ class ProgressReport:
     def leave_substeps(self, msg=""):
         if (msg):
             self.update(msg)
-        assert(len(self.steps) > 1)
+        assert len(self.steps) > 1
         del self.steps[-1]
         del self.curr_step[-1]
         del self.start_time[-1]
@@ -152,7 +134,7 @@ class ProgressReportSubstep:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        assert(len(self.progress.steps) > self.level)
+        assert len(self.progress.steps) > self.level
         while len(self.progress.steps) > self.level + 1:
             self.progress.leave_substeps()
         self.progress.leave_substeps(self.final_msg)

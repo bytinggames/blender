@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup DNA
@@ -40,20 +24,31 @@ struct Image;
 struct Ipo;
 struct bNodeTree;
 
-/* WATCH IT: change type? also make changes in ipo.h  */
+/* WATCH IT: change type? also make changes in ipo.h */
 
 typedef struct TexPaintSlot {
-  /** Image to be painted on. */
+  DNA_DEFINE_CXX_METHODS(TexPaintSlot)
+
+  /** Image to be painted on. Mutual exclusive with attribute_name. */
   struct Image *ima;
+  struct ImageUser *image_user;
+
   /** Custom-data index for uv layer, #MAX_NAME. */
   char *uvname;
-  /** Do we have a valid image and UV map. */
+  /**
+   * Color attribute name when painting using color attributes. Mutual exclusive with ima.
+   * Points to the name of a CustomDataLayer.
+   */
+  char *attribute_name;
+  /** Do we have a valid image and UV map or attribute. */
   int valid;
   /** Copy of node interpolation setting. */
   int interp;
 } TexPaintSlot;
 
 typedef struct MaterialGPencilStyle {
+  DNA_DEFINE_CXX_METHODS(MaterialGPencilStyle)
+
   /** Texture image for strokes. */
   struct Image *sima;
   /** Texture image for filling. */
@@ -146,16 +141,29 @@ typedef enum eMaterialGPencilStyle_Mode {
 } eMaterialGPencilStyle_Mode;
 
 typedef struct MaterialLineArt {
-  int flags; /* eMaterialLineArtFlags */
-  unsigned char transparency_mask;
-  unsigned char _pad[3];
+  /* eMaterialLineArtFlags */
+  int flags;
+
+  /* Used to filter line art occlusion edges */
+  unsigned char material_mask_bits;
+
+  /** Maximum 255 levels of equivalent occlusion. */
+  unsigned char mat_occlusion;
+
+  unsigned char intersection_priority;
+
+  char _pad;
 } MaterialLineArt;
 
 typedef enum eMaterialLineArtFlags {
-  LRT_MATERIAL_TRANSPARENCY_ENABLED = (1 << 0),
+  LRT_MATERIAL_MASK_ENABLED = (1 << 0),
+  LRT_MATERIAL_CUSTOM_OCCLUSION_EFFECTIVENESS = (1 << 1),
+  LRT_MATERIAL_CUSTOM_INTERSECTION_PRIORITY = (1 << 2),
 } eMaterialLineArtFlags;
 
 typedef struct Material {
+  DNA_DEFINE_CXX_METHODS(Material)
+
   ID id;
   /** Animation data (must be immediately after id for utilities to use it). */
   struct AnimData *adt;
@@ -283,41 +291,25 @@ typedef struct Material {
 /* #define TEXCO_STRESS    (1 << 14) */ /* deprecated */
 /* #define TEXCO_SPEED     (1 << 15) */ /* deprecated */
 
-/* mapto */
+/** #MTex.mapto */
 #define MAP_COL (1 << 0)
 #define MAP_ALPHA (1 << 7)
 
-/* pmapto */
-/* init */
-#define MAP_PA_INIT ((1 << 5) - 1)
-#define MAP_PA_TIME (1 << 0)
-#define MAP_PA_LIFE (1 << 1)
-#define MAP_PA_DENS (1 << 2)
-#define MAP_PA_SIZE (1 << 3)
-#define MAP_PA_LENGTH (1 << 4)
-/* reset */
-#define MAP_PA_IVEL (1 << 5)
-/* physics */
-#define MAP_PA_PVEL (1 << 6)
-/* path cache */
-#define MAP_PA_CLUMP (1 << 7)
-#define MAP_PA_KINK (1 << 8)
-#define MAP_PA_ROUGH (1 << 9)
-#define MAP_PA_FREQ (1 << 10)
-
 /* pr_type */
-#define MA_FLAT 0
-#define MA_SPHERE 1
-#define MA_CUBE 2
-#define MA_SHADERBALL 3
-#define MA_SPHERE_A 4 /* Used for icon renders only. */
-#define MA_TEXTURE 5
-#define MA_LAMP 6
-#define MA_SKY 7
-#define MA_HAIR 10
-#define MA_ATMOS 11
-#define MA_CLOTH 12
-#define MA_FLUID 13
+typedef enum ePreviewType {
+  MA_FLAT = 0,
+  MA_SPHERE = 1,
+  MA_CUBE = 2,
+  MA_SHADERBALL = 3,
+  MA_SPHERE_A = 4, /* Used for icon renders only. */
+  MA_TEXTURE = 5,
+  MA_LAMP = 6,
+  MA_SKY = 7,
+  MA_HAIR = 10,
+  MA_ATMOS = 11,
+  MA_CLOTH = 12,
+  MA_FLUID = 13,
+} ePreviewType;
 
 /* pr_flag */
 #define MA_PREVIEW_WORLD (1 << 0)

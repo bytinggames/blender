@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -53,6 +39,7 @@ const EnumPropertyItem rna_enum_collection_color_items[] = {
 
 #  include "DEG_depsgraph.h"
 #  include "DEG_depsgraph_build.h"
+#  include "DEG_depsgraph_query.h"
 
 #  include "BKE_collection.h"
 #  include "BKE_global.h"
@@ -93,26 +80,45 @@ static PointerRNA rna_Collection_objects_get(CollectionPropertyIterator *iter)
   return rna_pointer_inherit_refine(&iter->parent, &RNA_Object, cob->ob);
 }
 
+static bool rna_collection_objects_edit_check(Collection *collection,
+                                              ReportList *reports,
+                                              Object *object)
+{
+  if (!DEG_is_original_id(&collection->id)) {
+    BKE_reportf(
+        reports, RPT_ERROR, "Collection '%s' is not an original ID", collection->id.name + 2);
+    return false;
+  }
+  if (!DEG_is_original_id(&object->id)) {
+    BKE_reportf(reports, RPT_ERROR, "Collection '%s' is not an original ID", object->id.name + 2);
+    return false;
+  }
+  /* Currently this should not be allowed (might be supported in the future though...). */
+  if (ID_IS_OVERRIDE_LIBRARY(&collection->id)) {
+    BKE_reportf(reports,
+                RPT_ERROR,
+                "Could not (un)link the object '%s' because the collection '%s' is overridden",
+                object->id.name + 2,
+                collection->id.name + 2);
+    return false;
+  }
+  if (ID_IS_LINKED(&collection->id)) {
+    BKE_reportf(reports,
+                RPT_ERROR,
+                "Could not (un)link the object '%s' because the collection '%s' is linked",
+                object->id.name + 2,
+                collection->id.name + 2);
+    return false;
+  }
+  return true;
+}
+
 static void rna_Collection_objects_link(Collection *collection,
                                         Main *bmain,
                                         ReportList *reports,
                                         Object *object)
 {
-  /* Currently this should not be allowed (might be supported in the future though...). */
-  if (ID_IS_OVERRIDE_LIBRARY(&collection->id)) {
-    BKE_reportf(reports,
-                RPT_ERROR,
-                "Could not link the object '%s' because the collection '%s' is overridden",
-                object->id.name + 2,
-                collection->id.name + 2);
-    return;
-  }
-  if (ID_IS_LINKED(&collection->id)) {
-    BKE_reportf(reports,
-                RPT_ERROR,
-                "Could not link the object '%s' because the collection '%s' is linked",
-                object->id.name + 2,
-                collection->id.name + 2);
+  if (!rna_collection_objects_edit_check(collection, reports, object)) {
     return;
   }
   if (!BKE_collection_object_add(bmain, collection, object)) {
@@ -134,6 +140,9 @@ static void rna_Collection_objects_unlink(Collection *collection,
                                           ReportList *reports,
                                           Object *object)
 {
+  if (!rna_collection_objects_edit_check(collection, reports, object)) {
+    return;
+  }
   if (!BKE_collection_object_remove(bmain, collection, object, false)) {
     BKE_reportf(reports,
                 RPT_ERROR,
@@ -152,7 +161,7 @@ static bool rna_Collection_objects_override_apply(Main *bmain,
                                                   PointerRNA *ptr_dst,
                                                   PointerRNA *UNUSED(ptr_src),
                                                   PointerRNA *UNUSED(ptr_storage),
-                                                  PropertyRNA *UNUSED(prop_dst),
+                                                  PropertyRNA *prop_dst,
                                                   PropertyRNA *UNUSED(prop_src),
                                                   PropertyRNA *UNUSED(prop_storage),
                                                   const int UNUSED(len_dst),
@@ -170,7 +179,7 @@ static bool rna_Collection_objects_override_apply(Main *bmain,
   Collection *coll_dst = (Collection *)ptr_dst->owner_id;
 
   if (ptr_item_dst->type == NULL || ptr_item_src->type == NULL) {
-    //    BLI_assert(0 && "invalid source or destination object.");
+    // BLI_assert_msg(0, "invalid source or destination object.");
     return false;
   }
 
@@ -185,11 +194,11 @@ static bool rna_Collection_objects_override_apply(Main *bmain,
       &coll_dst->gobject, ob_dst, offsetof(CollectionObject, ob));
 
   if (cob_dst == NULL) {
-    BLI_assert(0 && "Could not find destination object in destination collection!");
+    BLI_assert_msg(0, "Could not find destination object in destination collection!");
     return false;
   }
 
-  /* XXX TODO We most certainly rather want to have a 'swap object pointer in collection'
+  /* XXX TODO: We most certainly rather want to have a 'swap object pointer in collection'
    * util in BKE_collection. This is only temp quick dirty test! */
   id_us_min(&cob_dst->ob->id);
   cob_dst->ob = ob_src;
@@ -199,6 +208,7 @@ static bool rna_Collection_objects_override_apply(Main *bmain,
     BKE_main_collection_sync(bmain);
   }
 
+  RNA_property_update_main(bmain, NULL, ptr_dst, prop_dst);
   return true;
 }
 
@@ -217,11 +227,47 @@ static PointerRNA rna_Collection_children_get(CollectionPropertyIterator *iter)
   return rna_pointer_inherit_refine(&iter->parent, &RNA_Collection, child->collection);
 }
 
+static bool rna_collection_children_edit_check(Collection *collection,
+                                               ReportList *reports,
+                                               Collection *child)
+{
+  if (!DEG_is_original_id(&collection->id)) {
+    BKE_reportf(
+        reports, RPT_ERROR, "Collection '%s' is not an original ID", collection->id.name + 2);
+    return false;
+  }
+  if (!DEG_is_original_id(&child->id)) {
+    BKE_reportf(reports, RPT_ERROR, "Collection '%s' is not an original ID", child->id.name + 2);
+    return false;
+  }
+  /* Currently this should not be allowed (might be supported in the future though...). */
+  if (ID_IS_OVERRIDE_LIBRARY(&collection->id)) {
+    BKE_reportf(reports,
+                RPT_ERROR,
+                "Could not (un)link the collection '%s' because the collection '%s' is overridden",
+                child->id.name + 2,
+                collection->id.name + 2);
+    return false;
+  }
+  if (ID_IS_LINKED(&collection->id)) {
+    BKE_reportf(reports,
+                RPT_ERROR,
+                "Could not (un)link the collection '%s' because the collection '%s' is linked",
+                child->id.name + 2,
+                collection->id.name + 2);
+    return false;
+  }
+  return true;
+}
+
 static void rna_Collection_children_link(Collection *collection,
                                          Main *bmain,
                                          ReportList *reports,
                                          Collection *child)
 {
+  if (!rna_collection_children_edit_check(collection, reports, child)) {
+    return;
+  }
   if (!BKE_collection_child_add(bmain, collection, child)) {
     BKE_reportf(reports,
                 RPT_ERROR,
@@ -241,6 +287,9 @@ static void rna_Collection_children_unlink(Collection *collection,
                                            ReportList *reports,
                                            Collection *child)
 {
+  if (!rna_collection_children_edit_check(collection, reports, child)) {
+    return;
+  }
   if (!BKE_collection_child_remove(bmain, collection, child)) {
     BKE_reportf(reports,
                 RPT_ERROR,
@@ -259,7 +308,7 @@ static bool rna_Collection_children_override_apply(Main *bmain,
                                                    PointerRNA *ptr_dst,
                                                    PointerRNA *UNUSED(ptr_src),
                                                    PointerRNA *UNUSED(ptr_storage),
-                                                   PropertyRNA *UNUSED(prop_dst),
+                                                   PropertyRNA *prop_dst,
                                                    PropertyRNA *UNUSED(prop_src),
                                                    PropertyRNA *UNUSED(prop_storage),
                                                    const int UNUSED(len_dst),
@@ -288,11 +337,11 @@ static bool rna_Collection_children_override_apply(Main *bmain,
       &coll_dst->children, subcoll_dst, offsetof(CollectionChild, collection));
 
   if (collchild_dst == NULL) {
-    BLI_assert(0 && "Could not find destination sub-collection in destination collection!");
+    BLI_assert_msg(0, "Could not find destination sub-collection in destination collection!");
     return false;
   }
 
-  /* XXX TODO We most certainly rather want to have a 'swap object pointer in collection'
+  /* XXX TODO: We most certainly rather want to have a 'swap object pointer in collection'
    * util in BKE_collection. This is only temp quick dirty test! */
   id_us_min(&collchild_dst->collection->id);
   collchild_dst->collection = subcoll_src;
@@ -301,6 +350,7 @@ static bool rna_Collection_children_override_apply(Main *bmain,
   BKE_collection_object_cache_free(coll_dst);
   BKE_main_collection_sync(bmain);
 
+  RNA_property_update_main(bmain, NULL, ptr_dst, prop_dst);
   return true;
 }
 
@@ -322,17 +372,17 @@ static void rna_Collection_flag_set(PointerRNA *ptr, const bool value, const int
 
 static void rna_Collection_hide_select_set(PointerRNA *ptr, bool value)
 {
-  rna_Collection_flag_set(ptr, value, COLLECTION_RESTRICT_SELECT);
+  rna_Collection_flag_set(ptr, value, COLLECTION_HIDE_SELECT);
 }
 
 static void rna_Collection_hide_viewport_set(PointerRNA *ptr, bool value)
 {
-  rna_Collection_flag_set(ptr, value, COLLECTION_RESTRICT_VIEWPORT);
+  rna_Collection_flag_set(ptr, value, COLLECTION_HIDE_VIEWPORT);
 }
 
 static void rna_Collection_hide_render_set(PointerRNA *ptr, bool value)
 {
-  rna_Collection_flag_set(ptr, value, COLLECTION_RESTRICT_RENDER);
+  rna_Collection_flag_set(ptr, value, COLLECTION_HIDE_RENDER);
 }
 
 static void rna_Collection_flag_update(Main *bmain, Scene *scene, PointerRNA *ptr)
@@ -369,6 +419,14 @@ static void rna_Collection_color_tag_update(Main *UNUSED(bmain),
                                             PointerRNA *UNUSED(ptr))
 {
   WM_main_add_notifier(NC_SCENE | ND_LAYER_CONTENT, scene);
+}
+
+static void rna_Collection_instance_offset_update(Main *UNUSED(bmain),
+                                                  Scene *UNUSED(scene),
+                                                  PointerRNA *ptr)
+{
+  Collection *collection = (Collection *)ptr->data;
+  DEG_id_tag_update(&collection->id, ID_RECALC_GEOMETRY);
 }
 
 #else
@@ -445,7 +503,7 @@ void RNA_def_collections(BlenderRNA *brna)
   RNA_def_property_ui_text(
       prop, "Instance Offset", "Offset from the origin to use when instancing");
   RNA_def_property_ui_range(prop, -10000.0, 10000.0, 10, RNA_TRANSLATION_PREC_DEFAULT);
-  RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, NULL);
+  RNA_def_property_update(prop, NC_OBJECT | ND_DRAW, "rna_Collection_instance_offset_update");
 
   prop = RNA_def_property(srna, "objects", PROP_COLLECTION, PROP_NONE);
   RNA_def_property_struct_type(prop, "Object");
@@ -496,7 +554,7 @@ void RNA_def_collections(BlenderRNA *brna)
 
   /* Flags */
   prop = RNA_def_property(srna, "hide_select", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_RESTRICT_SELECT);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_HIDE_SELECT);
   RNA_def_property_boolean_funcs(prop, NULL, "rna_Collection_hide_select_set");
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_icon(prop, ICON_RESTRICT_SELECT_OFF, -1);
@@ -504,7 +562,7 @@ void RNA_def_collections(BlenderRNA *brna)
   RNA_def_property_update(prop, NC_SCENE | ND_LAYER_CONTENT, "rna_Collection_flag_update");
 
   prop = RNA_def_property(srna, "hide_viewport", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_RESTRICT_VIEWPORT);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_HIDE_VIEWPORT);
   RNA_def_property_boolean_funcs(prop, NULL, "rna_Collection_hide_viewport_set");
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_icon(prop, ICON_RESTRICT_VIEW_OFF, -1);
@@ -512,7 +570,7 @@ void RNA_def_collections(BlenderRNA *brna)
   RNA_def_property_update(prop, NC_SCENE | ND_LAYER_CONTENT, "rna_Collection_flag_update");
 
   prop = RNA_def_property(srna, "hide_render", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_RESTRICT_RENDER);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", COLLECTION_HIDE_RENDER);
   RNA_def_property_boolean_funcs(prop, NULL, "rna_Collection_hide_render_set");
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_ui_icon(prop, ICON_RESTRICT_RENDER_OFF, -1);
@@ -541,11 +599,45 @@ void RNA_def_collections(BlenderRNA *brna)
        0,
        "No Intersection",
        "Include this collection but do not generate intersection lines"},
+      {COLLECTION_LRT_FORCE_INTERSECTION,
+       "FORCE_INTERSECTION",
+       0,
+       "Force Intersection",
+       "Generate intersection lines even with objects that disabled intersection"},
       {0, NULL, 0, NULL, NULL}};
 
   prop = RNA_def_property(srna, "lineart_usage", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, rna_collection_lineart_usage);
   RNA_def_property_ui_text(prop, "Usage", "How to use this collection in line art");
+  RNA_def_property_update(prop, NC_SCENE, NULL);
+
+  prop = RNA_def_property(srna, "lineart_use_intersection_mask", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "lineart_flags", 1);
+  RNA_def_property_ui_text(
+      prop, "Use Intersection Masks", "Use custom intersection mask for faces in this collection");
+  RNA_def_property_update(prop, NC_SCENE, NULL);
+
+  prop = RNA_def_property(srna, "lineart_intersection_mask", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "lineart_intersection_mask", 1);
+  RNA_def_property_array(prop, 8);
+  RNA_def_property_ui_text(
+      prop, "Masks", "Intersection generated by this collection will have this mask value");
+  RNA_def_property_update(prop, NC_SCENE, NULL);
+
+  prop = RNA_def_property(srna, "lineart_intersection_priority", PROP_INT, PROP_NONE);
+  RNA_def_property_range(prop, 0, 255);
+  RNA_def_property_ui_text(prop,
+                           "Intersection Priority",
+                           "The intersection line will be included into the object with the "
+                           "higher intersection priority value");
+  RNA_def_property_update(prop, NC_SCENE, NULL);
+
+  prop = RNA_def_property(srna, "use_lineart_intersection_priority", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_default(prop, 0);
+  RNA_def_property_boolean_sdna(
+      prop, NULL, "lineart_flags", COLLECTION_LRT_USE_INTERSECTION_PRIORITY);
+  RNA_def_property_ui_text(
+      prop, "Use Intersection Priority", "Assign intersection priority value for this collection");
   RNA_def_property_update(prop, NC_SCENE, NULL);
 
   prop = RNA_def_property(srna, "color_tag", PROP_ENUM, PROP_NONE);

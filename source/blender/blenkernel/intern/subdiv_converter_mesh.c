@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2018 by Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2018 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -32,6 +16,7 @@
 #include "BLI_utildefines.h"
 
 #include "BKE_customdata.h"
+#include "BKE_mesh.h"
 #include "BKE_mesh_mapping.h"
 #include "BKE_subdiv.h"
 
@@ -40,6 +25,8 @@
 #include "opensubdiv_capi.h"
 #include "opensubdiv_converter_capi.h"
 
+#include "bmesh_class.h"
+
 /* Enable work-around for non-working CPU evaluator when using bilinear scheme.
  * This forces Catmark scheme with all edges marked as infinitely sharp. */
 #define BUGGY_SIMPLE_SCHEME_WORKAROUND 1
@@ -47,6 +34,15 @@
 typedef struct ConverterStorage {
   SubdivSettings settings;
   const Mesh *mesh;
+  const MVert *verts;
+  const MEdge *edges;
+  const MPoly *polys;
+  const MLoop *loops;
+
+  /* CustomData layer for vertex sharpnesses. */
+  const float *cd_vertex_crease;
+  /* CustomData layer for edge sharpness. */
+  const float *cd_edge_crease;
   /* Indexed by loop index, value denotes index of face-varying vertex
    * which corresponds to the UV coordinate.
    */
@@ -128,7 +124,7 @@ static int get_num_vertices(const OpenSubdiv_Converter *converter)
 static int get_num_face_vertices(const OpenSubdiv_Converter *converter, int manifold_face_index)
 {
   ConverterStorage *storage = converter->user_data;
-  return storage->mesh->mpoly[manifold_face_index].totloop;
+  return storage->polys[manifold_face_index].totloop;
 }
 
 static void get_face_vertices(const OpenSubdiv_Converter *converter,
@@ -136,8 +132,8 @@ static void get_face_vertices(const OpenSubdiv_Converter *converter,
                               int *manifold_face_vertices)
 {
   ConverterStorage *storage = converter->user_data;
-  const MPoly *poly = &storage->mesh->mpoly[manifold_face_index];
-  const MLoop *mloop = storage->mesh->mloop;
+  const MPoly *poly = &storage->polys[manifold_face_index];
+  const MLoop *mloop = storage->loops;
   for (int corner = 0; corner < poly->totloop; corner++) {
     manifold_face_vertices[corner] =
         storage->manifold_vertex_index[mloop[poly->loopstart + corner].v];
@@ -150,7 +146,7 @@ static void get_edge_vertices(const OpenSubdiv_Converter *converter,
 {
   ConverterStorage *storage = converter->user_data;
   const int edge_index = storage->manifold_edge_index_reverse[manifold_edge_index];
-  const MEdge *edge = &storage->mesh->medge[edge_index];
+  const MEdge *edge = &storage->edges[edge_index];
   manifold_edge_vertices[0] = storage->manifold_vertex_index[edge->v1];
   manifold_edge_vertices[1] = storage->manifold_vertex_index[edge->v2];
 }
@@ -163,12 +159,11 @@ static float get_edge_sharpness(const OpenSubdiv_Converter *converter, int manif
     return 10.0f;
   }
 #endif
-  if (!storage->settings.use_creases) {
+  if (!storage->settings.use_creases || storage->cd_edge_crease == NULL) {
     return 0.0f;
   }
   const int edge_index = storage->manifold_edge_index_reverse[manifold_edge_index];
-  const MEdge *medge = storage->mesh->medge;
-  return BKE_subdiv_edge_crease_to_sharpness_char(medge[edge_index].crease);
+  return BKE_subdiv_crease_to_sharpness_f(storage->cd_edge_crease[edge_index]);
 }
 
 static bool is_infinite_sharp_vertex(const OpenSubdiv_Converter *converter,
@@ -184,14 +179,14 @@ static bool is_infinite_sharp_vertex(const OpenSubdiv_Converter *converter,
   return BLI_BITMAP_TEST_BOOL(storage->infinite_sharp_vertices_map, vertex_index);
 }
 
-static float get_vertex_sharpness(const OpenSubdiv_Converter *converter,
-                                  int UNUSED(manifold_vertex_index))
+static float get_vertex_sharpness(const OpenSubdiv_Converter *converter, int manifold_vertex_index)
 {
   ConverterStorage *storage = converter->user_data;
-  if (!storage->settings.use_creases) {
+  if (!storage->settings.use_creases || storage->cd_vertex_crease == NULL) {
     return 0.0f;
   }
-  return 0.0f;
+  const int vertex_index = storage->manifold_vertex_index_reverse[manifold_vertex_index];
+  return BKE_subdiv_crease_to_sharpness_f(storage->cd_vertex_crease[vertex_index]);
 }
 
 static int get_num_uv_layers(const OpenSubdiv_Converter *converter)
@@ -205,8 +200,6 @@ static void precalc_uv_layer(const OpenSubdiv_Converter *converter, const int la
 {
   ConverterStorage *storage = converter->user_data;
   const Mesh *mesh = storage->mesh;
-  const MPoly *mpoly = mesh->mpoly;
-  const MLoop *mloop = mesh->mloop;
   const MLoopUV *mloopuv = CustomData_get_layer_n(&mesh->ldata, CD_MLOOPUV, layer_index);
   const int num_poly = mesh->totpoly;
   const int num_vert = mesh->totvert;
@@ -217,7 +210,16 @@ static void precalc_uv_layer(const OpenSubdiv_Converter *converter, const int la
         mesh->totloop, sizeof(int), "loop uv vertex index");
   }
   UvVertMap *uv_vert_map = BKE_mesh_uv_vert_map_create(
-      mpoly, mloop, mloopuv, num_poly, num_vert, limit, false, true);
+      storage->polys,
+      (const bool *)CustomData_get_layer_named(&mesh->pdata, CD_PROP_BOOL, ".hide_poly"),
+      (const bool *)CustomData_get_layer_named(&mesh->pdata, CD_PROP_BOOL, ".select_poly"),
+      storage->loops,
+      mloopuv,
+      num_poly,
+      num_vert,
+      limit,
+      false,
+      true);
   /* NOTE: First UV vertex is supposed to be always marked as separate. */
   storage->num_uv_coordinates = -1;
   for (int vertex_index = 0; vertex_index < num_vert; vertex_index++) {
@@ -226,7 +228,7 @@ static void precalc_uv_layer(const OpenSubdiv_Converter *converter, const int la
       if (uv_vert->separate) {
         storage->num_uv_coordinates++;
       }
-      const MPoly *mp = &mpoly[uv_vert->poly_index];
+      const MPoly *mp = &storage->polys[uv_vert->poly_index];
       const int global_loop_index = mp->loopstart + uv_vert->loop_of_poly_index;
       storage->loop_uv_indices[global_loop_index] = storage->num_uv_coordinates;
       uv_vert = uv_vert->next;
@@ -254,7 +256,7 @@ static int get_face_corner_uv_index(const OpenSubdiv_Converter *converter,
                                     const int corner)
 {
   ConverterStorage *storage = converter->user_data;
-  const MPoly *mp = &storage->mesh->mpoly[face_index];
+  const MPoly *mp = &storage->polys[face_index];
   return storage->loop_uv_indices[mp->loopstart + corner];
 }
 
@@ -307,16 +309,16 @@ static void init_functions(OpenSubdiv_Converter *converter)
 
 static void initialize_manifold_index_array(const BLI_bitmap *used_map,
                                             const int num_elements,
-                                            int **indices_r,
-                                            int **indices_reverse_r,
-                                            int *num_manifold_elements_r)
+                                            int **r_indices,
+                                            int **r_indices_reverse,
+                                            int *r_num_manifold_elements)
 {
   int *indices = NULL;
-  if (indices_r != NULL) {
+  if (r_indices != NULL) {
     indices = MEM_malloc_arrayN(num_elements, sizeof(int), "manifold indices");
   }
   int *indices_reverse = NULL;
-  if (indices_reverse_r != NULL) {
+  if (r_indices_reverse != NULL) {
     indices_reverse = MEM_malloc_arrayN(num_elements, sizeof(int), "manifold indices reverse");
   }
   int offset = 0;
@@ -336,21 +338,21 @@ static void initialize_manifold_index_array(const BLI_bitmap *used_map,
       offset++;
     }
   }
-  if (indices_r != NULL) {
-    *indices_r = indices;
+  if (r_indices != NULL) {
+    *r_indices = indices;
   }
-  if (indices_reverse_r != NULL) {
-    *indices_reverse_r = indices_reverse;
+  if (r_indices_reverse != NULL) {
+    *r_indices_reverse = indices_reverse;
   }
-  *num_manifold_elements_r = num_elements - offset;
+  *r_num_manifold_elements = num_elements - offset;
 }
 
 static void initialize_manifold_indices(ConverterStorage *storage)
 {
   const Mesh *mesh = storage->mesh;
-  const MEdge *medge = mesh->medge;
-  const MLoop *mloop = mesh->mloop;
-  const MPoly *mpoly = mesh->mpoly;
+  const MEdge *medge = storage->edges;
+  const MLoop *mloop = storage->loops;
+  const MPoly *mpoly = storage->polys;
   /* Set bits of elements which are not loose. */
   BLI_bitmap *vert_used_map = BLI_BITMAP_NEW(mesh->totvert, "vert used map");
   BLI_bitmap *edge_used_map = BLI_BITMAP_NEW(mesh->totedge, "edge used map");
@@ -393,6 +395,12 @@ static void init_user_data(OpenSubdiv_Converter *converter,
   ConverterStorage *user_data = MEM_mallocN(sizeof(ConverterStorage), __func__);
   user_data->settings = *settings;
   user_data->mesh = mesh;
+  user_data->verts = BKE_mesh_verts(mesh);
+  user_data->edges = BKE_mesh_edges(mesh);
+  user_data->polys = BKE_mesh_polys(mesh);
+  user_data->loops = BKE_mesh_loops(mesh);
+  user_data->cd_vertex_crease = CustomData_get_layer(&mesh->vdata, CD_CREASE);
+  user_data->cd_edge_crease = CustomData_get_layer(&mesh->edata, CD_CREASE);
   user_data->loop_uv_indices = NULL;
   initialize_manifold_indices(user_data);
   converter->user_data = user_data;

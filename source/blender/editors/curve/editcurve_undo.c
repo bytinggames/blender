@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edcurve
@@ -97,7 +83,7 @@ static void undocurve_to_editcurve(Main *bmain, UndoCurve *ucu, Curve *cu, short
     BKE_fcurves_copy(&ad->drivers, &ucu->drivers);
   }
 
-  /* copy  */
+  /* Copy. */
   for (nu = undobase->first; nu; nu = nu->next) {
     newnu = BKE_nurb_duplicate(nu);
 
@@ -139,7 +125,7 @@ static void undocurve_from_editcurve(UndoCurve *ucu, Curve *cu, const short shap
     BKE_fcurves_copy(&ucu->drivers, &ad->drivers);
   }
 
-  /* copy  */
+  /* Copy. */
   for (nu = nubase->first; nu; nu = nu->next) {
     newnu = BKE_nurb_duplicate(nu);
 
@@ -174,9 +160,11 @@ static void undocurve_free_data(UndoCurve *uc)
 
 static Object *editcurve_object_from_context(bContext *C)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
-  if (obedit && ELEM(obedit->type, OB_CURVE, OB_SURF)) {
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *obedit = BKE_view_layer_edit_object_get(view_layer);
+  if (obedit && ELEM(obedit->type, OB_CURVES_LEGACY, OB_SURF)) {
     Curve *cu = obedit->data;
     if (BKE_curve_editNurbs_get(cu) != NULL) {
       return obedit;
@@ -216,9 +204,10 @@ static bool curve_undosys_step_encode(struct bContext *C, struct Main *bmain, Un
 
   /* Important not to use the 3D view when getting objects because all objects
    * outside of this list will be moved out of edit-mode when reading back undo steps. */
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   uint objects_len = 0;
-  Object **objects = ED_undo_editmode_objects_from_view_layer(view_layer, &objects_len);
+  Object **objects = ED_undo_editmode_objects_from_view_layer(scene, view_layer, &objects_len);
 
   us->elems = MEM_callocN(sizeof(*us->elems) * objects_len, __func__);
   us->elems_len = objects_len;
@@ -267,7 +256,7 @@ static void curve_undosys_step_decode(struct bContext *C,
     }
     undocurve_to_editcurve(bmain, &elem->data, obedit->data, &obedit->shapenr);
     cu->editnurb->needs_flush_to_id = 1;
-    DEG_id_tag_update(&obedit->id, ID_RECALC_GEOMETRY);
+    DEG_id_tag_update(&cu->id, ID_RECALC_GEOMETRY);
   }
 
   /* The first element is always active */
@@ -305,7 +294,6 @@ static void curve_undosys_foreach_ID_ref(UndoStep *us_p,
   }
 }
 
-/* Export for ED_undo_sys. */
 void ED_curve_undosys_type(UndoType *ut)
 {
   ut->name = "Edit Curve";

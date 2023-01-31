@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2013 Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2013 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup openimageio
@@ -28,7 +12,7 @@
 #  define _USE_MATH_DEFINES
 #endif
 
-// NOTE: Keep first, BLI_path_util conflicts with OIIO's format.
+/* NOTE: Keep first, #BLI_path_util conflicts with OIIO's format. */
 #include "openimageio_api.h"
 #include <OpenImageIO/imageio.h>
 #include <memory>
@@ -48,7 +32,7 @@ OIIO_NAMESPACE_USING
 using std::string;
 using std::unique_ptr;
 
-using uchar = unsigned char;
+using uchar = uchar;
 
 template<class T, class Q>
 static void fill_all_channels(T *pixels, int width, int height, int components, Q alpha)
@@ -156,16 +140,16 @@ static ImBuf *imb_oiio_load_image_float(
   /* ImBuf always needs 4 channels */
   fill_all_channels((float *)ibuf->rect_float, width, height, components, 1.0f);
 
-  /* Note: Photoshop 16 bit files never has alpha with it,
+  /* NOTE: Photoshop 16 bit files never has alpha with it,
    * so no need to handle associated/unassociated alpha. */
   return ibuf;
 }
 
 extern "C" {
 
-bool imb_is_a_photoshop(const unsigned char *mem, size_t size)
+bool imb_is_a_photoshop(const uchar *mem, size_t size)
 {
-  const unsigned char magic[4] = {'8', 'B', 'P', 'S'};
+  const uchar magic[4] = {'8', 'B', 'P', 'S'};
   if (size < sizeof(magic)) {
     return false;
   }
@@ -209,7 +193,7 @@ struct ImBuf *imb_load_photoshop(const char *filename, int flags, char colorspac
   }
 
   ImageSpec spec, config;
-  config.attribute("oiio:UnassociatedAlpha", (int)1);
+  config.attribute("oiio:UnassociatedAlpha", int(1));
 
   if (!in->open(filename, spec, config)) {
     std::cerr << __func__ << ": ImageInput::open() failed:" << std::endl
@@ -221,7 +205,7 @@ struct ImBuf *imb_load_photoshop(const char *filename, int flags, char colorspac
     string ics = spec.get_string_attribute("oiio:ColorSpace");
     BLI_strncpy(file_colorspace, ics.c_str(), IM_MAX_SPACE);
 
-    /* only use colorspaces exis */
+    /* Only use color-spaces exist. */
     if (colormanage_colorspace_get_named(file_colorspace)) {
       strcpy(colorspace, file_colorspace);
     }

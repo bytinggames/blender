@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /**
  * Copyright (C) 2001 NaN Technologies B.V.
@@ -54,7 +38,7 @@
 
 static bool nVidiaWindows;  // very dirty but hey, it's for testing only
 
-static void gearsTimerProc(GHOST_ITimerTask *task, GHOST_TUns64 time);
+static void gearsTimerProc(GHOST_ITimerTask *task, uint64_t time);
 
 static class Application *fApp;
 static GLfloat view_rotx = 20.0, view_roty = 30.0, view_rotz = 0.0;
@@ -71,9 +55,9 @@ void StereoProjection(float left,
                       float dist,
                       float eye);
 
-static void testTimerProc(GHOST_ITimerTask * /*task*/, GHOST_TUns64 time)
+static void testTimerProc(GHOST_ITimerTask * /*task*/, uint64_t time)
 {
-  std::cout << "timer1, time=" << (int)time << "\n";
+  std::cout << "timer1, time=" << int(time) << "\n";
 }
 
 static void gearGL(
@@ -345,7 +329,7 @@ void StereoProjection(float left,
                       float zero_plane,
                       float dist,
                       float eye)
-/* Perform the perspective projection for one eye's subfield.
+/* Perform the perspective projection for one eye's sub-field.
  * The projection is in the direction of the negative z axis.
  *
  * -6.0, 6.0, -4.8, 4.8,
@@ -365,8 +349,8 @@ void StereoProjection(float left,
  * of zero parallax.
  *
  * -0.31
- * eye = half the eye separation; positive for the right eye subfield,
- * negative for the left eye subfield.
+ * eye = half the eye separation; positive for the right eye sub-field,
+ * negative for the left eye sub-field.
  */
 {
   float xmid, ymid, clip_near, clip_far, topw, bottomw, leftw, rightw, dx, dy, n_over_d;
@@ -392,8 +376,7 @@ void StereoProjection(float left,
   glFrustum(leftw, rightw, bottomw, topw, clip_near, clip_far);
 
   glTranslatef(-xmid - eye, -ymid, -zero_plane - dist);
-  return;
-} /* stereoproj */
+}
 
 class Application : public GHOST_IEventConsumer {
  public:
@@ -424,17 +407,12 @@ Application::Application(GHOST_ISystem *system)
       stereo(false)
 {
   GHOST_GLSettings glSettings = {0};
+  glSettings.context_type = GHOST_kDrawingContextTypeOpenGL;
   fApp = this;
 
   // Create the main window
-  m_mainWindow = system->createWindow("gears - main window",
-                                      10,
-                                      64,
-                                      320,
-                                      200,
-                                      GHOST_kWindowStateNormal,
-                                      GHOST_kDrawingContextTypeOpenGL,
-                                      glSettings);
+  m_mainWindow = system->createWindow(
+      "gears - main window", 10, 64, 320, 200, GHOST_kWindowStateNormal, glSettings);
 
   if (!m_mainWindow) {
     std::cout << "could not create main window\n";
@@ -442,14 +420,8 @@ Application::Application(GHOST_ISystem *system)
   }
 
   // Create a secondary window
-  m_secondaryWindow = system->createWindow("gears - secondary window",
-                                           340,
-                                           64,
-                                           320,
-                                           200,
-                                           GHOST_kWindowStateNormal,
-                                           GHOST_kDrawingContextTypeOpenGL,
-                                           glSettings);
+  m_secondaryWindow = system->createWindow(
+      "gears - secondary window", 340, 64, 320, 200, GHOST_kWindowStateNormal, glSettings);
   if (!m_secondaryWindow) {
     std::cout << "could not create secondary window\n";
     exit(-1);
@@ -576,10 +548,12 @@ bool Application::processEvent(GHOST_IEvent *event)
           break;
 
         case GHOST_kKeyS:  // toggle mono and stereo
-          if (stereo)
+          if (stereo) {
             stereo = false;
-          else
+          }
+          else {
             stereo = true;
+          }
           break;
 
         case GHOST_kKeyT:
@@ -697,8 +671,9 @@ int main(int /*argc*/, char ** /*argv*/)
     if (lresult == ERROR_SUCCESS)
       printf("Successfully set value for key\n");
     regkey.Close();
-    if (lresult == ERROR_SUCCESS)
+    if (lresult == ERROR_SUCCESS) {
       printf("Successfully closed key\n");
+    }
     //      regkey.Write("2");
   }
 #endif  // WIN32
@@ -731,7 +706,7 @@ int main(int /*argc*/, char ** /*argv*/)
   return 0;
 }
 
-static void gearsTimerProc(GHOST_ITimerTask *task, GHOST_TUns64 /*time*/)
+static void gearsTimerProc(GHOST_ITimerTask *task, uint64_t /*time*/)
 {
   fAngle += 2.0;
   view_roty += 1.0;

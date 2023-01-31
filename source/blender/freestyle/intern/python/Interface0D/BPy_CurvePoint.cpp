@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -137,7 +123,7 @@ PyDoc_STRVAR(CurvePoint_first_svertex_doc,
              "\n"
              ":type: :class:`SVertex`");
 
-static PyObject *CurvePoint_first_svertex_get(BPy_CurvePoint *self, void *UNUSED(closure))
+static PyObject *CurvePoint_first_svertex_get(BPy_CurvePoint *self, void * /*closure*/)
 {
   SVertex *A = self->cp->A();
   if (A) {
@@ -146,9 +132,7 @@ static PyObject *CurvePoint_first_svertex_get(BPy_CurvePoint *self, void *UNUSED
   Py_RETURN_NONE;
 }
 
-static int CurvePoint_first_svertex_set(BPy_CurvePoint *self,
-                                        PyObject *value,
-                                        void *UNUSED(closure))
+static int CurvePoint_first_svertex_set(BPy_CurvePoint *self, PyObject *value, void * /*closure*/)
 {
   if (!BPy_SVertex_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be an SVertex");
@@ -163,7 +147,7 @@ PyDoc_STRVAR(CurvePoint_second_svertex_doc,
              "\n"
              ":type: :class:`SVertex`");
 
-static PyObject *CurvePoint_second_svertex_get(BPy_CurvePoint *self, void *UNUSED(closure))
+static PyObject *CurvePoint_second_svertex_get(BPy_CurvePoint *self, void * /*closure*/)
 {
   SVertex *B = self->cp->B();
   if (B) {
@@ -172,9 +156,7 @@ static PyObject *CurvePoint_second_svertex_get(BPy_CurvePoint *self, void *UNUSE
   Py_RETURN_NONE;
 }
 
-static int CurvePoint_second_svertex_set(BPy_CurvePoint *self,
-                                         PyObject *value,
-                                         void *UNUSED(closure))
+static int CurvePoint_second_svertex_set(BPy_CurvePoint *self, PyObject *value, void * /*closure*/)
 {
   if (!BPy_SVertex_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be an SVertex");
@@ -190,7 +172,7 @@ PyDoc_STRVAR(CurvePoint_fedge_doc,
              "\n"
              ":type: :class:`FEdge`");
 
-static PyObject *CurvePoint_fedge_get(BPy_CurvePoint *self, void *UNUSED(closure))
+static PyObject *CurvePoint_fedge_get(BPy_CurvePoint *self, void * /*closure*/)
 {
   SVertex *A = self->cp->A();
   Interface0D *B = (Interface0D *)self->cp->B();
@@ -206,12 +188,12 @@ PyDoc_STRVAR(CurvePoint_t2d_doc,
              "\n"
              ":type: float");
 
-static PyObject *CurvePoint_t2d_get(BPy_CurvePoint *self, void *UNUSED(closure))
+static PyObject *CurvePoint_t2d_get(BPy_CurvePoint *self, void * /*closure*/)
 {
   return PyFloat_FromDouble(self->cp->t2d());
 }
 
-static int CurvePoint_t2d_set(BPy_CurvePoint *self, PyObject *value, void *UNUSED(closure))
+static int CurvePoint_t2d_set(BPy_CurvePoint *self, PyObject *value, void * /*closure*/)
 {
   float scalar;
   if ((scalar = PyFloat_AsDouble(value)) == -1.0f && PyErr_Occurred()) {
@@ -252,7 +234,7 @@ PyTypeObject CurvePoint_Type = {
     nullptr,                                        /* tp_as_number */
     nullptr,                                        /* tp_as_sequence */
     nullptr,                                        /* tp_as_mapping */
-    nullptr,                                        /* tp_hash  */
+    nullptr,                                        /* tp_hash */
     nullptr,                                        /* tp_call */
     nullptr,                                        /* tp_str */
     nullptr,                                        /* tp_getattro */

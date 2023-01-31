@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2017, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2017 Blender Foundation. */
 
 /** \file
  * \ingroup draw
@@ -54,16 +39,17 @@ GPENCIL_tObject *gpencil_object_cache_add(GPENCIL_PrivateData *pd, Object *ob)
 
   tgp_ob->layers.first = tgp_ob->layers.last = NULL;
   tgp_ob->vfx.first = tgp_ob->vfx.last = NULL;
-  tgp_ob->camera_z = dot_v3v3(pd->camera_z_axis, ob->obmat[3]);
+  tgp_ob->camera_z = dot_v3v3(pd->camera_z_axis, ob->object_to_world[3]);
   tgp_ob->is_drawmode3d = (gpd->draw_mode == GP_DRAWMODE_3D) || pd->draw_depth_only;
-  tgp_ob->object_scale = mat4_to_scale(ob->obmat);
+  tgp_ob->object_scale = mat4_to_scale(ob->object_to_world);
 
   /* Check if any material with holdout flag enabled. */
   tgp_ob->do_mat_holdout = false;
-  for (int i = 0; i < ob->totcol; i++) {
+  const int tot_materials = BKE_object_material_count_eval(ob);
+  for (int i = 0; i < tot_materials; i++) {
     MaterialGPencilStyle *gp_style = BKE_gpencil_material_settings(ob, i + 1);
     if (((gp_style != NULL) && (gp_style->flag & GP_MATERIAL_IS_STROKE_HOLDOUT)) ||
-        ((gp_style->flag & GP_MATERIAL_IS_FILL_HOLDOUT))) {
+        (gp_style->flag & GP_MATERIAL_IS_FILL_HOLDOUT)) {
       tgp_ob->do_mat_holdout = true;
       break;
     }
@@ -74,7 +60,7 @@ GPENCIL_tObject *gpencil_object_cache_add(GPENCIL_PrivateData *pd, Object *ob)
    * strokes not aligned with the object axes. Maybe we could try to
    * compute the minimum axis of all strokes. But this would be more
    * computationally heavy and should go into the GPData evaluation. */
-  BoundBox *bbox = BKE_object_boundbox_get(ob);
+  const BoundBox *bbox = BKE_object_boundbox_get(ob);
   /* Convert bbox to matrix */
   float mat[4][4], size[3], center[3];
   BKE_boundbox_calc_size_aabb(bbox, size);
@@ -85,7 +71,7 @@ GPENCIL_tObject *gpencil_object_cache_add(GPENCIL_PrivateData *pd, Object *ob)
   add_v3_fl(size, 1e-8f);
   rescale_m4(mat, size);
   /* BBox space to World. */
-  mul_m4_m4m4(mat, ob->obmat, mat);
+  mul_m4_m4m4(mat, ob->object_to_world, mat);
   if (DRW_view_is_persp_get(NULL)) {
     /* BBox center to camera vector. */
     sub_v3_v3v3(tgp_ob->plane_normal, pd->camera_pos, mat[3]);
@@ -101,7 +87,7 @@ GPENCIL_tObject *gpencil_object_cache_add(GPENCIL_PrivateData *pd, Object *ob)
 
   transpose_m4(mat);
   /* mat is now a "normal" matrix which will transform
-   * BBox space normal to world space.  */
+   * BBox space normal to world space. */
   mul_mat3_m4_v3(mat, tgp_ob->plane_normal);
   normalize_v3(tgp_ob->plane_normal);
 
@@ -110,9 +96,9 @@ GPENCIL_tObject *gpencil_object_cache_add(GPENCIL_PrivateData *pd, Object *ob)
   unit_m4(tgp_ob->plane_mat);
   copy_v3_v3(tgp_ob->plane_mat[2], tgp_ob->plane_normal);
   orthogonalize_m4(tgp_ob->plane_mat, 2);
-  mul_mat3_m4_v3(ob->obmat, size);
+  mul_mat3_m4_v3(ob->object_to_world, size);
   float radius = len_v3(size);
-  mul_m4_v3(ob->obmat, center);
+  mul_m4_v3(ob->object_to_world, center);
   rescale_m4(tgp_ob->plane_mat, (float[3]){radius, radius, radius});
   copy_v3_v3(tgp_ob->plane_mat[3], center);
 
@@ -273,14 +259,20 @@ GPENCIL_tLayer *gpencil_layer_cache_add(GPENCIL_PrivateData *pd,
   const bool override_vertcol = (pd->v3d_color_type != -1);
   const bool is_vert_col_mode = (pd->v3d_color_type == V3D_SHADING_VERTEX_COLOR) ||
                                 GPENCIL_VERTEX_MODE(gpd) || pd->is_render;
-  bool is_masked = (gpl->flag & GP_LAYER_USE_MASK) && !BLI_listbase_is_empty(&gpl->mask_layers);
+  const bool is_viewlayer_render = pd->is_render && (gpl->viewlayername[0] != '\0') &&
+                                   STREQ(pd->view_layer->name, gpl->viewlayername);
+  const bool disable_masks_render = is_viewlayer_render &&
+                                    (gpl->flag & GP_LAYER_DISABLE_MASKS_IN_VIEWLAYER);
+  bool is_masked = disable_masks_render ? false :
+                                          (gpl->flag & GP_LAYER_USE_MASK) &&
+                                              !BLI_listbase_is_empty(&gpl->mask_layers);
 
   float vert_col_opacity = (override_vertcol) ?
                                (is_vert_col_mode ? pd->vertex_paint_opacity : 0.0f) :
-                               pd->is_render ? gpl->vertex_paint_opacity :
-                                               pd->vertex_paint_opacity;
+                               (pd->is_render ? gpl->vertex_paint_opacity :
+                                                pd->vertex_paint_opacity);
   /* Negate thickness sign to tag that strokes are in screen space.
-   * Convert to world units (by default, 1 meter = 2000 px). */
+   * Convert to world units (by default, 1 meter = 2000 pixels). */
   float thickness_scale = (is_screenspace) ? -1.0f : (gpd->pixfactor / GPENCIL_PIXEL_FACTOR);
   float layer_opacity = gpencil_layer_final_opacity_get(pd, ob, gpl);
   float layer_tint[4];
@@ -298,7 +290,7 @@ GPENCIL_tLayer *gpencil_layer_cache_add(GPENCIL_PrivateData *pd,
   /* Masking: Go through mask list and extract valid masks in a bitmap. */
   if (is_masked) {
     bool valid_mask = false;
-    /* Warning: only GP_MAX_MASKBITS amount of bits.
+    /* WARNING: only #GP_MAX_MASKBITS amount of bits.
      * TODO(fclem): Find a better system without any limitation. */
     tgp_layer->mask_bits = BLI_memblock_alloc(pd->gp_maskbit_pool);
     tgp_layer->mask_invert_bits = BLI_memblock_alloc(pd->gp_maskbit_pool);
@@ -396,13 +388,11 @@ GPENCIL_tLayer *gpencil_layer_cache_add(GPENCIL_PrivateData *pd,
     DRW_shgroup_uniform_texture(grp, "gpSceneDepthTexture", depth_tex);
     DRW_shgroup_uniform_texture_ref(grp, "gpMaskTexture", mask_tex);
     DRW_shgroup_uniform_vec3_copy(grp, "gpNormal", tgp_ob->plane_normal);
-    DRW_shgroup_uniform_bool_copy(grp, "strokeOrder3d", tgp_ob->is_drawmode3d);
-    DRW_shgroup_uniform_float_copy(grp, "thicknessScale", tgp_ob->object_scale);
-    DRW_shgroup_uniform_vec2_copy(grp, "sizeViewportInv", DRW_viewport_invert_size_get());
-    DRW_shgroup_uniform_vec2_copy(grp, "sizeViewport", DRW_viewport_size_get());
-    DRW_shgroup_uniform_float_copy(grp, "thicknessOffset", (float)gpl->line_change);
-    DRW_shgroup_uniform_float_copy(grp, "thicknessWorldScale", thickness_scale);
-    DRW_shgroup_uniform_float_copy(grp, "vertexColorOpacity", vert_col_opacity);
+    DRW_shgroup_uniform_bool_copy(grp, "gpStrokeOrder3d", tgp_ob->is_drawmode3d);
+    DRW_shgroup_uniform_float_copy(grp, "gpThicknessScale", tgp_ob->object_scale);
+    DRW_shgroup_uniform_float_copy(grp, "gpThicknessOffset", (float)gpl->line_change);
+    DRW_shgroup_uniform_float_copy(grp, "gpThicknessWorldScale", thickness_scale);
+    DRW_shgroup_uniform_float_copy(grp, "gpVertexColorOpacity", vert_col_opacity);
 
     /* If random color type, need color by layer. */
     float gpl_color[4];
@@ -411,9 +401,9 @@ GPENCIL_tLayer *gpencil_layer_cache_add(GPENCIL_PrivateData *pd,
       gpencil_layer_random_color_get(ob, gpl, gpl_color);
       gpl_color[3] = 1.0f;
     }
-    DRW_shgroup_uniform_vec4_copy(grp, "layerTint", gpl_color);
+    DRW_shgroup_uniform_vec4_copy(grp, "gpLayerTint", gpl_color);
 
-    DRW_shgroup_uniform_float_copy(grp, "layerOpacity", layer_alpha);
+    DRW_shgroup_uniform_float_copy(grp, "gpLayerOpacity", layer_alpha);
     DRW_shgroup_stencil_mask(grp, 0xFF);
   }
 

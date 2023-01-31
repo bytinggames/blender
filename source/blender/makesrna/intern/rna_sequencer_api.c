@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -29,6 +15,8 @@
 
 #include "RNA_access.h"
 #include "RNA_define.h"
+
+#include "SEQ_edit.h"
 
 #include "rna_internal.h"
 
@@ -57,26 +45,25 @@
 #  include "SEQ_relations.h"
 #  include "SEQ_render.h"
 #  include "SEQ_sequencer.h"
+#  include "SEQ_time.h"
 
 #  include "WM_api.h"
 
-static void rna_Sequence_update_rnafunc(ID *id, Sequence *self, bool do_data)
+static StripElem *rna_Sequence_strip_elem_from_frame(ID *id, Sequence *self, int timeline_frame)
 {
-  if (do_data) {
-    SEQ_relations_update_changed_seq_and_deps((Scene *)id, self, true, true);
-    // new_tstripdata(self); /* need 2.6x version of this. */
-  }
-  SEQ_time_update_sequence((Scene *)id, self);
-  SEQ_time_update_sequence_bounds((Scene *)id, self);
+  Scene *scene = (Scene *)id;
+  return SEQ_render_give_stripelem(scene, self, timeline_frame);
 }
 
-static void rna_Sequence_swap_internal(Sequence *seq_self,
+static void rna_Sequence_swap_internal(ID *id,
+                                       Sequence *seq_self,
                                        ReportList *reports,
                                        Sequence *seq_other)
 {
   const char *error_msg;
+  Scene *scene = (Scene *)id;
 
-  if (SEQ_edit_sequence_swap(seq_self, seq_other, &error_msg) == 0) {
+  if (SEQ_edit_sequence_swap(scene, seq_self, seq_other, &error_msg) == false) {
     BKE_report(reports, RPT_ERROR, error_msg);
   }
 }
@@ -97,6 +84,36 @@ static void rna_Sequences_move_strip_to_meta(
   DEG_id_tag_update(&scene->id, ID_RECALC_SEQUENCER_STRIPS);
 
   WM_main_add_notifier(NC_SCENE | ND_SEQUENCER, scene);
+}
+
+static Sequence *rna_Sequence_split(
+    ID *id, Sequence *seq, Main *bmain, ReportList *reports, int frame, int split_method)
+{
+  Scene *scene = (Scene *)id;
+  ListBase *seqbase = SEQ_get_seqbase_by_seq(scene, seq);
+
+  const char *error_msg = NULL;
+  Sequence *r_seq = SEQ_edit_strip_split(
+      bmain, scene, seqbase, seq, frame, split_method, &error_msg);
+  if (error_msg != NULL) {
+    BKE_report(reports, RPT_ERROR, error_msg);
+  }
+
+  /* Update depsgraph. */
+  DEG_relations_tag_update(bmain);
+  DEG_id_tag_update(&scene->id, ID_RECALC_SEQUENCER_STRIPS);
+
+  WM_main_add_notifier(NC_SCENE | ND_SEQUENCER, scene);
+
+  return r_seq;
+}
+
+static Sequence *rna_Sequence_parent_meta(ID *id, Sequence *seq_self)
+{
+  Scene *scene = (Scene *)id;
+  Editing *ed = SEQ_editing_get(scene);
+
+  return SEQ_find_metastrip_by_sequence(&ed->seqbase, NULL, seq_self);
 }
 
 static Sequence *rna_Sequences_new_clip(ID *id,
@@ -238,7 +255,7 @@ static Sequence *rna_Sequences_new_image(ID *id,
   char dir[FILE_MAX], filename[FILE_MAX];
   BLI_split_dirfile(file, dir, filename, sizeof(dir), sizeof(filename));
   SEQ_add_image_set_directory(seq, dir);
-  SEQ_add_image_load_file(seq, 0, filename);
+  SEQ_add_image_load_file(scene, seq, 0, filename);
   SEQ_add_image_init_alpha_mode(seq);
 
   DEG_relations_tag_update(bmain);
@@ -560,7 +577,6 @@ static StripElem *rna_SequenceElements_append(ID *id, Sequence *seq, const char 
   BLI_strncpy(se->name, filename, sizeof(se->name));
   seq->len++;
 
-  SEQ_time_update_sequence_bounds(scene, seq);
   WM_main_add_notifier(NC_SCENE | ND_SEQUENCER, scene);
 
   return se;
@@ -601,8 +617,6 @@ static void rna_SequenceElements_pop(ID *id, Sequence *seq, ReportList *reports,
   MEM_freeN(seq->strip->stripdata);
   seq->strip->stripdata = new_seq;
 
-  SEQ_time_update_sequence_bounds(scene, seq);
-
   WM_main_add_notifier(NC_SCENE | ND_SEQUENCER, scene);
 }
 
@@ -635,12 +649,14 @@ void RNA_api_sequence_strip(StructRNA *srna)
       {0, NULL, 0, NULL, NULL},
   };
 
-  func = RNA_def_function(srna, "update", "rna_Sequence_update_rnafunc");
-  RNA_def_function_flag(func, FUNC_USE_SELF_ID);
-  RNA_def_function_ui_description(func, "Update the strip dimensions");
-  parm = RNA_def_boolean(func, "data", false, "Data", "Update strip data");
+  static const EnumPropertyItem seq_split_method_items[] = {
+      {SEQ_SPLIT_SOFT, "SOFT", 0, "Soft", ""},
+      {SEQ_SPLIT_HARD, "HARD", 0, "Hard", ""},
+      {0, NULL, 0, NULL, NULL},
+  };
 
-  func = RNA_def_function(srna, "strip_elem_from_frame", "SEQ_render_give_stripelem");
+  func = RNA_def_function(srna, "strip_elem_from_frame", "rna_Sequence_strip_elem_from_frame");
+  RNA_def_function_flag(func, FUNC_USE_SELF_ID);
   RNA_def_function_ui_description(func, "Return the strip element from a given frame or None");
   parm = RNA_def_int(func,
                      "frame",
@@ -657,6 +673,7 @@ void RNA_api_sequence_strip(StructRNA *srna)
       RNA_def_pointer(func, "elem", "SequenceElement", "", "strip element of the current frame"));
 
   func = RNA_def_function(srna, "swap", "rna_Sequence_swap_internal");
+  RNA_def_function_flag(func, FUNC_USE_REPORTS | FUNC_USE_SELF_ID);
   RNA_def_function_flag(func, FUNC_USE_REPORTS);
   parm = RNA_def_pointer(func, "other", "Sequence", "Other", "");
   RNA_def_parameter_flags(parm, PROP_NEVER_NULL, PARM_REQUIRED);
@@ -670,12 +687,31 @@ void RNA_api_sequence_strip(StructRNA *srna)
                          "Meta to move the strip into");
   RNA_def_parameter_flags(parm, PROP_NEVER_NULL, PARM_REQUIRED);
 
+  func = RNA_def_function(srna, "parent_meta", "rna_Sequence_parent_meta");
+  RNA_def_function_flag(func, FUNC_USE_SELF_ID);
+  RNA_def_function_ui_description(func, "Parent meta");
+  /* return type */
+  parm = RNA_def_pointer(func, "sequence", "Sequence", "", "Parent Meta");
+  RNA_def_function_return(func, parm);
+
   func = RNA_def_function(srna, "invalidate_cache", "rna_Sequence_invalidate_cache_rnafunc");
   RNA_def_function_flag(func, FUNC_USE_SELF_ID);
   RNA_def_function_ui_description(func,
                                   "Invalidate cached images for strip and all dependent strips");
   parm = RNA_def_enum(func, "type", seq_cahce_type_items, 0, "Type", "Cache Type");
   RNA_def_parameter_flags(parm, PROP_NEVER_NULL, PARM_REQUIRED);
+
+  func = RNA_def_function(srna, "split", "rna_Sequence_split");
+  RNA_def_function_flag(func, FUNC_USE_REPORTS | FUNC_USE_SELF_ID | FUNC_USE_MAIN);
+  RNA_def_function_ui_description(func, "Split Sequence");
+  parm = RNA_def_int(
+      func, "frame", 0, INT_MIN, INT_MAX, "", "Frame where to split the strip", INT_MIN, INT_MAX);
+  RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
+  parm = RNA_def_enum(func, "split_method", seq_split_method_items, 0, "", "");
+  RNA_def_parameter_flags(parm, PROP_NEVER_NULL, PARM_REQUIRED);
+  /* Return type. */
+  parm = RNA_def_pointer(func, "sequence", "Sequence", "", "Right side Sequence");
+  RNA_def_function_return(func, parm);
 }
 
 void RNA_api_sequence_elements(BlenderRNA *brna, PropertyRNA *cprop)

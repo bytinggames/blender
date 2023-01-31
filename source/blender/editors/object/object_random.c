@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2014 by Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2014 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edobj
@@ -25,6 +9,7 @@
 
 #include "DNA_layer_types.h"
 #include "DNA_object_types.h"
+#include "DNA_scene_types.h"
 
 #include "BLI_math.h"
 #include "BLI_rand.h"
@@ -93,6 +78,7 @@ static bool object_rand_transverts(TransVertStore *tvs,
 
 static int object_rand_verts_exec(bContext *C, wmOperator *op)
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Object *ob_active = CTX_data_edit_object(C);
   const int ob_mode = ob_active->mode;
@@ -105,7 +91,7 @@ static int object_rand_verts_exec(bContext *C, wmOperator *op)
   bool changed_multi = false;
   uint objects_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len, ob_mode);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len, ob_mode);
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *ob_iter = objects[ob_index];
 

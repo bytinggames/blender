@@ -1,22 +1,4 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ***** END GPL LICENSE BLOCK *****
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # Populate a template file (POT format currently) from Blender RNA/py/C data.
 # Note: This script is meant to be used from inside Blender!
@@ -36,6 +18,10 @@ OBJECT_TYPES_RENDER = {'MESH', 'CURVE', 'SURFACE', 'META', 'FONT'}
 
 def ids_nolib(bids):
     return (bid for bid in bids if not bid.library)
+
+
+def ids_nolib_with_preview(bids):
+    return (bid for bid in bids if (not bid.library and bid.preview))
 
 
 def rna_backup_gen(data, include_props=None, exclude_props=None, root=()):
@@ -92,7 +78,7 @@ def do_previews(do_objects, do_collections, do_scenes, do_data_intern):
                 backup_camera, backup_camera_data = [None] * 2
                 camera_data = bpy.data.cameras.new("TEMP_preview_render_camera")
                 camera = bpy.data.objects.new("TEMP_preview_render_camera", camera_data)
-                camera.rotation_euler = Euler((1.1635528802871704, 0.0, 0.7853981852531433), 'XYZ')  # (66.67, 0.0, 45.0)
+                camera.rotation_euler = Euler((1.1635528802871704, 0.0, 0.7853981852531433), 'XYZ')  # (66.67, 0, 45)
                 scene.camera = camera
                 scene.collection.objects.link(camera)
             # TODO: add light if none found in scene?
@@ -112,11 +98,11 @@ def do_previews(do_objects, do_collections, do_scenes, do_data_intern):
 
             scene.world = world
 
-            camera.rotation_euler = Euler((1.1635528802871704, 0.0, 0.7853981852531433), 'XYZ')  # (66.67, 0.0, 45.0)
+            camera.rotation_euler = Euler((1.1635528802871704, 0.0, 0.7853981852531433), 'XYZ')  # (66.67, 0, 45)
             scene.camera = camera
             scene.collection.objects.link(camera)
 
-            light.rotation_euler = Euler((0.7853981852531433, 0.0, 1.7453292608261108), 'XYZ')  # (45.0, 0.0, 100.0)
+            light.rotation_euler = Euler((0.7853981852531433, 0.0, 1.7453292608261108), 'XYZ')  # (45, 0, 100)
             light_data.falloff_type = 'CONSTANT'
             light_data.spot_size = 1.0471975803375244  # 60
             scene.collection.objects.link(light)
@@ -136,8 +122,6 @@ def do_previews(do_objects, do_collections, do_scenes, do_data_intern):
         scene.render.use_overwrite = True
         scene.render.use_stamp = False
         scene.render.threads_mode = 'AUTO'
-        scene.render.tile_x = RENDER_PREVIEW_SIZE // 4
-        scene.render.tile_y = RENDER_PREVIEW_SIZE // 4
 
         image = bpy.data.images.new("TEMP_render_image", RENDER_PREVIEW_SIZE, RENDER_PREVIEW_SIZE, alpha=True)
         image.source = 'FILE'
@@ -313,8 +297,9 @@ def do_previews(do_objects, do_collections, do_scenes, do_data_intern):
         image = bpy.data.images[render_context.image, None]
         item = getattr(bpy.data, item_container)[item_name, None]
         image.reload()
-        item.preview.image_size = (RENDER_PREVIEW_SIZE, RENDER_PREVIEW_SIZE)
-        item.preview.image_pixels_float[:] = image.pixels
+        preview = item.preview_ensure()
+        preview.image_size = (RENDER_PREVIEW_SIZE, RENDER_PREVIEW_SIZE)
+        preview.image_pixels_float[:] = image.pixels
 
     # And now, main code!
     do_save = True
@@ -451,15 +436,15 @@ def do_clear_previews(do_objects, do_collections, do_scenes, do_data_intern):
         bpy.ops.wm.previews_clear(id_type={'SHADING'})
 
     if do_objects:
-        for ob in ids_nolib(bpy.data.objects):
+        for ob in ids_nolib_with_preview(bpy.data.objects):
             ob.preview.image_size = (0, 0)
 
     if do_collections:
-        for grp in ids_nolib(bpy.data.collections):
+        for grp in ids_nolib_with_preview(bpy.data.collections):
             grp.preview.image_size = (0, 0)
 
     if do_scenes:
-        for scene in ids_nolib(bpy.data.scenes):
+        for scene in ids_nolib_with_preview(bpy.data.scenes):
             scene.preview.image_size = (0, 0)
 
     print("Saving %s..." % bpy.data.filepath)
@@ -480,19 +465,44 @@ def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 
     parser = argparse.ArgumentParser(
-        description="Use Blender to generate previews for currently open Blender file's items.")
-    parser.add_argument('--clear', default=False, action="store_true",
-                        help="Clear previews instead of generating them.")
-    parser.add_argument('--no_backups', default=False, action="store_true",
-                        help="Do not generate a backup .blend1 file when saving processed ones.")
-    parser.add_argument('--no_scenes', default=True, action="store_false",
-                        help="Do not generate/clear previews for scene IDs.")
-    parser.add_argument('--no_collections', default=True, action="store_false",
-                        help="Do not generate/clear previews for collection IDs.")
-    parser.add_argument('--no_objects', default=True, action="store_false",
-                        help="Do not generate/clear previews for object IDs.")
-    parser.add_argument('--no_data_intern', default=True, action="store_false",
-                        help="Do not generate/clear previews for mat/tex/image/etc. IDs (those handled by core Blender code).")
+        description="Use Blender to generate previews for currently open Blender file's items.",
+    )
+    parser.add_argument(
+        '--clear',
+        default=False,
+        action="store_true",
+        help="Clear previews instead of generating them.",
+    )
+    parser.add_argument(
+        '--no_backups',
+        default=False,
+        action="store_true",
+        help="Do not generate a backup .blend1 file when saving processed ones.",
+    )
+    parser.add_argument(
+        '--no_scenes',
+        default=True,
+        action="store_false",
+        help="Do not generate/clear previews for scene IDs.",
+    )
+    parser.add_argument(
+        '--no_collections',
+        default=True,
+        action="store_false",
+        help="Do not generate/clear previews for collection IDs.",
+    )
+    parser.add_argument(
+        '--no_objects',
+        default=True,
+        action="store_false",
+        help="Do not generate/clear previews for object IDs.",
+    )
+    parser.add_argument(
+        '--no_data_intern',
+        default=True,
+        action="store_false",
+        help="Do not generate/clear previews for mat/tex/image/etc. IDs (those handled by core Blender code).",
+    )
     args = parser.parse_args(argv)
 
     orig_save_version = bpy.context.preferences.filepaths.save_version

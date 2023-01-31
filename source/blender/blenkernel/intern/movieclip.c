@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2011 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2011 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -60,6 +44,7 @@
 #include "BLT_translation.h"
 
 #include "BKE_anim_data.h"
+#include "BKE_bpath.h"
 #include "BKE_colortools.h"
 #include "BKE_global.h"
 #include "BKE_idtype.h"
@@ -69,11 +54,13 @@
 #include "BKE_main.h"
 #include "BKE_movieclip.h"
 #include "BKE_node.h"
+#include "BKE_node_tree_update.h"
 #include "BKE_tracking.h"
 
 #include "IMB_imbuf.h"
 #include "IMB_imbuf_types.h"
 #include "IMB_moviecache.h"
+#include "IMB_openexr.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
@@ -81,10 +68,6 @@
 #include "GPU_texture.h"
 
 #include "BLO_read_write.h"
-
-#ifdef WITH_OPENEXR
-#  include "intern/openexr/openexr_multi.h"
-#endif
 
 static void free_buffers(MovieClip *clip);
 
@@ -104,7 +87,7 @@ static void movie_clip_copy_data(Main *UNUSED(bmain), ID *id_dst, const ID *id_s
   MovieClip *movie_clip_dst = (MovieClip *)id_dst;
   const MovieClip *movie_clip_src = (const MovieClip *)id_src;
 
-  /* We never handle usercount here for own data. */
+  /* We never handle user-count here for own data. */
   const int flag_subdata = flag | LIB_ID_CREATE_NO_USER_REFCOUNT;
 
   movie_clip_dst->anim = NULL;
@@ -132,19 +115,19 @@ static void movie_clip_foreach_id(ID *id, LibraryForeachIDData *data)
   MovieClip *movie_clip = (MovieClip *)id;
   MovieTracking *tracking = &movie_clip->tracking;
 
-  BKE_LIB_FOREACHID_PROCESS(data, movie_clip->gpd, IDWALK_CB_USER);
+  BKE_LIB_FOREACHID_PROCESS_IDSUPER(data, movie_clip->gpd, IDWALK_CB_USER);
 
   LISTBASE_FOREACH (MovieTrackingTrack *, track, &tracking->tracks) {
-    BKE_LIB_FOREACHID_PROCESS(data, track->gpd, IDWALK_CB_USER);
+    BKE_LIB_FOREACHID_PROCESS_IDSUPER(data, track->gpd, IDWALK_CB_USER);
   }
   LISTBASE_FOREACH (MovieTrackingObject *, object, &tracking->objects) {
     LISTBASE_FOREACH (MovieTrackingTrack *, track, &object->tracks) {
-      BKE_LIB_FOREACHID_PROCESS(data, track->gpd, IDWALK_CB_USER);
+      BKE_LIB_FOREACHID_PROCESS_IDSUPER(data, track->gpd, IDWALK_CB_USER);
     }
   }
 
   LISTBASE_FOREACH (MovieTrackingPlaneTrack *, plane_track, &tracking->plane_tracks) {
-    BKE_LIB_FOREACHID_PROCESS(data, plane_track->image, IDWALK_CB_USER);
+    BKE_LIB_FOREACHID_PROCESS_IDSUPER(data, plane_track->image, IDWALK_CB_USER);
   }
 }
 
@@ -156,13 +139,17 @@ static void movie_clip_foreach_cache(ID *id,
   IDCacheKey key = {
       .id_session_uuid = id->session_uuid,
       .offset_in_ID = offsetof(MovieClip, cache),
-      .cache_v = movie_clip->cache,
   };
   function_callback(id, &key, (void **)&movie_clip->cache, 0, user_data);
 
   key.offset_in_ID = offsetof(MovieClip, tracking.camera.intrinsics);
-  key.cache_v = movie_clip->tracking.camera.intrinsics;
   function_callback(id, &key, (void **)&movie_clip->tracking.camera.intrinsics, 0, user_data);
+}
+
+static void movie_clip_foreach_path(ID *id, BPathForeachPathData *bpath_data)
+{
+  MovieClip *movie_clip = (MovieClip *)id;
+  BKE_bpath_foreach_path_fixed_process(bpath_data, movie_clip->filepath);
 }
 
 static void write_movieTracks(BlendWriter *writer, ListBase *tracks)
@@ -206,36 +193,35 @@ static void write_movieReconstruction(BlendWriter *writer,
 static void movieclip_blend_write(BlendWriter *writer, ID *id, const void *id_address)
 {
   MovieClip *clip = (MovieClip *)id;
-  if (clip->id.us > 0 || BLO_write_is_undo(writer)) {
-    /* Clean up, important in undo case to reduce false detection of changed datablocks. */
-    clip->anim = NULL;
-    clip->tracking_context = NULL;
-    clip->tracking.stats = NULL;
 
-    MovieTracking *tracking = &clip->tracking;
-    MovieTrackingObject *object;
+  /* Clean up, important in undo case to reduce false detection of changed datablocks. */
+  clip->anim = NULL;
+  clip->tracking_context = NULL;
+  clip->tracking.stats = NULL;
 
-    BLO_write_id_struct(writer, MovieClip, id_address, &clip->id);
-    BKE_id_blend_write(writer, &clip->id);
+  MovieTracking *tracking = &clip->tracking;
+  MovieTrackingObject *object;
 
-    if (clip->adt) {
-      BKE_animdata_blend_write(writer, clip->adt);
-    }
+  BLO_write_id_struct(writer, MovieClip, id_address, &clip->id);
+  BKE_id_blend_write(writer, &clip->id);
 
-    write_movieTracks(writer, &tracking->tracks);
-    write_moviePlaneTracks(writer, &tracking->plane_tracks);
-    write_movieReconstruction(writer, &tracking->reconstruction);
+  if (clip->adt) {
+    BKE_animdata_blend_write(writer, clip->adt);
+  }
 
-    object = tracking->objects.first;
-    while (object) {
-      BLO_write_struct(writer, MovieTrackingObject, object);
+  write_movieTracks(writer, &tracking->tracks);
+  write_moviePlaneTracks(writer, &tracking->plane_tracks);
+  write_movieReconstruction(writer, &tracking->reconstruction);
 
-      write_movieTracks(writer, &object->tracks);
-      write_moviePlaneTracks(writer, &object->plane_tracks);
-      write_movieReconstruction(writer, &object->reconstruction);
+  object = tracking->objects.first;
+  while (object) {
+    BLO_write_struct(writer, MovieTrackingObject, object);
 
-      object = object->next;
-    }
+    write_movieTracks(writer, &object->tracks);
+    write_moviePlaneTracks(writer, &object->plane_tracks);
+    write_movieReconstruction(writer, &object->reconstruction);
+
+    object = object->next;
   }
 }
 
@@ -287,7 +273,7 @@ static void movieclip_blend_read_data(BlendDataReader *reader, ID *id)
   clip->tracking_context = NULL;
   clip->tracking.stats = NULL;
 
-  /* TODO we could store those in undo cache storage as well, and preserve them instead of
+  /* TODO: we could store those in undo cache storage as well, and preserve them instead of
    * re-creating them... */
   BLI_listbase_clear(&clip->runtime.gputextures);
 
@@ -347,7 +333,8 @@ IDTypeInfo IDType_ID_MC = {
     .name = "MovieClip",
     .name_plural = "movieclips",
     .translation_context = BLT_I18NCONTEXT_ID_MOVIECLIP,
-    .flags = 0,
+    .flags = IDTYPE_FLAGS_APPEND_IS_REUSABLE,
+    .asset_type_info = NULL,
 
     .init_data = movie_clip_init_data,
     .copy_data = movie_clip_copy_data,
@@ -355,7 +342,8 @@ IDTypeInfo IDType_ID_MC = {
     .make_local = NULL,
     .foreach_id = movie_clip_foreach_id,
     .foreach_cache = movie_clip_foreach_cache,
-    .owner_get = NULL,
+    .foreach_path = movie_clip_foreach_path,
+    .owner_pointer_get = NULL,
 
     .blend_write = movieclip_blend_write,
     .blend_read_data = movieclip_blend_read_data,
@@ -369,7 +357,7 @@ IDTypeInfo IDType_ID_MC = {
 
 /*********************** movieclip buffer loaders *************************/
 
-static int sequence_guess_offset(const char *full_name, int head_len, unsigned short numlen)
+static int sequence_guess_offset(const char *full_name, int head_len, ushort numlen)
 {
   char num[FILE_MAX] = {0};
 
@@ -437,7 +425,7 @@ static int get_timecode(MovieClip *clip, int flag)
 
 static void get_sequence_fname(const MovieClip *clip, const int framenr, char *name)
 {
-  unsigned short numlen;
+  ushort numlen;
   char head[FILE_MAX], tail[FILE_MAX];
   int offset;
 
@@ -536,10 +524,6 @@ static void movieclip_convert_multilayer_add_pass(void *UNUSED(layer),
 
 #endif /* WITH_OPENEXR */
 
-/* Will try to make image buffer usable when originating from the multi-layer
- * source.
- * Internally finds a first combined pass and uses that as a buffer. Not ideal,
- * but is better than a complete empty buffer. */
 void BKE_movieclip_convert_multilayer_ibuf(struct ImBuf *ibuf)
 {
   if (ibuf == NULL) {
@@ -663,7 +647,7 @@ static void movieclip_calc_length(MovieClip *clip)
     }
   }
   else if (clip->source == MCLIP_SRC_SEQUENCE) {
-    unsigned short numlen;
+    ushort numlen;
     char name[FILE_MAX], head[FILE_MAX], tail[FILE_MAX];
 
     BLI_path_sequence_decode(clip->filepath, head, tail, &numlen);
@@ -751,7 +735,7 @@ static int user_frame_to_cache_frame(MovieClip *clip, int framenr)
 
   if (clip->source == MCLIP_SRC_SEQUENCE) {
     if (clip->cache->sequence_offset == -1) {
-      unsigned short numlen;
+      ushort numlen;
       char head[FILE_MAX], tail[FILE_MAX];
 
       BLI_path_sequence_decode(clip->filepath, head, tail, &numlen);
@@ -779,7 +763,7 @@ static void moviecache_keydata(void *userkey, int *framenr, int *proxy, int *ren
   *render_flags = key->render_flag;
 }
 
-static unsigned int moviecache_hashhash(const void *keyv)
+static uint moviecache_hashhash(const void *keyv)
 {
   const MovieClipImBufCacheKey *key = keyv;
   int rval = key->framenr;
@@ -843,7 +827,7 @@ static ImBuf *get_imbuf_cache(MovieClip *clip, const MovieClipUser *user, int fl
       key.render_flag = 0;
     }
 
-    return IMB_moviecache_get(clip->cache->moviecache, &key);
+    return IMB_moviecache_get(clip->cache->moviecache, &key, NULL);
   }
 
   return NULL;
@@ -896,7 +880,7 @@ static bool put_imbuf_cache(
     clip->cache->moviecache = moviecache;
     clip->cache->sequence_offset = -1;
     if (clip->source == MCLIP_SRC_SEQUENCE) {
-      unsigned short numlen;
+      ushort numlen;
       BLI_path_sequence_decode(clip->filepath, NULL, NULL, &numlen);
       clip->cache->is_still_sequence = (numlen == 0);
     }
@@ -948,18 +932,25 @@ static MovieClip *movieclip_alloc(Main *bmain, const char *name)
 static void movieclip_load_get_size(MovieClip *clip)
 {
   int width, height;
-  MovieClipUser user = {0};
+  MovieClipUser user = *DNA_struct_default_get(MovieClipUser);
 
   user.framenr = BKE_movieclip_remap_clip_to_scene_frame(clip, 1);
   BKE_movieclip_get_size(clip, &user, &width, &height);
 
-  if (width && height) {
-    clip->tracking.camera.principal[0] = ((float)width) / 2.0f;
-    clip->tracking.camera.principal[1] = ((float)height) / 2.0f;
-  }
-  else {
+  if (!width || !height) {
     clip->lastsize[0] = clip->lastsize[1] = IMG_SIZE_FALLBACK;
   }
+}
+
+static void movieclip_principal_to_center(MovieClip *clip)
+{
+  MovieClipUser user = *DNA_struct_default_get(MovieClipUser);
+
+  int width, height;
+  BKE_movieclip_get_size(clip, &user, &width, &height);
+
+  clip->tracking.camera.principal[0] = ((float)width) / 2.0f;
+  clip->tracking.camera.principal[1] = ((float)height) / 2.0f;
 }
 
 static void detect_clip_source(Main *bmain, MovieClip *clip)
@@ -980,10 +971,6 @@ static void detect_clip_source(Main *bmain, MovieClip *clip)
   }
 }
 
-/* checks if image was already loaded, then returns same image
- * otherwise creates new.
- * does not load ibuf itself
- * pass on optional frame for #name images */
 MovieClip *BKE_movieclip_file_add(Main *bmain, const char *name)
 {
   MovieClip *clip;
@@ -1015,6 +1002,7 @@ MovieClip *BKE_movieclip_file_add(Main *bmain, const char *name)
     clip->tracking.camera.focal = 24.0f * width / clip->tracking.camera.sensor_width;
   }
 
+  movieclip_principal_to_center(clip);
   movieclip_calc_length(clip);
 
   return clip;
@@ -1177,7 +1165,7 @@ static ImBuf *get_postprocessed_cached_frame(const MovieClip *clip,
     return NULL;
   }
 
-  /* postprocessing happened for other frame */
+  /* Postprocessing happened for other frame. */
   if (cache->postprocessed.framenr != framenr) {
     return NULL;
   }
@@ -1320,7 +1308,7 @@ static ImBuf *movieclip_get_postprocessed_ibuf(
     clip->lastframe = framenr;
     real_ibuf_size(clip, user, ibuf, &clip->lastsize[0], &clip->lastsize[1]);
 
-    /* postprocess frame and put to cache if needed*/
+    /* Post-process frame and put to cache if needed. */
     if (need_postprocess) {
       ImBuf *tmpibuf = ibuf;
       ibuf = postprocess_frame(clip, user, tmpibuf, flag, postprocess_flag);
@@ -1613,7 +1601,6 @@ void BKE_movieclip_get_aspect(MovieClip *clip, float *aspx, float *aspy)
   *aspy = clip->aspy / clip->aspx / clip->tracking.camera.pixel_aspect;
 }
 
-/* get segments of cached frames. useful for debugging cache policies */
 void BKE_movieclip_get_cache_segments(MovieClip *clip,
                                       MovieClipUser *user,
                                       int *r_totseg,
@@ -1625,8 +1612,10 @@ void BKE_movieclip_get_cache_segments(MovieClip *clip,
   if (clip->cache) {
     int proxy = rendersize_to_proxy(user, clip->flag);
 
+    BLI_thread_lock(LOCK_MOVIECLIP);
     IMB_moviecache_get_cache_segments(
         clip->cache->moviecache, proxy, user->render_flag, r_totseg, r_points);
+    BLI_thread_unlock(LOCK_MOVIECLIP);
   }
 }
 
@@ -1691,22 +1680,27 @@ void BKE_movieclip_reload(Main *bmain, MovieClip *clip)
   /* update clip source */
   detect_clip_source(bmain, clip);
 
-  clip->lastsize[0] = clip->lastsize[1] = 0;
-  movieclip_load_get_size(clip);
+  const int old_width = clip->lastsize[0];
+  const int old_height = clip->lastsize[1];
 
+  /* Tag for re-calculation of the actual size. */
+  clip->lastsize[0] = clip->lastsize[1] = 0;
+
+  movieclip_load_get_size(clip);
   movieclip_calc_length(clip);
 
-  /* same as for image update -- don't use notifiers because they are not 100% sure to succeeded
-   * (node trees which are not currently visible wouldn't be refreshed)
-   */
-  {
-    Scene *scene;
-    for (scene = bmain->scenes.first; scene; scene = scene->id.next) {
-      if (scene->nodetree) {
-        nodeUpdateID(scene->nodetree, &clip->id);
-      }
-    }
+  int width, height;
+  MovieClipUser user = *DNA_struct_default_get(MovieClipUser);
+  BKE_movieclip_get_size(clip, &user, &width, &height);
+
+  /* If the resolution changes then re-initialize the principal point.
+   * Ideally the principal point will be in some sort of relative space, but this is not how it is
+   * designed currently. The code should cover the most of the common cases. */
+  if (width != old_width || height != old_height) {
+    movieclip_principal_to_center(clip);
   }
+
+  BKE_ntree_update_tag_id_changed(bmain, &clip->id);
 }
 
 void BKE_movieclip_update_scopes(MovieClip *clip, MovieClipUser *user, MovieClipScopes *scopes)
@@ -1849,9 +1843,6 @@ static void movieclip_build_proxy_ibuf(
   IMB_freeImBuf(scaleibuf);
 }
 
-/* note: currently used by proxy job for movies, threading happens within single frame
- * (meaning scaling shall be threaded)
- */
 void BKE_movieclip_build_proxy_frame(MovieClip *clip,
                                      int clip_flag,
                                      struct MovieDistortion *distortion,
@@ -1893,9 +1884,6 @@ void BKE_movieclip_build_proxy_frame(MovieClip *clip,
   }
 }
 
-/* note: currently used by proxy job for sequences, threading happens within sequence
- * (different threads handles different frames, no threading within frame is needed)
- */
 void BKE_movieclip_build_proxy_frame_for_ibuf(MovieClip *clip,
                                               ImBuf *ibuf,
                                               struct MovieDistortion *distortion,
@@ -1924,6 +1912,11 @@ void BKE_movieclip_build_proxy_frame_for_ibuf(MovieClip *clip,
       IMB_freeImBuf(tmpibuf);
     }
   }
+}
+
+bool BKE_movieclip_proxy_enabled(MovieClip *clip)
+{
+  return clip->flag & MCLIP_USE_PROXY;
 }
 
 float BKE_movieclip_remap_scene_to_clip_frame(const MovieClip *clip, float framenr)
@@ -2115,8 +2108,7 @@ GPUTexture *BKE_movieclip_get_gpu_texture(MovieClip *clip, MovieClipUser *cuser)
   /* This only means RGBA16F instead of RGBA32F. */
   const bool high_bitdepth = false;
   const bool store_premultiplied = ibuf->rect_float ? false : true;
-  *tex = IMB_create_gpu_texture(
-      clip->id.name + 2, ibuf, high_bitdepth, store_premultiplied, false);
+  *tex = IMB_create_gpu_texture(clip->id.name + 2, ibuf, high_bitdepth, store_premultiplied);
 
   /* Do not generate mips for movieclips... too slow. */
   GPU_texture_mipmap_mode(*tex, false, true);
@@ -2128,9 +2120,9 @@ GPUTexture *BKE_movieclip_get_gpu_texture(MovieClip *clip, MovieClipUser *cuser)
 
 void BKE_movieclip_free_gputexture(struct MovieClip *clip)
 {
-  /* number of gpu textures to keep around as cache
+  /* Number of gpu textures to keep around as cache.
    * We don't want to keep too many GPU textures for
-   * movie clips around, as they can be large.*/
+   * movie clips around, as they can be large. */
   const int MOVIECLIP_NUM_GPUTEXTURES = 1;
 
   while (BLI_listbase_count(&clip->runtime.gputextures) > MOVIECLIP_NUM_GPUTEXTURES) {
@@ -2146,4 +2138,5 @@ void BKE_movieclip_free_gputexture(struct MovieClip *clip)
     MEM_freeN(tex);
   }
 }
+
 /** \} */

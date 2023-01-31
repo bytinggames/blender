@@ -1,27 +1,13 @@
-/*
- * Copyright 2011-2013 Blender Foundation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* SPDX-License-Identifier: Apache-2.0
+ * Copyright 2011-2022 Blender Foundation */
 
-#ifndef __VOLUME_H__
-#define __VOLUME_H__
+#pragma once
 
 CCL_NAMESPACE_BEGIN
 
 /* VOLUME EXTINCTION */
 
-ccl_device void volume_extinction_setup(ShaderData *sd, float3 weight)
+ccl_device void volume_extinction_setup(ccl_private ShaderData *sd, Spectrum weight)
 {
   if (sd->flag & SD_EXTINCTION) {
     sd->closure_transparent_extinction += weight;
@@ -34,7 +20,7 @@ ccl_device void volume_extinction_setup(ShaderData *sd, float3 weight)
 
 /* HENYEY-GREENSTEIN CLOSURE */
 
-typedef ccl_addr_space struct HenyeyGreensteinVolume {
+typedef struct HenyeyGreensteinVolume {
   SHADER_CLOSURE_BASE;
 
   float g;
@@ -52,7 +38,7 @@ ccl_device float single_peaked_henyey_greenstein(float cos_theta, float g)
          (M_1_PI_F * 0.25f);
 };
 
-ccl_device int volume_henyey_greenstein_setup(HenyeyGreensteinVolume *volume)
+ccl_device int volume_henyey_greenstein_setup(ccl_private HenyeyGreensteinVolume *volume)
 {
   volume->type = CLOSURE_VOLUME_HENYEY_GREENSTEIN_ID;
 
@@ -62,21 +48,12 @@ ccl_device int volume_henyey_greenstein_setup(HenyeyGreensteinVolume *volume)
   return SD_SCATTER;
 }
 
-ccl_device bool volume_henyey_greenstein_merge(const ShaderClosure *a, const ShaderClosure *b)
+ccl_device Spectrum volume_henyey_greenstein_eval_phase(ccl_private const ShaderVolumeClosure *svc,
+                                                        const float3 I,
+                                                        float3 omega_in,
+                                                        ccl_private float *pdf)
 {
-  const HenyeyGreensteinVolume *volume_a = (const HenyeyGreensteinVolume *)a;
-  const HenyeyGreensteinVolume *volume_b = (const HenyeyGreensteinVolume *)b;
-
-  return (volume_a->g == volume_b->g);
-}
-
-ccl_device float3 volume_henyey_greenstein_eval_phase(const ShaderClosure *sc,
-                                                      const float3 I,
-                                                      float3 omega_in,
-                                                      float *pdf)
-{
-  const HenyeyGreensteinVolume *volume = (const HenyeyGreensteinVolume *)sc;
-  float g = volume->g;
+  float g = svc->g;
 
   /* note that I points towards the viewer */
   if (fabsf(g) < 1e-3f) {
@@ -87,11 +64,11 @@ ccl_device float3 volume_henyey_greenstein_eval_phase(const ShaderClosure *sc,
     *pdf = single_peaked_henyey_greenstein(cos_theta, g);
   }
 
-  return make_float3(*pdf, *pdf, *pdf);
+  return make_spectrum(*pdf);
 }
 
 ccl_device float3
-henyey_greenstrein_sample(float3 D, float g, float randu, float randv, float *pdf)
+henyey_greenstrein_sample(float3 D, float g, float randu, float randv, ccl_private float *pdf)
 {
   /* match pdf for small g */
   float cos_theta;
@@ -122,80 +99,88 @@ henyey_greenstrein_sample(float3 D, float g, float randu, float randv, float *pd
   return dir;
 }
 
-ccl_device int volume_henyey_greenstein_sample(const ShaderClosure *sc,
+ccl_device int volume_henyey_greenstein_sample(ccl_private const ShaderVolumeClosure *svc,
                                                float3 I,
-                                               float3 dIdx,
-                                               float3 dIdy,
                                                float randu,
                                                float randv,
-                                               float3 *eval,
-                                               float3 *omega_in,
-                                               float3 *domega_in_dx,
-                                               float3 *domega_in_dy,
-                                               float *pdf)
+                                               ccl_private Spectrum *eval,
+                                               ccl_private float3 *omega_in,
+                                               ccl_private float *pdf)
 {
-  const HenyeyGreensteinVolume *volume = (const HenyeyGreensteinVolume *)sc;
-  float g = volume->g;
+  float g = svc->g;
 
   /* note that I points towards the viewer and so is used negated */
   *omega_in = henyey_greenstrein_sample(-I, g, randu, randv, pdf);
-  *eval = make_float3(*pdf, *pdf, *pdf); /* perfect importance sampling */
-
-#ifdef __RAY_DIFFERENTIALS__
-  /* todo: implement ray differential estimation */
-  *domega_in_dx = make_float3(0.0f, 0.0f, 0.0f);
-  *domega_in_dy = make_float3(0.0f, 0.0f, 0.0f);
-#endif
+  *eval = make_spectrum(*pdf); /* perfect importance sampling */
 
   return LABEL_VOLUME_SCATTER;
 }
 
 /* VOLUME CLOSURE */
 
-ccl_device float3 volume_phase_eval(const ShaderData *sd,
-                                    const ShaderClosure *sc,
-                                    float3 omega_in,
-                                    float *pdf)
+ccl_device Spectrum volume_phase_eval(ccl_private const ShaderData *sd,
+                                      ccl_private const ShaderVolumeClosure *svc,
+                                      float3 omega_in,
+                                      ccl_private float *pdf)
 {
-  kernel_assert(sc->type == CLOSURE_VOLUME_HENYEY_GREENSTEIN_ID);
-
-  return volume_henyey_greenstein_eval_phase(sc, sd->I, omega_in, pdf);
+  return volume_henyey_greenstein_eval_phase(svc, sd->I, omega_in, pdf);
 }
 
-ccl_device int volume_phase_sample(const ShaderData *sd,
-                                   const ShaderClosure *sc,
+ccl_device int volume_phase_sample(ccl_private const ShaderData *sd,
+                                   ccl_private const ShaderVolumeClosure *svc,
                                    float randu,
                                    float randv,
-                                   float3 *eval,
-                                   float3 *omega_in,
-                                   differential3 *domega_in,
-                                   float *pdf)
+                                   ccl_private Spectrum *eval,
+                                   ccl_private float3 *omega_in,
+                                   ccl_private float *pdf)
 {
-  int label;
+  return volume_henyey_greenstein_sample(svc, sd->I, randu, randv, eval, omega_in, pdf);
+}
 
-  switch (sc->type) {
-    case CLOSURE_VOLUME_HENYEY_GREENSTEIN_ID:
-      label = volume_henyey_greenstein_sample(sc,
-                                              sd->I,
-                                              sd->dI.dx,
-                                              sd->dI.dy,
-                                              randu,
-                                              randv,
-                                              eval,
-                                              omega_in,
-                                              &domega_in->dx,
-                                              &domega_in->dy,
-                                              pdf);
-      break;
-    default:
-      *eval = make_float3(0.0f, 0.0f, 0.0f);
-      label = LABEL_NONE;
-      break;
+/* Volume sampling utilities. */
+
+/* todo: this value could be tweaked or turned into a probability to avoid
+ * unnecessary work in volumes and subsurface scattering. */
+#define VOLUME_THROUGHPUT_EPSILON 1e-6f
+
+ccl_device Spectrum volume_color_transmittance(Spectrum sigma, float t)
+{
+  return exp(-sigma * t);
+}
+
+ccl_device float volume_channel_get(Spectrum value, int channel)
+{
+  return GET_SPECTRUM_CHANNEL(value, channel);
+}
+
+ccl_device int volume_sample_channel(Spectrum albedo,
+                                     Spectrum throughput,
+                                     float rand,
+                                     ccl_private Spectrum *pdf)
+{
+  /* Sample color channel proportional to throughput and single scattering
+   * albedo, to significantly reduce noise with many bounce, following:
+   *
+   * "Practical and Controllable Subsurface Scattering for Production Path
+   *  Tracing". Matt Jen-Yuan Chiang, Peter Kutz, Brent Burley. SIGGRAPH 2016. */
+  Spectrum weights = fabs(throughput * albedo);
+  float sum_weights = reduce_add(weights);
+
+  if (sum_weights > 0.0f) {
+    *pdf = weights / sum_weights;
+  }
+  else {
+    *pdf = make_spectrum(1.0f / SPECTRUM_CHANNELS);
   }
 
-  return label;
+  float pdf_sum = 0.0f;
+  FOREACH_SPECTRUM_CHANNEL (i) {
+    pdf_sum += GET_SPECTRUM_CHANNEL(*pdf, i);
+    if (rand < pdf_sum) {
+      return i;
+    }
+  }
+  return SPECTRUM_CHANNELS - 1;
 }
 
 CCL_NAMESPACE_END
-
-#endif

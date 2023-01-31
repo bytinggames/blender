@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup eduv
@@ -66,7 +52,7 @@
 
 /** Unordered loop data, stored in #BMLoop.head.index. */
 typedef struct ULData {
-  /** When this UV is selected as well as the next UV. */
+  /** When the specified UV edge is selected. */
   uint is_select_edge : 1;
   /**
    * When only this UV is selected and none of the other UV's
@@ -572,7 +558,7 @@ static UVRipPairs *uv_rip_pairs_from_loop(BMLoop *l_init,
   rip->loops = BLI_gset_ptr_new(__func__);
 
   /* We can rely on this stack being small, as we're walking down two sides of an edge loop,
-   * so the stack wont be much larger than the total number of fans at any one vertex. */
+   * so the stack won't be much larger than the total number of fans at any one vertex. */
   BLI_SMALLSTACK_DECLARE(stack, BMLoop *);
 
   /* Needed for cases when we walk onto loops which already have a side assigned,
@@ -776,15 +762,17 @@ static bool uv_rip_object(Scene *scene, Object *obedit, const float co[2], const
         const MLoopUV *luv = BM_ELEM_CD_GET_VOID_P(l, cd_loop_uv_offset);
         if (luv->flag & MLOOPUV_VERTSEL) {
           const MLoopUV *luv_prev = BM_ELEM_CD_GET_VOID_P(l->prev, cd_loop_uv_offset);
-          const MLoopUV *luv_next = BM_ELEM_CD_GET_VOID_P(l->next, cd_loop_uv_offset);
-          if (luv_next->flag & MLOOPUV_VERTSEL) {
+          if (luv->flag & MLOOPUV_EDGESEL) {
             UL(l)->is_select_edge = true;
           }
+          else if ((luv_prev->flag & MLOOPUV_EDGESEL) == 0) {
+            /* #bm_loop_uv_select_single_vert_validate validates below. */
+            UL(l)->is_select_vert_single = true;
+            is_all = false;
+          }
           else {
-            if ((luv_prev->flag & MLOOPUV_VERTSEL) == 0) {
-              /* #bm_loop_uv_select_single_vert_validate validates below. */
-              UL(l)->is_select_vert_single = true;
-            }
+            /* Cases where all vertices of a face are selected but not all edges are selected. */
+            is_all = false;
           }
         }
         else {
@@ -811,7 +799,7 @@ static bool uv_rip_object(Scene *scene, Object *obedit, const float co[2], const
     }
   }
 
-  /* Special case: if we have selected faces, isolated them.
+  /* Special case: if we have selected faces, isolate them.
    * This isn't a rip, however it's useful for users as a quick way
    * to detach the selection.
    *
@@ -824,6 +812,10 @@ static bool uv_rip_object(Scene *scene, Object *obedit, const float co[2], const
           MLoopUV *luv = BM_ELEM_CD_GET_VOID_P(l, cd_loop_uv_offset);
           if (luv->flag & MLOOPUV_VERTSEL) {
             luv->flag &= ~MLOOPUV_VERTSEL;
+            changed = true;
+          }
+          if (luv->flag & MLOOPUV_EDGESEL) {
+            luv->flag &= ~MLOOPUV_EDGESEL;
             changed = true;
           }
         }
@@ -856,7 +848,7 @@ static bool uv_rip_object(Scene *scene, Object *obedit, const float co[2], const
               BMLoop *l_iter = BLI_gsetIterator_getKey(&gs_iter);
               ULData *ul = UL(l_iter);
               if (ul->side == side_from_cursor) {
-                uvedit_uv_select_disable(scene, em, l_iter, cd_loop_uv_offset);
+                uvedit_uv_select_disable(scene, em->bm, l_iter, cd_loop_uv_offset);
                 changed = true;
               }
               /* Ensure we don't operate on these again. */
@@ -874,7 +866,7 @@ static bool uv_rip_object(Scene *scene, Object *obedit, const float co[2], const
             BMLoop *l_iter = BLI_gsetIterator_getKey(&gs_iter);
             ULData *ul = UL(l_iter);
             if (ul->side == side_from_cursor) {
-              uvedit_uv_select_disable(scene, em, l_iter, cd_loop_uv_offset);
+              uvedit_uv_select_disable(scene, em->bm, l_iter, cd_loop_uv_offset);
               changed = true;
             }
             /* Ensure we don't operate on these again. */
@@ -884,6 +876,9 @@ static bool uv_rip_object(Scene *scene, Object *obedit, const float co[2], const
         }
       }
     }
+  }
+  if (changed) {
+    uvedit_deselect_flush(scene, em);
   }
   return changed;
 }
@@ -907,7 +902,7 @@ static int uv_rip_exec(bContext *C, wmOperator *op)
 
   float aspx, aspy;
   {
-    /* Note that we only want to run this on the  */
+    /* Note that we only want to run this on the. */
     Object *obedit = CTX_data_edit_object(C);
     ED_uvedit_get_aspect(obedit, &aspx, &aspy);
   }
@@ -915,7 +910,7 @@ static int uv_rip_exec(bContext *C, wmOperator *op)
 
   uint objects_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data_with_uvs(
-      view_layer, ((View3D *)NULL), &objects_len);
+      scene, view_layer, ((View3D *)NULL), &objects_len);
 
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *obedit = objects[ob_index];
@@ -953,7 +948,7 @@ void UV_OT_rip(wmOperatorType *ot)
   ot->name = "UV Rip";
   ot->description = "Rip selected vertices or a selected region";
   ot->idname = "UV_OT_rip";
-  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO | OPTYPE_DEPENDS_ON_CURSOR;
 
   /* api callbacks */
   ot->exec = uv_rip_exec;

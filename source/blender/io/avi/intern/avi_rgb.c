@@ -1,26 +1,10 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup avi
  *
- * This is external code. Converts rgb-type avi-s.
+ * This is external code. Converts RGB-type AVI files.
  */
 
 #include <stdlib.h>
@@ -37,12 +21,9 @@
 
 /* implementation */
 
-void *avi_converter_from_avi_rgb(AviMovie *movie,
-                                 int stream,
-                                 unsigned char *buffer,
-                                 const size_t *size)
+void *avi_converter_from_avi_rgb(AviMovie *movie, int stream, uchar *buffer, const size_t *size)
 {
-  unsigned char *buf;
+  uchar *buf;
   AviBitmapInfoHeader *bi;
   short bits = 32;
 
@@ -54,24 +35,24 @@ void *avi_converter_from_avi_rgb(AviMovie *movie,
   }
 
   if (bits == 16) {
-    unsigned short *pxl;
-    unsigned char *to;
+    ushort *pxl;
+    uchar *to;
 #ifdef __BIG_ENDIAN__
-    unsigned char *pxla;
+    uchar *pxla;
 #endif
 
     buf = imb_alloc_pixels(
-        movie->header->Height, movie->header->Width, 3, sizeof(unsigned char), "fromavirgbbuf");
+        movie->header->Height, movie->header->Width, 3, sizeof(uchar), "fromavirgbbuf");
 
     if (buf) {
       size_t y = movie->header->Height;
       to = buf;
 
       while (y--) {
-        pxl = (unsigned short *)(buffer + y * movie->header->Width * 2);
+        pxl = (ushort *)(buffer + y * movie->header->Width * 2);
 
 #ifdef __BIG_ENDIAN__
-        pxla = (unsigned char *)pxl;
+        pxla = (uchar *)pxl;
 #endif
 
         size_t x = movie->header->Width;
@@ -98,7 +79,7 @@ void *avi_converter_from_avi_rgb(AviMovie *movie,
   }
 
   buf = imb_alloc_pixels(
-      movie->header->Height, movie->header->Width, 3, sizeof(unsigned char), "fromavirgbbuf");
+      movie->header->Height, movie->header->Width, 3, sizeof(uchar), "fromavirgbbuf");
 
   if (buf) {
     size_t rowstride = movie->header->Width * 3;
@@ -126,9 +107,9 @@ void *avi_converter_from_avi_rgb(AviMovie *movie,
   return buf;
 }
 
-void *avi_converter_to_avi_rgb(AviMovie *movie, int stream, unsigned char *buffer, size_t *size)
+void *avi_converter_to_avi_rgb(AviMovie *movie, int stream, uchar *buffer, size_t *size)
 {
-  unsigned char *buf;
+  uchar *buf;
 
   (void)stream; /* unused */
 

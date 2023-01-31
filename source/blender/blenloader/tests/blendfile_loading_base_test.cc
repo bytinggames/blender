@@ -1,34 +1,23 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2019 by Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2019 Blender Foundation. */
 #include "blendfile_loading_base_test.h"
 
 #include "MEM_guardedalloc.h"
 
 #include "BKE_appdir.h"
 #include "BKE_blender.h"
+#include "BKE_callbacks.h"
 #include "BKE_context.h"
 #include "BKE_global.h"
 #include "BKE_idtype.h"
 #include "BKE_image.h"
+#include "BKE_layer.h"
 #include "BKE_main.h"
+#include "BKE_mball_tessellate.h"
 #include "BKE_modifier.h"
 #include "BKE_node.h"
 #include "BKE_scene.h"
+#include "BKE_vfont.h"
 
 #include "BLI_path_util.h"
 #include "BLI_threads.h"
@@ -43,10 +32,14 @@
 
 #include "IMB_imbuf.h"
 
+#include "ED_datafiles.h"
+
 #include "RNA_define.h"
 
 #include "WM_api.h"
 #include "wm.h"
+
+#include "GHOST_Path-api.h"
 
 #include "CLG_log.h"
 
@@ -65,11 +58,12 @@ void BlendfileLoadingBaseTest::SetUpTestCase()
   BKE_idtype_init();
   BKE_appdir_init();
   IMB_init();
-  BKE_images_init();
   BKE_modifier_init();
   DEG_register_node_types();
   RNA_init();
   BKE_node_system_init();
+  BKE_callback_global_init();
+  BKE_vfont_builtin_register(datatoc_bfont_pfb, datatoc_bfont_pfb_size);
 
   G.background = true;
   G.factory_startup = true;
@@ -93,6 +87,7 @@ void BlendfileLoadingBaseTest::TearDownTestCase()
   RNA_exit();
 
   DEG_free_node_types();
+  GHOST_DisposeSystemPaths();
   DNA_sdna_current_free();
   BLI_threadapi_exit();
 
@@ -107,6 +102,7 @@ void BlendfileLoadingBaseTest::TearDownTestCase()
 
 void BlendfileLoadingBaseTest::TearDown()
 {
+  BKE_mball_cubeTable_free();
   depsgraph_free();
   blendfile_free();
 
@@ -121,14 +117,22 @@ bool BlendfileLoadingBaseTest::blendfile_load(const char *filepath)
   }
 
   char abspath[FILENAME_MAX];
-  BLI_path_join(abspath, sizeof(abspath), test_assets_dir.c_str(), filepath, NULL);
+  BLI_path_join(abspath, sizeof(abspath), test_assets_dir.c_str(), filepath);
 
-  bfile = BLO_read_from_file(abspath, BLO_READ_SKIP_NONE, nullptr /* reports */);
+  BlendFileReadReport bf_reports = {nullptr};
+  bfile = BLO_read_from_file(abspath, BLO_READ_SKIP_NONE, &bf_reports);
   if (bfile == nullptr) {
     ADD_FAILURE() << "Unable to load file '" << filepath << "' from test assets dir '"
                   << test_assets_dir << "'";
     return false;
   }
+
+  /* Make sure that all view_layers in the file are synced. Depsgraph can make a copy of the whole
+   * scene, which will fail when one view layer isn't synced. */
+  LISTBASE_FOREACH (ViewLayer *, view_layer, &bfile->curscene->view_layers) {
+    BKE_view_layer_synced_ensure(bfile->curscene, view_layer);
+  }
+
   return true;
 }
 

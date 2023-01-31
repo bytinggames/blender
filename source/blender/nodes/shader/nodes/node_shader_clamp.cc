@@ -1,48 +1,39 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2005 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2005 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup shdnodes
  */
 
-#include "node_shader_util.h"
+#include "node_shader_util.hh"
 
-/* **************** Clamp ******************** */
-static bNodeSocketTemplate sh_node_clamp_in[] = {
-    {SOCK_FLOAT, N_("Value"), 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, PROP_NONE},
-    {SOCK_FLOAT, N_("Min"), 0.0f, 1.0f, 1.0f, 1.0f, -10000.0f, 10000.0f, PROP_NONE},
-    {SOCK_FLOAT, N_("Max"), 1.0f, 1.0f, 1.0f, 1.0f, -10000.0f, 10000.0f, PROP_NONE},
-    {-1, ""},
-};
-static bNodeSocketTemplate sh_node_clamp_out[] = {
-    {SOCK_FLOAT, N_("Result")},
-    {-1, ""},
-};
+#include "UI_interface.h"
+#include "UI_resources.h"
 
-static void node_shader_init_clamp(bNodeTree *UNUSED(ntree), bNode *node)
+namespace blender::nodes::node_shader_clamp_cc {
+
+static void sh_node_clamp_declare(NodeDeclarationBuilder &b)
+{
+  b.is_function_node();
+  b.add_input<decl::Float>(N_("Value")).default_value(1.0f);
+  b.add_input<decl::Float>(N_("Min")).default_value(0.0f).min(-10000.0f).max(10000.0f);
+  b.add_input<decl::Float>(N_("Max")).default_value(1.0f).min(-10000.0f).max(10000.0f);
+  b.add_output<decl::Float>(N_("Result"));
+}
+
+static void node_shader_buts_clamp(uiLayout *layout, bContext * /*C*/, PointerRNA *ptr)
+{
+  uiItemR(layout, ptr, "clamp_type", UI_ITEM_R_SPLIT_EMPTY_NAME, "", ICON_NONE);
+}
+
+static void node_shader_init_clamp(bNodeTree * /*ntree*/, bNode *node)
 {
   node->custom1 = NODE_CLAMP_MINMAX; /* clamp type */
 }
 
 static int gpu_shader_clamp(GPUMaterial *mat,
                             bNode *node,
-                            bNodeExecData *UNUSED(execdata),
+                            bNodeExecData * /*execdata*/,
                             GPUNodeStack *in,
                             GPUNodeStack *out)
 {
@@ -51,12 +42,12 @@ static int gpu_shader_clamp(GPUMaterial *mat,
              GPU_stack_link(mat, node, "clamp_range", in, out);
 }
 
-static void sh_node_clamp_expand_in_mf_network(blender::nodes::NodeMFNetworkBuilder &builder)
+static void sh_node_clamp_build_multi_function(NodeMultiFunctionBuilder &builder)
 {
-  static blender::fn::CustomMF_SI_SI_SI_SO<float, float, float, float> minmax_fn{
+  static fn::CustomMF_SI_SI_SI_SO<float, float, float, float> minmax_fn{
       "Clamp (Min Max)",
       [](float value, float min, float max) { return std::min(std::max(value, min), max); }};
-  static blender::fn::CustomMF_SI_SI_SI_SO<float, float, float, float> range_fn{
+  static fn::CustomMF_SI_SI_SI_SO<float, float, float, float> range_fn{
       "Clamp (Range)", [](float value, float a, float b) {
         if (a < b) {
           return clamp_f(value, a, b);
@@ -65,7 +56,7 @@ static void sh_node_clamp_expand_in_mf_network(blender::nodes::NodeMFNetworkBuil
         return clamp_f(value, b, a);
       }};
 
-  int clamp_type = builder.bnode().custom1;
+  int clamp_type = builder.node().custom1;
   if (clamp_type == NODE_CLAMP_MINMAX) {
     builder.set_matching_fn(minmax_fn);
   }
@@ -74,15 +65,20 @@ static void sh_node_clamp_expand_in_mf_network(blender::nodes::NodeMFNetworkBuil
   }
 }
 
-void register_node_type_sh_clamp(void)
+}  // namespace blender::nodes::node_shader_clamp_cc
+
+void register_node_type_sh_clamp()
 {
+  namespace file_ns = blender::nodes::node_shader_clamp_cc;
+
   static bNodeType ntype;
 
-  sh_fn_node_type_base(&ntype, SH_NODE_CLAMP, "Clamp", NODE_CLASS_CONVERTOR, 0);
-  node_type_socket_templates(&ntype, sh_node_clamp_in, sh_node_clamp_out);
-  node_type_init(&ntype, node_shader_init_clamp);
-  node_type_gpu(&ntype, gpu_shader_clamp);
-  ntype.expand_in_mf_network = sh_node_clamp_expand_in_mf_network;
+  sh_fn_node_type_base(&ntype, SH_NODE_CLAMP, "Clamp", NODE_CLASS_CONVERTER);
+  ntype.declare = file_ns::sh_node_clamp_declare;
+  ntype.draw_buttons = file_ns::node_shader_buts_clamp;
+  node_type_init(&ntype, file_ns::node_shader_init_clamp);
+  node_type_gpu(&ntype, file_ns::gpu_shader_clamp);
+  ntype.build_multi_function = file_ns::sh_node_clamp_build_multi_function;
 
   nodeRegisterType(&ntype);
 }

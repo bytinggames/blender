@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Apache License, Version 2.0
+# SPDX-License-Identifier: Apache-2.0
 
 import argparse
 import os
@@ -11,6 +11,15 @@ from pathlib import Path
 
 # List of .blend files that are known to be failing and are not ready to be
 # tested, or that only make sense on some devices. Accepts regular expressions.
+BLACKLIST_ALL = [
+    # Blacklisted due overlapping object differences between platforms.
+    "hair_geom_reflection.blend",
+    "hair_geom_transmission.blend",
+    "hair_instancer_uv.blend",
+    "principled_hair_directcoloring.blend",
+    "visibility_particles.blend",
+]
+
 BLACKLIST_OSL = [
     # OSL only supported on CPU.
     '.*_osl.blend',
@@ -18,44 +27,39 @@ BLACKLIST_OSL = [
 ]
 
 BLACKLIST_OPTIX = [
-    # No branched path on Optix.
-    'T53854.blend',
+    # Ray intersection precision issues
     'T50164.blend',
-    'portal.blend',
-    'denoise_sss.blend',
-    'denoise_passes.blend',
-    'distant_light.blend',
-    'aov_position.blend',
-    'subsurface_branched_path.blend',
     'T43865.blend',
 ]
 
+BLACKLIST_METAL = [
+    # MNEE only works on Metal with macOS >= 13
+    "underwater_caustics.blend",
+]
+
 BLACKLIST_GPU = [
-    # Missing equiangular sampling on GPU.
-    'area_light.blend',
-    'denoise_hair.blend',
-    'point_density_.*.blend',
-    'point_light.blend',
-    'shadow_catcher_bpt_.*.blend',
-    'sphere_light.blend',
-    'spot_light.blend',
-    'T48346.blend',
-    'world_volume.blend',
     # Uninvestigated differences with GPU.
     'image_log.blend',
-    'subsurface_behind_glass_branched.blend',
     'T40964.blend',
     'T45609.blend',
-    'T48860.blend',
     'smoke_color.blend',
     'bevel_mblur.blend',
     # Inconsistency between Embree and Hair primitive on GPU.
+    'denoise_hair.blend',
     'hair_basemesh_intercept.blend',
     'hair_instancer_uv.blend',
+    'hair_length_info.blend',
     'hair_particle_random.blend',
+    "hair_transmission.blend",
     'principled_hair_.*.blend',
     'transparent_shadow_hair.*.blend',
+    # Inconsistent handling of overlapping objects.
+    "T41143.blend",
+    "visibility_particles.blend",
+    # No path guiding on GPU.
+    "guiding*.blend",
 ]
+
 
 def get_arguments(filepath, output_filepath):
     dirname = os.path.dirname(filepath)
@@ -112,13 +116,15 @@ def main():
     output_dir = args.outdir[0]
     device = args.device[0]
 
-    blacklist = []
+    blacklist = BLACKLIST_ALL
     if device != 'CPU':
         blacklist += BLACKLIST_GPU
     if device != 'CPU' or 'OSL' in args.blacklist:
         blacklist += BLACKLIST_OSL
     if device == 'OPTIX':
         blacklist += BLACKLIST_OPTIX
+    if device == 'METAL':
+        blacklist += BLACKLIST_METAL
 
     from modules import render_report
     report = render_report.Report('Cycles', output_dir, idiff, device, blacklist)

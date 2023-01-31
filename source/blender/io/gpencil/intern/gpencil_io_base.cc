@@ -1,31 +1,12 @@
-
-
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2020 Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2020 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bgpencil
  */
 
-#include "BLI_float2.hh"
-#include "BLI_float3.hh"
 #include "BLI_float4x4.hh"
+#include "BLI_math_vec_types.hh"
 #include "BLI_path_util.h"
 #include "BLI_span.hh"
 
@@ -39,8 +20,10 @@
 #include "BKE_context.h"
 #include "BKE_gpencil.h"
 #include "BKE_gpencil_geom.h"
+#include "BKE_layer.h"
 #include "BKE_main.h"
 #include "BKE_material.h"
+#include "BKE_scene.h"
 
 #include "UI_view2d.h"
 
@@ -69,36 +52,47 @@ GpencilIO::GpencilIO(const GpencilIOParams *iparams)
   cfra_ = iparams->frame_cur;
 
   /* Calculate camera matrix. */
-  Object *cam_ob = params_.v3d->camera;
+  prepare_camera_params(scene_, iparams);
+}
+
+void GpencilIO::prepare_camera_params(Scene *scene, const GpencilIOParams *iparams)
+{
+  params_ = *iparams;
+  const bool is_pdf = params_.mode == GP_EXPORT_TO_PDF;
+  const bool any_camera = (params_.v3d->camera != nullptr);
+  const bool force_camera_view = is_pdf && any_camera;
+
+  /* Ensure camera switch is applied. */
+  BKE_scene_camera_switch_update(scene);
+
+  /* Calculate camera matrix. */
+  Object *cam_ob = scene->camera;
   if (cam_ob != nullptr) {
     /* Set up parameters. */
     CameraParams params;
     BKE_camera_params_init(&params);
     BKE_camera_params_from_object(&params, cam_ob);
 
-    /* Compute matrix, viewplane, .. */
+    /* Compute matrix, view-plane, etc. */
     RenderData *rd = &scene_->r;
     BKE_camera_params_compute_viewplane(&params, rd->xsch, rd->ysch, rd->xasp, rd->yasp);
     BKE_camera_params_compute_matrix(&params);
 
     float viewmat[4][4];
-    invert_m4_m4(viewmat, cam_ob->obmat);
+    invert_m4_m4(viewmat, cam_ob->object_to_world);
 
     mul_m4_m4m4(persmat_, params.winmat, viewmat);
-    is_ortho_ = params.is_ortho;
   }
   else {
     unit_m4(persmat_);
-    is_ortho_ = false;
   }
 
   winx_ = params_.region->winx;
   winy_ = params_.region->winy;
 
   /* Camera rectangle. */
-  if (rv3d_->persp == RV3D_CAMOB) {
-    render_x_ = (scene_->r.xsch * scene_->r.size) / 100;
-    render_y_ = (scene_->r.ysch * scene_->r.size) / 100;
+  if ((rv3d_->persp == RV3D_CAMOB) || (force_camera_view)) {
+    BKE_render_resolution(&scene->r, false, &render_x_, &render_y_);
 
     ED_view3d_calc_camera_border(CTX_data_scene(params_.C),
                                  depsgraph_,
@@ -114,7 +108,6 @@ GpencilIO::GpencilIO(const GpencilIOParams *iparams)
   }
   else {
     is_camera_ = false;
-    is_ortho_ = false;
     /* Calc selected object boundbox. Need set initial value to some variables. */
     camera_ratio_ = 1.0f;
     offset_.x = 0.0f;
@@ -133,16 +126,17 @@ GpencilIO::GpencilIO(const GpencilIOParams *iparams)
   }
 }
 
-/** Create a list of selected objects sorted from back to front */
 void GpencilIO::create_object_list()
 {
+  Scene *scene = CTX_data_scene(params_.C);
   ViewLayer *view_layer = CTX_data_view_layer(params_.C);
 
   float3 camera_z_axis;
   copy_v3_v3(camera_z_axis, rv3d_->viewinv[2]);
   ob_list_.clear();
 
-  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  LISTBASE_FOREACH (Base *, base, BKE_view_layer_object_bases_get(view_layer)) {
     Object *object = base->object;
 
     if (object->type != OB_GPENCIL) {
@@ -158,7 +152,7 @@ void GpencilIO::create_object_list()
 
     /* Save z-depth from view to sort from back to front. */
     if (is_camera_) {
-      float camera_z = dot_v3v3(camera_z_axis, object->obmat[3]);
+      float camera_z = dot_v3v3(camera_z_axis, object->object_to_world[3]);
       ObjectZ obz = {camera_z, object};
       ob_list_.append(obz);
     }
@@ -166,10 +160,10 @@ void GpencilIO::create_object_list()
       float zdepth = 0;
       if (rv3d_) {
         if (rv3d_->is_persp) {
-          zdepth = ED_view3d_calc_zfac(rv3d_, object->obmat[3], nullptr);
+          zdepth = ED_view3d_calc_zfac(rv3d_, object->object_to_world[3]);
         }
         else {
-          zdepth = -dot_v3v3(rv3d_->viewinv[2], object->obmat[3]);
+          zdepth = -dot_v3v3(rv3d_->viewinv[2], object->object_to_world[3]);
         }
         ObjectZ obz = {zdepth * -1.0f, object};
         ob_list_.append(obz);
@@ -182,17 +176,12 @@ void GpencilIO::create_object_list()
   });
 }
 
-/**
- * Set file input_text full path.
- * \param filename: Path of the file provided by save dialog.
- */
-void GpencilIO::filename_set(const char *filename)
+void GpencilIO::filepath_set(const char *filepath)
 {
-  BLI_strncpy(filename_, filename, FILE_MAX);
-  BLI_path_abs(filename_, BKE_main_blendfile_path(bmain_));
+  BLI_strncpy(filepath_, filepath, FILE_MAX);
+  BLI_path_abs(filepath_, BKE_main_blendfile_path(bmain_));
 }
 
-/** Convert to screenspace. */
 bool GpencilIO::gpencil_3D_point_to_screen_space(const float3 co, float2 &r_co)
 {
   float3 parent_co = diff_mat_ * co;
@@ -232,46 +221,38 @@ bool GpencilIO::gpencil_3D_point_to_screen_space(const float3 co, float2 &r_co)
   return false;
 }
 
-/** Convert to render space. */
-float2 GpencilIO::gpencil_3D_point_to_render_space(const float3 co, const bool is_ortho)
+float2 GpencilIO::gpencil_3D_point_to_render_space(const float3 co)
 {
   float3 parent_co = diff_mat_ * co;
-  mul_m4_v3(persmat_, parent_co);
-
-  if (!is_ortho) {
-    parent_co.x = parent_co.x / max_ff(FLT_MIN, parent_co.z);
-    parent_co.y = parent_co.y / max_ff(FLT_MIN, parent_co.z);
-  }
 
   float2 r_co;
-  r_co.x = (parent_co.x + 1.0f) / 2.0f * (float)render_x_;
-  r_co.y = (parent_co.y + 1.0f) / 2.0f * (float)render_y_;
+  mul_v2_project_m4_v3(&r_co.x, persmat_, &parent_co.x);
+  r_co.x = (r_co.x + 1.0f) / 2.0f * float(render_x_);
+  r_co.y = (r_co.y + 1.0f) / 2.0f * float(render_y_);
 
   /* Invert X axis. */
   if (invert_axis_[0]) {
-    r_co.x = (float)render_x_ - r_co.x;
+    r_co.x = float(render_x_) - r_co.x;
   }
   /* Invert Y axis. */
   if (invert_axis_[1]) {
-    r_co.y = (float)render_y_ - r_co.y;
+    r_co.y = float(render_y_) - r_co.y;
   }
 
   return r_co;
 }
 
-/** Convert to 2D. */
 float2 GpencilIO::gpencil_3D_point_to_2D(const float3 co)
 {
-  const bool is_camera = (bool)(rv3d_->persp == RV3D_CAMOB);
+  const bool is_camera = bool(rv3d_->persp == RV3D_CAMOB);
   if (is_camera) {
-    return gpencil_3D_point_to_render_space(co, is_orthographic());
+    return gpencil_3D_point_to_render_space(co);
   }
   float2 result;
   gpencil_3D_point_to_screen_space(co, result);
   return result;
 }
 
-/** Get radius of point. */
 float GpencilIO::stroke_point_radius_get(bGPDlayer *gpl, bGPDstroke *gps)
 {
   bGPDspoint *pt = &gps->points[0];
@@ -279,13 +260,13 @@ float GpencilIO::stroke_point_radius_get(bGPDlayer *gpl, bGPDstroke *gps)
 
   /* Radius. */
   bGPDstroke *gps_perimeter = BKE_gpencil_stroke_perimeter_from_view(
-      rv3d_, gpd_, gpl, gps, 3, diff_mat_.values);
+      rv3d_->viewmat, gpd_, gpl, gps, 3, diff_mat_.values, 0.0f);
 
   pt = &gps_perimeter->points[0];
   const float2 screen_ex = gpencil_3D_point_to_2D(&pt->x);
 
   const float2 v1 = screen_co - screen_ex;
-  float radius = v1.length();
+  float radius = math::length(v1);
   BKE_gpencil_free_stroke(gps_perimeter);
 
   return MAX2(radius, 1.0f);
@@ -311,9 +292,9 @@ void GpencilIO::prepare_stroke_export_colors(Object *ob, bGPDstroke *gps)
     avg_opacity_ += pt.strength;
   }
 
-  mul_v4_v4fl(avg_color, avg_color, 1.0f / (float)gps->totpoints);
+  mul_v4_v4fl(avg_color, avg_color, 1.0f / float(gps->totpoints));
   interp_v3_v3v3(stroke_color_, stroke_color_, avg_color, avg_color[3]);
-  avg_opacity_ /= (float)gps->totpoints;
+  avg_opacity_ /= float(gps->totpoints);
 
   /* Fill color. */
   copy_v4_v4(fill_color_, gp_style->fill_rgba);
@@ -331,12 +312,6 @@ bool GpencilIO::is_camera_mode()
   return is_camera_;
 }
 
-bool GpencilIO::is_orthographic()
-{
-  return is_ortho_;
-}
-
-/* Calculate selected strokes boundbox. */
 void GpencilIO::selected_objects_boundbox_calc()
 {
   const float gap = 10.0f;

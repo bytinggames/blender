@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spscript
@@ -39,6 +23,8 @@
 
 #include "UI_resources.h"
 #include "UI_view2d.h"
+
+#include "BLO_read_write.h"
 
 #ifdef WITH_PYTHON
 #endif
@@ -81,7 +67,7 @@ static void script_free(SpaceLink *sl)
   SpaceScript *sscript = (SpaceScript *)sl;
 
 #ifdef WITH_PYTHON
-  /*free buttons references*/
+  /* Free buttons references. */
   if (sscript->but_refs) {
     sscript->but_refs = NULL;
   }
@@ -156,20 +142,38 @@ static void script_header_region_draw(const bContext *C, ARegion *region)
 
 static void script_main_region_listener(const wmRegionListenerParams *UNUSED(params))
 {
-/* XXX - Todo, need the ScriptSpace accessible to get the python script to run. */
+/* XXX: Todo, need the ScriptSpace accessible to get the python script to run. */
 #if 0
   BPY_run_script_space_listener()
 #endif
 }
 
-/* only called once, from space/spacetypes.c */
+static void script_blend_read_lib(BlendLibReader *reader, ID *parent_id, SpaceLink *sl)
+{
+  SpaceScript *scpt = (SpaceScript *)sl;
+  /*scpt->script = NULL; - 2.45 set to null, better re-run the script */
+  if (scpt->script) {
+    BLO_read_id_address(reader, parent_id->lib, &scpt->script);
+    if (scpt->script) {
+      SCRIPT_SET_NULL(scpt->script);
+    }
+  }
+}
+
+static void script_blend_write(BlendWriter *writer, SpaceLink *sl)
+{
+  SpaceScript *scr = (SpaceScript *)sl;
+  scr->but_refs = NULL;
+  BLO_write_struct(writer, SpaceScript, sl);
+}
+
 void ED_spacetype_script(void)
 {
   SpaceType *st = MEM_callocN(sizeof(SpaceType), "spacetype script");
   ARegionType *art;
 
   st->spaceid = SPACE_SCRIPT;
-  strncpy(st->name, "Script", BKE_ST_MAXNAME);
+  STRNCPY(st->name, "Script");
 
   st->create = script_create;
   st->free = script_free;
@@ -177,6 +181,8 @@ void ED_spacetype_script(void)
   st->duplicate = script_duplicate;
   st->operatortypes = script_operatortypes;
   st->keymap = script_keymap;
+  st->blend_read_lib = script_blend_read_lib;
+  st->blend_write = script_blend_write;
 
   /* regions: main window */
   art = MEM_callocN(sizeof(ARegionType), "spacetype script region");

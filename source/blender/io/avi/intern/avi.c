@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup avi
@@ -54,14 +38,14 @@ static char DEBUG_FCC[4];
   (void)0
 
 /* local functions */
-char *fcc_to_char(unsigned int fcc);
-char *tcc_to_char(unsigned int tcc);
+char *fcc_to_char(uint fcc);
+char *tcc_to_char(uint tcc);
 
 /* implementation */
 
-unsigned int GET_FCC(FILE *fp)
+uint GET_FCC(FILE *fp)
 {
-  unsigned char tmp[4];
+  uchar tmp[4];
 
   tmp[0] = getc(fp);
   tmp[1] = getc(fp);
@@ -71,7 +55,7 @@ unsigned int GET_FCC(FILE *fp)
   return FCC(tmp);
 }
 
-unsigned int GET_TCC(FILE *fp)
+uint GET_TCC(FILE *fp)
 {
   char tmp[5];
 
@@ -83,7 +67,7 @@ unsigned int GET_TCC(FILE *fp)
   return FCC(tmp);
 }
 
-char *fcc_to_char(unsigned int fcc)
+char *fcc_to_char(uint fcc)
 {
   DEBUG_FCC[0] = (fcc)&127;
   DEBUG_FCC[1] = (fcc >> 8) & 127;
@@ -93,7 +77,7 @@ char *fcc_to_char(unsigned int fcc)
   return DEBUG_FCC;
 }
 
-char *tcc_to_char(unsigned int tcc)
+char *tcc_to_char(uint tcc)
 {
   DEBUG_FCC[0] = (tcc)&127;
   DEBUG_FCC[1] = (tcc >> 8) & 127;
@@ -145,7 +129,7 @@ static bool fcc_is_data(int fcc)
   fccs[2] = fcc >> 16;
   fccs[3] = fcc >> 24;
 
-  if (!isdigit(fccs[0]) || !isdigit(fccs[1]) || (fccs[2] != 'd' && fccs[2] != 'w')) {
+  if (!isdigit(fccs[0]) || !isdigit(fccs[1]) || !ELEM(fccs[2], 'd', 'w')) {
     return 0;
   }
   if (!ELEM(fccs[3], 'b', 'c')) {
@@ -591,7 +575,7 @@ AviError AVI_open_movie(const char *name, AviMovie *movie)
     BLI_fseek(movie->fp, size - 4, SEEK_CUR);
 
     if (GET_FCC(movie->fp) != FCC("idx1")) {
-      DEBUG_PRINT("bad index informatio\n");
+      DEBUG_PRINT("bad index information\n");
       return AVI_ERROR_FORMAT;
     }
 
@@ -933,7 +917,7 @@ AviError AVI_write_frame(AviMovie *movie, int frame_num, ...)
   va_start(ap, frame_num);
 
   for (stream = 0; stream < movie->header->Streams; stream++) {
-    unsigned int tbuf = 0;
+    uint tbuf = 0;
 
     format = va_arg(ap, AviFormat);
     buffer = va_arg(ap, void *);

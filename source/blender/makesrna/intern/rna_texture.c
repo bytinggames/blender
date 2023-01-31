@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -35,7 +21,10 @@
 #include "BLI_utildefines.h"
 
 #include "BKE_node.h"
+#include "BKE_node_tree_update.h"
 #include "BKE_paint.h"
+
+#include "BLT_translation.h"
 
 #include "RNA_define.h"
 #include "RNA_enum_types.h"
@@ -111,22 +100,22 @@ const EnumPropertyItem rna_enum_texture_type_items[] = {
 #ifndef RNA_RUNTIME
 static const EnumPropertyItem blend_type_items[] = {
     {MTEX_BLEND, "MIX", 0, "Mix", ""},
-    {0, "", ICON_NONE, NULL, NULL},
+    RNA_ENUM_ITEM_SEPR,
     {MTEX_DARK, "DARKEN", 0, "Darken", ""},
     {MTEX_MUL, "MULTIPLY", 0, "Multiply", ""},
-    {0, "", ICON_NONE, NULL, NULL},
+    RNA_ENUM_ITEM_SEPR,
     {MTEX_LIGHT, "LIGHTEN", 0, "Lighten", ""},
     {MTEX_SCREEN, "SCREEN", 0, "Screen", ""},
     {MTEX_ADD, "ADD", 0, "Add", ""},
-    {0, "", ICON_NONE, NULL, NULL},
+    RNA_ENUM_ITEM_SEPR,
     {MTEX_OVERLAY, "OVERLAY", 0, "Overlay", ""},
     {MTEX_SOFT_LIGHT, "SOFT_LIGHT", 0, "Soft Light", ""},
     {MTEX_LIN_LIGHT, "LINEAR_LIGHT", 0, "Linear Light", ""},
-    {0, "", ICON_NONE, NULL, NULL},
+    RNA_ENUM_ITEM_SEPR,
     {MTEX_DIFF, "DIFFERENCE", 0, "Difference", ""},
     {MTEX_SUB, "SUBTRACT", 0, "Subtract", ""},
     {MTEX_DIV, "DIVIDE", 0, "Divide", ""},
-    {0, "", ICON_NONE, NULL, NULL},
+    RNA_ENUM_ITEM_SEPR,
     {MTEX_BLEND_HUE, "HUE", 0, "Hue", ""},
     {MTEX_BLEND_SAT, "SATURATION", 0, "Saturation", ""},
     {MTEX_BLEND_COLOR, "COLOR", 0, "Color", ""},
@@ -199,14 +188,29 @@ static void rna_Texture_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *pt
   }
   else if (GS(id->name) == ID_NT) {
     bNodeTree *ntree = (bNodeTree *)ptr->owner_id;
-    ED_node_tag_update_nodetree(bmain, ntree, NULL);
+    ED_node_tree_propagate_change(NULL, bmain, ntree);
   }
 }
 
 static void rna_Texture_mapping_update(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
+  ID *id = ptr->owner_id;
   TexMapping *texmap = ptr->data;
   BKE_texture_mapping_init(texmap);
+
+  if (GS(id->name) == ID_NT) {
+    bNodeTree *ntree = (bNodeTree *)ptr->owner_id;
+    /* Try to find and tag the node that this #TexMapping belongs to. */
+    LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
+      /* This assumes that the #TexMapping is stored at the beginning of the node storage. This is
+       * generally true, see #NodeTexBase. If the assumption happens to be false, there might be a
+       * missing update. */
+      if (node->storage == texmap) {
+        BKE_ntree_update_tag_node_property(ntree, node);
+      }
+    }
+  }
+
   rna_Texture_update(bmain, scene, ptr);
 }
 
@@ -289,7 +293,7 @@ void rna_TextureSlot_update(bContext *C, PointerRNA *ptr)
   }
 }
 
-char *rna_TextureSlot_path(PointerRNA *ptr)
+char *rna_TextureSlot_path(const PointerRNA *ptr)
 {
   MTex *mtex = ptr->data;
 
@@ -1189,6 +1193,7 @@ static void rna_def_texture_image(BlenderRNA *brna)
   RNA_def_property_enum_items(prop, prop_image_extension);
   RNA_def_property_ui_text(
       prop, "Extension", "How the image is extrapolated past its original bounds");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_IMAGE);
   RNA_def_property_update(prop, 0, "rna_Texture_update");
 
   prop = RNA_def_property(srna, "repeat_x", PROP_INT, PROP_NONE);
@@ -1233,7 +1238,7 @@ static void rna_def_texture_image(BlenderRNA *brna)
 #  if 0
 
   /* XXX: did this as an array, but needs better descriptions than "1 2 3 4"
-   * perhaps a new subtype could be added?
+   * perhaps a new sub-type could be added?
    * --I actually used single values for this, maybe change later with a RNA_Rect thing? */
   prop = RNA_def_property(srna, "crop_rectangle", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "cropxmin");
@@ -1554,7 +1559,7 @@ static void rna_def_texture(BlenderRNA *brna)
   RNA_def_struct_refine_func(srna, "rna_Texture_refine");
 
   prop = RNA_def_property(srna, "type", PROP_ENUM, PROP_NONE);
-  /*RNA_def_property_clear_flag(prop, PROP_EDITABLE); */
+  // RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_enum_sdna(prop, NULL, "type");
   RNA_def_property_enum_items(prop, rna_enum_texture_type_items);
   RNA_def_property_enum_funcs(prop, NULL, "rna_Texture_type_set", NULL);
@@ -1642,6 +1647,7 @@ static void rna_def_texture(BlenderRNA *brna)
   prop = RNA_def_property(srna, "node_tree", PROP_POINTER, PROP_NONE);
   RNA_def_property_pointer_sdna(prop, NULL, "nodetree");
   RNA_def_property_clear_flag(prop, PROP_PTR_NO_OWNERSHIP);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_ui_text(prop, "Node Tree", "Node tree for node-based textures");
   RNA_def_property_update(prop, 0, "rna_Texture_nodes_update");
 
@@ -1659,7 +1665,7 @@ static void rna_def_texture(BlenderRNA *brna)
   rna_def_texture_musgrave(brna);
   rna_def_texture_voronoi(brna);
   rna_def_texture_distorted_noise(brna);
-  /* XXX add more types here .. */
+  /* XXX add more types here. */
 
   RNA_api_texture(srna);
 }

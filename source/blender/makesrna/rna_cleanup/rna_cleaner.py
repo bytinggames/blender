@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 """
 This script is used to help cleaning RNA api.
@@ -229,7 +230,7 @@ def sort(props_list, sort_priority):
 
 
 def file_basename(input_filename):
-    # if needed will use os.path
+    # If needed will use `os.path`.
     if input_filename.endswith(".txt"):
         if input_filename.endswith("_work.txt"):
             base_filename = input_filename.replace("_work.txt", "")
@@ -288,7 +289,7 @@ def write_files(basename, props_list, props_length_max):
     f_py.write("rna_api = [\n%s]\n" % py)
     f_rna.write("rna_api = [\n%s]\n" % rna)
 
-    # write useful py script, wont hurt
+    # write useful py script, won't hurt
     f_py.write("\n'''\n")
     f_py.write("for p_note, p_changed, p_class, p_from, p_to, p_check, p_type, p_desc in rna_api:\n")
     f_py.write("    print(p_to)\n")

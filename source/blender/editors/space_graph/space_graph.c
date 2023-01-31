@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spgraph
@@ -36,6 +20,7 @@
 
 #include "BKE_context.h"
 #include "BKE_fcurve.h"
+#include "BKE_lib_remap.h"
 #include "BKE_screen.h"
 
 #include "ED_anim_api.h"
@@ -59,6 +44,8 @@
 #include "UI_interface.h"
 #include "UI_resources.h"
 #include "UI_view2d.h"
+
+#include "BLO_read_write.h"
 
 #include "graph_intern.h" /* own include */
 
@@ -105,7 +92,6 @@ static SpaceLink *graph_create(const ScrArea *UNUSED(area), const Scene *scene)
   BLI_addtail(&sipo->regionbase, region);
   region->regiontype = RGN_TYPE_UI;
   region->alignment = RGN_ALIGN_RIGHT;
-  region->flag = RGN_FLAG_HIDDEN;
 
   /* main region */
   region = MEM_callocN(sizeof(ARegion), "main region for graphedit");
@@ -172,6 +158,8 @@ static SpaceLink *graph_duplicate(SpaceLink *sl)
 {
   SpaceGraph *sipon = MEM_dupallocN(sl);
 
+  memset(&sipon->runtime, 0x0, sizeof(sipon->runtime));
+
   /* clear or remove stuff from old */
   BLI_duplicatelist(&sipon->runtime.ghost_curves, &((SpaceGraph *)sl)->runtime.ghost_curves);
   sipon->ads = MEM_dupallocN(sipon->ads);
@@ -227,7 +215,7 @@ static void graph_main_region_draw(const bContext *C, ARegion *region)
     graph_draw_curves(&ac, sipo, region, 0);
     graph_draw_curves(&ac, sipo, region, 1);
 
-    /* XXX the slow way to set tot rect... but for nice sliders needed (ton) */
+    /* XXX(ton): the slow way to set tot rect... but for nice sliders needed. */
     get_graph_keyframe_extents(
         &ac, &v2d->tot.xmin, &v2d->tot.xmax, &v2d->tot.ymin, &v2d->tot.ymax, false, true);
     /* extra offset so that these items are visible */
@@ -235,29 +223,27 @@ static void graph_main_region_draw(const bContext *C, ARegion *region)
     v2d->tot.xmax += 10.0f;
   }
 
-  if (((sipo->flag & SIPO_NODRAWCURSOR) == 0) || (sipo->mode == SIPO_MODE_DRIVERS)) {
+  if ((sipo->flag & SIPO_NODRAWCURSOR) == 0) {
     uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
-    immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+    immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
     /* horizontal component of value-cursor (value line before the current frame line) */
-    if ((sipo->flag & SIPO_NODRAWCURSOR) == 0) {
-      float y = sipo->cursorVal;
+    float y = sipo->cursorVal;
 
-      /* Draw a green line to indicate the cursor value */
-      immUniformThemeColorShadeAlpha(TH_CFRAME, -10, -50);
-      GPU_blend(GPU_BLEND_ALPHA);
-      GPU_line_width(2.0);
+    /* Draw a line to indicate the cursor value. */
+    immUniformThemeColorShadeAlpha(TH_CFRAME, -10, -50);
+    GPU_blend(GPU_BLEND_ALPHA);
+    GPU_line_width(2.0);
 
-      immBegin(GPU_PRIM_LINES, 2);
-      immVertex2f(pos, v2d->cur.xmin, y);
-      immVertex2f(pos, v2d->cur.xmax, y);
-      immEnd();
+    immBegin(GPU_PRIM_LINES, 2);
+    immVertex2f(pos, v2d->cur.xmin, y);
+    immVertex2f(pos, v2d->cur.xmax, y);
+    immEnd();
 
-      GPU_blend(GPU_BLEND_NONE);
-    }
+    GPU_blend(GPU_BLEND_NONE);
 
-    /* current frame or vertical component of vertical component of the cursor */
+    /* Vertical component of the cursor. */
     if (sipo->mode == SIPO_MODE_DRIVERS) {
       /* cursor x-value */
       float x = sipo->cursorTime;
@@ -309,12 +295,15 @@ static void graph_main_region_draw_overlay(const bContext *C, ARegion *region)
 {
   /* draw entirely, view changes should be handled here */
   const SpaceGraph *sipo = CTX_wm_space_graph(C);
+
   const Scene *scene = CTX_data_scene(C);
-  const bool draw_vert_line = sipo->mode != SIPO_MODE_DRIVERS;
   View2D *v2d = &region->v2d;
 
-  /* scrubbing region */
-  ED_time_scrub_draw_current_frame(region, scene, sipo->flag & SIPO_DRAWTIME, draw_vert_line);
+  /* Driver Editor's X axis is not time. */
+  if (sipo->mode != SIPO_MODE_DRIVERS) {
+    /* scrubbing region */
+    ED_time_scrub_draw_current_frame(region, scene, sipo->flag & SIPO_DRAWTIME);
+  }
 
   /* scrollers */
   /* FIXME: args for scrollers depend on the type of data being shown. */
@@ -406,7 +395,7 @@ static void graph_buttons_region_draw(const bContext *C, ARegion *region)
 static void graph_region_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -489,12 +478,6 @@ static void graph_region_message_subscribe(const wmRegionMessageSubscribeParams 
   /* Timeline depends on scene properties. */
   {
     bool use_preview = (scene->r.flag & SCER_PRV_RANGE);
-    extern PropertyRNA rna_Scene_frame_start;
-    extern PropertyRNA rna_Scene_frame_end;
-    extern PropertyRNA rna_Scene_frame_preview_start;
-    extern PropertyRNA rna_Scene_frame_preview_end;
-    extern PropertyRNA rna_Scene_use_preview_range;
-    extern PropertyRNA rna_Scene_frame_current;
     const PropertyRNA *props[] = {
         use_preview ? &rna_Scene_frame_preview_start : &rna_Scene_frame_start,
         use_preview ? &rna_Scene_frame_preview_end : &rna_Scene_frame_end,
@@ -548,14 +531,14 @@ static void graph_region_message_subscribe(const wmRegionMessageSubscribeParams 
 static void graph_listener(const wmSpaceTypeListenerParams *params)
 {
   ScrArea *area = params->area;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
   SpaceGraph *sipo = (SpaceGraph *)area->spacedata.first;
 
   /* context changes */
   switch (wmn->category) {
     case NC_ANIMATION:
-      /* for selection changes of animation data, we can just redraw...
-       * otherwise autocolor might need to be done again */
+      /* For selection changes of animation data, we can just redraw...
+       * otherwise auto-color might need to be done again. */
       if (ELEM(wmn->data, ND_KEYFRAME, ND_ANIMCHAN) && (wmn->action == NA_SELECTED)) {
         ED_area_tag_redraw(area);
       }
@@ -586,7 +569,7 @@ static void graph_listener(const wmSpaceTypeListenerParams *params)
           ED_area_tag_refresh(area);
           break;
         case ND_TRANSFORM:
-          break; /*do nothing*/
+          break; /* Do nothing. */
 
         default: /* just redrawing the view will do */
           ED_area_tag_redraw(area);
@@ -644,7 +627,7 @@ static void graph_refresh_fcurve_colors(const bContext *C)
    * - we don't include ANIMFILTER_CURVEVISIBLE filter, as that will result in a
    *   mismatch between channel-colors and the drawn curves
    */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_NODUPLIS | ANIMFILTER_FCURVESONLY);
   items = ANIM_animdata_filter(&ac, &anim_data, filter, ac.data, ac.datatype);
 
   /* loop over F-Curves, assigning colors */
@@ -757,7 +740,7 @@ static void graph_refresh(const bContext *C, ScrArea *area)
       break;
     }
 
-    case SIPO_MODE_DRIVERS: /* drivers only  */
+    case SIPO_MODE_DRIVERS: /* Drivers only. */
     {
       break;
     }
@@ -791,18 +774,17 @@ static void graph_refresh(const bContext *C, ScrArea *area)
   graph_refresh_fcurve_colors(C);
 }
 
-static void graph_id_remap(ScrArea *UNUSED(area), SpaceLink *slink, ID *old_id, ID *new_id)
+static void graph_id_remap(ScrArea *UNUSED(area),
+                           SpaceLink *slink,
+                           const struct IDRemapper *mappings)
 {
   SpaceGraph *sgraph = (SpaceGraph *)slink;
-
-  if (sgraph->ads) {
-    if ((ID *)sgraph->ads->filter_grp == old_id) {
-      sgraph->ads->filter_grp = (Collection *)new_id;
-    }
-    if ((ID *)sgraph->ads->source == old_id) {
-      sgraph->ads->source = new_id;
-    }
+  if (!sgraph->ads) {
+    return;
   }
+
+  BKE_id_remapper_apply(mappings, (ID **)&sgraph->ads->filter_grp, ID_REMAP_APPLY_DEFAULT);
+  BKE_id_remapper_apply(mappings, (ID **)&sgraph->ads->source, ID_REMAP_APPLY_DEFAULT);
 }
 
 static int graph_space_subtype_get(ScrArea *area)
@@ -824,14 +806,49 @@ static void graph_space_subtype_item_extend(bContext *UNUSED(C),
   RNA_enum_items_add(item, totitem, rna_enum_space_graph_mode_items);
 }
 
-/* only called once, from space/spacetypes.c */
+static void graph_blend_read_data(BlendDataReader *reader, SpaceLink *sl)
+{
+  SpaceGraph *sipo = (SpaceGraph *)sl;
+
+  BLO_read_data_address(reader, &sipo->ads);
+  memset(&sipo->runtime, 0x0, sizeof(sipo->runtime));
+}
+
+static void graph_blend_read_lib(BlendLibReader *reader, ID *parent_id, SpaceLink *sl)
+{
+  SpaceGraph *sipo = (SpaceGraph *)sl;
+  bDopeSheet *ads = sipo->ads;
+
+  if (ads) {
+    BLO_read_id_address(reader, parent_id->lib, &ads->source);
+    BLO_read_id_address(reader, parent_id->lib, &ads->filter_grp);
+  }
+}
+
+static void graph_blend_write(BlendWriter *writer, SpaceLink *sl)
+{
+  SpaceGraph *sipo = (SpaceGraph *)sl;
+  ListBase tmpGhosts = sipo->runtime.ghost_curves;
+
+  /* temporarily disable ghost curves when saving */
+  BLI_listbase_clear(&sipo->runtime.ghost_curves);
+
+  BLO_write_struct(writer, SpaceGraph, sl);
+  if (sipo->ads) {
+    BLO_write_struct(writer, bDopeSheet, sipo->ads);
+  }
+
+  /* Re-enable ghost curves. */
+  sipo->runtime.ghost_curves = tmpGhosts;
+}
+
 void ED_spacetype_ipo(void)
 {
   SpaceType *st = MEM_callocN(sizeof(SpaceType), "spacetype ipo");
   ARegionType *art;
 
   st->spaceid = SPACE_GRAPH;
-  strncpy(st->name, "Graph", BKE_ST_MAXNAME);
+  STRNCPY(st->name, "Graph");
 
   st->create = graph_create;
   st->free = graph_free;
@@ -845,6 +862,9 @@ void ED_spacetype_ipo(void)
   st->space_subtype_item_extend = graph_space_subtype_item_extend;
   st->space_subtype_get = graph_space_subtype_get;
   st->space_subtype_set = graph_space_subtype_set;
+  st->blend_read_data = graph_blend_read_data;
+  st->blend_read_lib = graph_blend_read_lib;
+  st->blend_write = graph_blend_write;
 
   /* regions: main window */
   art = MEM_callocN(sizeof(ARegionType), "spacetype graphedit region");

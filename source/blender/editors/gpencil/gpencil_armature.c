@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2018, Blender Foundation
- * This is a new part of Blender
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2018 Blender Foundation. */
 
 /** \file
  * \ingroup edgpencil
@@ -45,6 +29,7 @@
 #include "BKE_deform.h"
 #include "BKE_gpencil.h"
 #include "BKE_gpencil_modifier.h"
+#include "BKE_layer.h"
 #include "BKE_main.h"
 #include "BKE_object_deform.h"
 #include "BKE_report.h"
@@ -80,7 +65,7 @@ static int gpencil_bone_looper(Object *ob,
 {
   /* We want to apply the function bone_func to every bone
    * in an armature -- feed bone_looper the first bone and
-   * a pointer to the bone_func and watch it go!. The int count
+   * a pointer to the bone_func and watch it go! The int count
    * can be useful for counting bones with a certain property
    * (e.g. skinnable)
    */
@@ -344,8 +329,8 @@ static void gpencil_add_verts_to_dgroups(
       copy_v3_v3(tip[j], bone->arm_tail);
     }
 
-    mul_m4_v3(ob_arm->obmat, root[j]);
-    mul_m4_v3(ob_arm->obmat, tip[j]);
+    mul_m4_v3(ob_arm->object_to_world, root[j]);
+    mul_m4_v3(ob_arm->object_to_world, tip[j]);
 
     selected[j] = 1;
 
@@ -379,12 +364,12 @@ static void gpencil_add_verts_to_dgroups(
           /* transform stroke points to global space */
           for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
             copy_v3_v3(verts[i], &pt->x);
-            mul_m4_v3(ob->obmat, verts[i]);
+            mul_m4_v3(ob->object_to_world, verts[i]);
           }
 
           /* loop groups and assign weight */
           for (j = 0; j < numbones; j++) {
-            int def_nr = BLI_findindex(&ob->defbase, dgrouplist[j]);
+            int def_nr = BLI_findindex(&gpd->vertex_group_names, dgrouplist[j]);
             if (def_nr < 0) {
               continue;
             }
@@ -425,7 +410,7 @@ static void gpencil_add_verts_to_dgroups(
         }
       }
 
-      /* if not multiedit, exit loop*/
+      /* If not multi-edit, exit loop. */
       if (!is_multiedit) {
         break;
       }
@@ -454,7 +439,7 @@ static void gpencil_object_vgroup_calc_from_armature(const bContext *C,
   bArmature *arm = ob_arm->data;
 
   /* always create groups */
-  const int defbase_tot = BLI_listbase_count(&ob->defbase);
+  const int defbase_tot = BKE_object_defgroup_count(ob);
   int defbase_add;
   /* Traverse the bone list, trying to create empty vertex
    * groups corresponding to the bone.
@@ -462,14 +447,14 @@ static void gpencil_object_vgroup_calc_from_armature(const bContext *C,
   defbase_add = gpencil_bone_looper(ob, arm->bonebase.first, NULL, vgroup_add_unique_bone_cb);
 
   if (defbase_add) {
-    /* its possible there are DWeight's outside the range of the current
-     * objects deform groups, in this case the new groups wont be empty */
+    /* It's possible there are DWeights outside the range of the current
+     * object's deform groups. In this case the new groups won't be empty */
     ED_vgroup_data_clamp_range(ob->data, defbase_tot);
   }
 
   if (mode == GP_ARMATURE_AUTO) {
     /* Traverse the bone list, trying to fill vertex groups
-     * with the corresponding vertice weights for which the
+     * with the corresponding vertex weights for which the
      * bone is closest.
      */
     gpencil_add_verts_to_dgroups(C, ob, ob_arm, ratio, decay);
@@ -544,6 +529,7 @@ static bool gpencil_generate_weights_poll(bContext *C)
     return false;
   }
 
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   bGPdata *gpd = (bGPdata *)ob->data;
 
@@ -552,7 +538,8 @@ static bool gpencil_generate_weights_poll(bContext *C)
   }
 
   /* need some armature in the view layer */
-  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  LISTBASE_FOREACH (Base *, base, BKE_view_layer_object_bases_get(view_layer)) {
     if (base->object->type == OB_ARMATURE) {
       return true;
     }
@@ -564,6 +551,7 @@ static bool gpencil_generate_weights_poll(bContext *C)
 static int gpencil_generate_weights_exec(bContext *C, wmOperator *op)
 {
   Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Object *ob = CTX_data_active_object(C);
   Object *ob_eval = DEG_get_evaluated_object(depsgraph, ob);
@@ -582,7 +570,8 @@ static int gpencil_generate_weights_exec(bContext *C, wmOperator *op)
   /* get armature */
   const int arm_idx = RNA_enum_get(op->ptr, "armature");
   if (arm_idx > 0) {
-    Base *base = BLI_findlink(&view_layer->object_bases, arm_idx - 1);
+    BKE_view_layer_synced_ensure(scene, view_layer);
+    Base *base = BLI_findlink(BKE_view_layer_object_bases_get(view_layer), arm_idx - 1);
     ob_arm = base->object;
   }
   else {
@@ -623,6 +612,7 @@ static const EnumPropertyItem *gpencil_armatures_enum_itemf(bContext *C,
                                                             PropertyRNA *UNUSED(prop),
                                                             bool *r_free)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   EnumPropertyItem *item = NULL, item_tmp = {0};
   int totitem = 0;
@@ -639,7 +629,8 @@ static const EnumPropertyItem *gpencil_armatures_enum_itemf(bContext *C,
   RNA_enum_item_add(&item, &totitem, &item_tmp);
   i++;
 
-  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  LISTBASE_FOREACH (Base *, base, BKE_view_layer_object_bases_get(view_layer)) {
     Object *ob = base->object;
     if (ob->type == OB_ARMATURE) {
       item_tmp.identifier = item_tmp.name = ob->id.name + 2;

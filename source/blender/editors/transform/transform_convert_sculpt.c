@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -26,6 +10,8 @@
 #include "BLI_math.h"
 
 #include "BKE_context.h"
+#include "BKE_layer.h"
+#include "BKE_lib_id.h"
 #include "BKE_paint.h"
 #include "BKE_report.h"
 
@@ -38,17 +24,18 @@
 /** \name Sculpt Transform Creation
  * \{ */
 
-void createTransSculpt(bContext *C, TransInfo *t)
+static void createTransSculpt(bContext *C, TransInfo *t)
 {
   TransData *td;
 
   Scene *scene = t->scene;
-  if (ID_IS_LINKED(scene)) {
+  if (!BKE_id_is_editable(CTX_data_main(C), &scene->id)) {
     BKE_report(t->reports, RPT_ERROR, "Linked data can't text-space transform");
     return;
   }
 
-  Object *ob = OBACT(t->view_layer);
+  BKE_view_layer_synced_ensure(t->scene, t->view_layer);
+  Object *ob = BKE_view_layer_active_object_get(t->view_layer);
   SculptSession *ss = ob->sculpt;
 
   {
@@ -62,7 +49,7 @@ void createTransSculpt(bContext *C, TransInfo *t)
 
   td->flag = TD_SELECTED;
   copy_v3_v3(td->center, ss->pivot_pos);
-  mul_m4_v3(ob->obmat, td->center);
+  mul_m4_v3(ob->object_to_world, td->center);
   td->ob = ob;
 
   td->loc = ss->pivot_pos;
@@ -73,16 +60,16 @@ void createTransSculpt(bContext *C, TransInfo *t)
   }
 
   float obmat_inv[3][3];
-  copy_m3_m4(obmat_inv, ob->obmat);
+  copy_m3_m4(obmat_inv, ob->object_to_world);
   invert_m3(obmat_inv);
 
   td->ext->rot = NULL;
   td->ext->rotAxis = NULL;
   td->ext->rotAngle = NULL;
   td->ext->quat = ss->pivot_rot;
-  copy_m4_m4(td->ext->obmat, ob->obmat);
+  copy_m4_m4(td->ext->obmat, ob->object_to_world);
   copy_m3_m3(td->ext->l_smtx, obmat_inv);
-  copy_m3_m4(td->ext->r_mtx, ob->obmat);
+  copy_m3_m4(td->ext->r_mtx, ob->object_to_world);
   copy_m3_m3(td->ext->r_smtx, obmat_inv);
 
   copy_qt_qt(td->ext->iquat, ss->pivot_rot);
@@ -96,11 +83,11 @@ void createTransSculpt(bContext *C, TransInfo *t)
   copy_v3_v3(td->ext->isize, ss->init_pivot_scale);
 
   copy_m3_m3(td->smtx, obmat_inv);
-  copy_m3_m4(td->mtx, ob->obmat);
-  copy_m3_m4(td->axismtx, ob->obmat);
+  copy_m3_m4(td->mtx, ob->object_to_world);
+  copy_m3_m4(td->axismtx, ob->object_to_world);
 
   BLI_assert(!(t->options & CTX_PAINT_CURVE));
-  ED_sculpt_init_transform(C, ob);
+  ED_sculpt_init_transform(C, ob, t->mval, t->undo_name);
 }
 
 /** \} */
@@ -109,23 +96,32 @@ void createTransSculpt(bContext *C, TransInfo *t)
 /** \name Recalc Data object
  * \{ */
 
-void recalcData_sculpt(TransInfo *t)
+static void recalcData_sculpt(TransInfo *t)
 {
-  Object *ob = OBACT(t->view_layer);
+  BKE_view_layer_synced_ensure(t->scene, t->view_layer);
+  Object *ob = BKE_view_layer_active_object_get(t->view_layer);
   ED_sculpt_update_modal_transform(t->context, ob);
 }
 
-void special_aftertrans_update__sculpt(bContext *C, TransInfo *t)
+static void special_aftertrans_update__sculpt(bContext *C, TransInfo *t)
 {
   Scene *scene = t->scene;
-  if (ID_IS_LINKED(scene)) {
+  if (!BKE_id_is_editable(CTX_data_main(C), &scene->id)) {
     /* `ED_sculpt_init_transform` was not called in this case. */
     return;
   }
 
-  Object *ob = OBACT(t->view_layer);
+  BKE_view_layer_synced_ensure(t->scene, t->view_layer);
+  Object *ob = BKE_view_layer_active_object_get(t->view_layer);
   BLI_assert(!(t->options & CTX_PAINT_CURVE));
   ED_sculpt_end_transform(C, ob);
 }
 
 /** \} */
+
+TransConvertTypeInfo TransConvertType_Sculpt = {
+    /* flags */ 0,
+    /* createTransData */ createTransSculpt,
+    /* recalcData */ recalcData_sculpt,
+    /* special_aftertrans_update */ special_aftertrans_update__sculpt,
+};

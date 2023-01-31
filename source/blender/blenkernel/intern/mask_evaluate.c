@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2012 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2012 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -40,10 +24,10 @@
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
 
-unsigned int BKE_mask_spline_resolution(MaskSpline *spline, int width, int height)
+uint BKE_mask_spline_resolution(MaskSpline *spline, int width, int height)
 {
   float max_segment = 0.01f;
-  unsigned int i, resol = 1;
+  uint i, resol = 1;
 
   if (width != 0 && height != 0) {
     max_segment = 1.0f / (float)max_ii(width, height);
@@ -53,7 +37,7 @@ unsigned int BKE_mask_spline_resolution(MaskSpline *spline, int width, int heigh
     MaskSplinePoint *point = &spline->points[i];
     BezTriple *bezt_curr, *bezt_next;
     float a, b, c, len;
-    unsigned int cur_resol;
+    uint cur_resol;
 
     bezt_curr = &point->bezt;
     bezt_next = BKE_mask_spline_point_next_bezt(spline, spline->points, point);
@@ -79,10 +63,10 @@ unsigned int BKE_mask_spline_resolution(MaskSpline *spline, int width, int heigh
   return CLAMPIS(resol, 1, MASK_RESOL_MAX);
 }
 
-unsigned int BKE_mask_spline_feather_resolution(MaskSpline *spline, int width, int height)
+uint BKE_mask_spline_feather_resolution(MaskSpline *spline, int width, int height)
 {
   const float max_segment = 0.005;
-  unsigned int resol = BKE_mask_spline_resolution(spline, width, height);
+  uint resol = BKE_mask_spline_resolution(spline, width, height);
   float max_jump = 0.0f;
 
   /* avoid checking the featrher if we already hit the maximum value */
@@ -118,7 +102,7 @@ unsigned int BKE_mask_spline_feather_resolution(MaskSpline *spline, int width, i
   return CLAMPIS(resol, 1, MASK_RESOL_MAX);
 }
 
-int BKE_mask_spline_differentiate_calc_total(const MaskSpline *spline, const unsigned int resol)
+int BKE_mask_spline_differentiate_calc_total(const MaskSpline *spline, const uint resol)
 {
   if (spline->flag & MASK_SPLINE_CYCLIC) {
     return spline->tot_point * resol;
@@ -128,8 +112,8 @@ int BKE_mask_spline_differentiate_calc_total(const MaskSpline *spline, const uns
 }
 
 float (*BKE_mask_spline_differentiate_with_resolution(MaskSpline *spline,
-                                                      const unsigned int resol,
-                                                      unsigned int *r_tot_diff_point))[2]
+                                                      const uint resol,
+                                                      uint *r_tot_diff_point))[2]
 {
   MaskSplinePoint *points_array = BKE_mask_spline_point_array(spline);
 
@@ -192,7 +176,7 @@ float (*BKE_mask_spline_differentiate_with_resolution(MaskSpline *spline,
 }
 
 float (*BKE_mask_spline_differentiate(
-    MaskSpline *spline, int width, int height, unsigned int *r_tot_diff_point))[2]
+    MaskSpline *spline, int width, int height, uint *r_tot_diff_point))[2]
 {
   uint resol = BKE_mask_spline_resolution(spline, width, height);
 
@@ -332,7 +316,7 @@ static void feather_bucket_get_diagonal(FeatherEdgesBucket *buckets,
 
 void BKE_mask_spline_feather_collapse_inner_loops(MaskSpline *spline,
                                                   float (*feather_points)[2],
-                                                  const unsigned int tot_feather_point)
+                                                  const uint tot_feather_point)
 {
 #define BUCKET_INDEX(co) feather_bucket_index_from_coord(co, min, bucket_scale, buckets_per_side)
 
@@ -356,7 +340,7 @@ void BKE_mask_spline_feather_collapse_inner_loops(MaskSpline *spline,
   INIT_MINMAX2(min, max);
 
   for (uint i = 0; i < tot_feather_point; i++) {
-    unsigned int next = i + 1;
+    uint next = i + 1;
     float delta;
 
     minmax_v2v2_v2(min, max, feather_points[i]);
@@ -505,11 +489,11 @@ void BKE_mask_spline_feather_collapse_inner_loops(MaskSpline *spline,
 }
 
 /** only called from #BKE_mask_spline_feather_differentiated_points_with_resolution() ! */
-static float (*mask_spline_feather_differentiated_points_with_resolution__even(
-    MaskSpline *spline,
-    const unsigned int resol,
-    const bool do_feather_isect,
-    unsigned int *r_tot_feather_point))[2]
+static float (
+    *mask_spline_feather_differentiated_points_with_resolution__even(MaskSpline *spline,
+                                                                     const uint resol,
+                                                                     const bool do_feather_isect,
+                                                                     uint *r_tot_feather_point))[2]
 {
   MaskSplinePoint *points_array = BKE_mask_spline_point_array(spline);
   MaskSplinePoint *point_curr, *point_prev;
@@ -545,7 +529,7 @@ static float (*mask_spline_feather_differentiated_points_with_resolution__even(
       float u = (float)j / resol, weight;
       float co[2], n[2];
 
-      /* TODO - these calls all calculate similar things
+      /* TODO: these calls all calculate similar things
        * could be unified for some speed */
       BKE_mask_point_segment_co(spline, point_prev, u, co);
       BKE_mask_point_normal(spline, point_prev, u, n);
@@ -581,9 +565,9 @@ static float (*mask_spline_feather_differentiated_points_with_resolution__even(
 /** only called from #BKE_mask_spline_feather_differentiated_points_with_resolution() ! */
 static float (*mask_spline_feather_differentiated_points_with_resolution__double(
     MaskSpline *spline,
-    const unsigned int resol,
+    const uint resol,
     const bool do_feather_isect,
-    unsigned int *r_tot_feather_point))[2]
+    uint *r_tot_feather_point))[2]
 {
   MaskSplinePoint *points_array = BKE_mask_spline_point_array(spline);
 
@@ -691,7 +675,7 @@ static float (*mask_spline_feather_differentiated_points_with_resolution__double
         float weight_uw, weight_scalar;
         float co[2];
 
-        /* TODO - these calls all calculate similar things
+        /* TODO: these calls all calculate similar things
          * could be unified for some speed */
         BKE_mask_point_segment_co(spline, point_prev, u, co);
 
@@ -720,15 +704,11 @@ static float (*mask_spline_feather_differentiated_points_with_resolution__double
   return feather;
 }
 
-/**
- * values align with #BKE_mask_spline_differentiate_with_resolution
- * when \a resol arguments match.
- */
-float (*BKE_mask_spline_feather_differentiated_points_with_resolution(
-    MaskSpline *spline,
-    const unsigned int resol,
-    const bool do_feather_isect,
-    unsigned int *r_tot_feather_point))[2]
+float (
+    *BKE_mask_spline_feather_differentiated_points_with_resolution(MaskSpline *spline,
+                                                                   const uint resol,
+                                                                   const bool do_feather_isect,
+                                                                   uint *r_tot_feather_point))[2]
 {
   switch (spline->offset_mode) {
     case MASK_SPLINE_OFFSET_EVEN:
@@ -788,15 +768,11 @@ float (*BKE_mask_spline_feather_points(MaskSpline *spline, int *r_tot_feather_po
   return feather;
 }
 
-/* *** mask point functions which involve evaluation *** */
-float *BKE_mask_point_segment_feather_diff(MaskSpline *spline,
-                                           MaskSplinePoint *point,
-                                           int width,
-                                           int height,
-                                           unsigned int *r_tot_feather_point)
+float *BKE_mask_point_segment_feather_diff(
+    MaskSpline *spline, MaskSplinePoint *point, int width, int height, uint *r_tot_feather_point)
 {
   float *feather, *fp;
-  unsigned int resol = BKE_mask_spline_feather_resolution(spline, width, height);
+  uint resol = BKE_mask_spline_feather_resolution(spline, width, height);
 
   feather = fp = MEM_callocN(2 * resol * sizeof(float), "mask point spline feather diff points");
 
@@ -817,11 +793,8 @@ float *BKE_mask_point_segment_feather_diff(MaskSpline *spline,
   return feather;
 }
 
-float *BKE_mask_point_segment_diff(MaskSpline *spline,
-                                   MaskSplinePoint *point,
-                                   int width,
-                                   int height,
-                                   unsigned int *r_tot_diff_point)
+float *BKE_mask_point_segment_diff(
+    MaskSpline *spline, MaskSplinePoint *point, int width, int height, uint *r_tot_diff_point)
 {
   MaskSplinePoint *points_array = BKE_mask_spline_point_array_from_point(spline, point);
 

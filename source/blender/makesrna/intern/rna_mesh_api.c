@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup RNA
@@ -38,6 +22,7 @@
 
 #  include "DNA_mesh_types.h"
 
+#  include "BKE_anim_data.h"
 #  include "BKE_mesh.h"
 #  include "BKE_mesh_mapping.h"
 #  include "BKE_mesh_runtime.h"
@@ -60,7 +45,7 @@ static const char *rna_Mesh_unit_test_compare(struct Mesh *mesh,
 static void rna_Mesh_create_normals_split(Mesh *mesh)
 {
   if (!CustomData_has_layer(&mesh->ldata, CD_NORMAL)) {
-    CustomData_add_layer(&mesh->ldata, CD_NORMAL, CD_CALLOC, NULL, mesh->totloop);
+    CustomData_add_layer(&mesh->ldata, CD_NORMAL, CD_SET_DEFAULT, NULL, mesh->totloop);
     CustomData_set_layer_flag(&mesh->ldata, CD_NORMAL, CD_FLAG_TEMPORARY);
   }
 }
@@ -80,7 +65,7 @@ static void rna_Mesh_calc_tangents(Mesh *mesh, ReportList *reports, const char *
   }
   else {
     r_looptangents = CustomData_add_layer(
-        &mesh->ldata, CD_MLOOPTANGENT, CD_CALLOC, NULL, mesh->totloop);
+        &mesh->ldata, CD_MLOOPTANGENT, CD_SET_DEFAULT, NULL, mesh->totloop);
     CustomData_set_layer_flag(&mesh->ldata, CD_MLOOPTANGENT, CD_FLAG_TEMPORARY);
   }
 
@@ -106,11 +91,11 @@ static void rna_Mesh_calc_smooth_groups(
     Mesh *mesh, bool use_bitflags, int *r_poly_group_len, int **r_poly_group, int *r_group_total)
 {
   *r_poly_group_len = mesh->totpoly;
-  *r_poly_group = BKE_mesh_calc_smoothgroups(mesh->medge,
+  *r_poly_group = BKE_mesh_calc_smoothgroups(BKE_mesh_edges(mesh),
                                              mesh->totedge,
-                                             mesh->mpoly,
+                                             BKE_mesh_polys(mesh),
                                              mesh->totpoly,
-                                             mesh->mloop,
+                                             BKE_mesh_loops(mesh),
                                              mesh->totloop,
                                              r_group_total,
                                              use_bitflags);
@@ -118,10 +103,10 @@ static void rna_Mesh_calc_smooth_groups(
 
 static void rna_Mesh_normals_split_custom_do(Mesh *mesh,
                                              float (*custom_loopnors)[3],
-                                             const bool use_vertices)
+                                             const bool use_verts)
 {
-  if (use_vertices) {
-    BKE_mesh_set_custom_normals_from_vertices(mesh, custom_loopnors);
+  if (use_verts) {
+    BKE_mesh_set_custom_normals_from_verts(mesh, custom_loopnors);
   }
   else {
     BKE_mesh_set_custom_normals(mesh, custom_loopnors);
@@ -172,7 +157,7 @@ static void rna_Mesh_normals_split_custom_set_from_vertices(Mesh *mesh,
   DEG_id_tag_update(&mesh->id, 0);
 }
 
-static void rna_Mesh_transform(Mesh *mesh, float *mat, bool shape_keys)
+static void rna_Mesh_transform(Mesh *mesh, float mat[16], bool shape_keys)
 {
   BKE_mesh_transform(mesh, (float(*)[4])mat, shape_keys);
 
@@ -181,9 +166,10 @@ static void rna_Mesh_transform(Mesh *mesh, float *mat, bool shape_keys)
 
 static void rna_Mesh_flip_normals(Mesh *mesh)
 {
-  BKE_mesh_polygons_flip(mesh->mpoly, mesh->mloop, &mesh->ldata, mesh->totpoly);
+  BKE_mesh_polys_flip(
+      BKE_mesh_polys(mesh), BKE_mesh_loops_for_write(mesh), &mesh->ldata, mesh->totpoly);
   BKE_mesh_tessface_clear(mesh);
-  BKE_mesh_calc_normals(mesh);
+  BKE_mesh_normals_tag_dirty(mesh);
   BKE_mesh_runtime_clear_geometry(mesh);
 
   DEG_id_tag_update(&mesh->id, 0);
@@ -207,8 +193,9 @@ static void rna_Mesh_count_selected_items(Mesh *mesh, int r_count[3])
 static void rna_Mesh_clear_geometry(Mesh *mesh)
 {
   BKE_mesh_clear_geometry(mesh);
+  BKE_animdata_free(&mesh->id, false);
 
-  DEG_id_tag_update(&mesh->id, ID_RECALC_GEOMETRY);
+  DEG_id_tag_update(&mesh->id, ID_RECALC_GEOMETRY_ALL_MODES);
   WM_main_add_notifier(NC_GEOM | ND_DATA, mesh);
 }
 
@@ -249,7 +236,7 @@ void RNA_api_mesh(StructRNA *srna)
   func = RNA_def_function(srna, "split_faces", "rna_Mesh_split_faces");
   RNA_def_function_ui_description(func, "Split faces based on the edge angle");
   RNA_def_boolean(
-      func, "free_loop_normals", 1, "Free Loop Notmals", "Free loop normals custom data layer");
+      func, "free_loop_normals", 1, "Free Loop Normals", "Free loop normals custom data layer");
 
   func = RNA_def_function(srna, "calc_tangents", "rna_Mesh_calc_tangents");
   RNA_def_function_flag(func, FUNC_USE_REPORTS);
@@ -288,7 +275,7 @@ void RNA_api_mesh(StructRNA *srna)
                                   "Define custom split normals of this mesh "
                                   "(use zero-vectors to keep auto ones)");
   RNA_def_function_flag(func, FUNC_USE_REPORTS);
-  /* TODO, see how array size of 0 works, this shouldn't be used */
+  /* TODO: see how array size of 0 works, this shouldn't be used. */
   parm = RNA_def_float_array(func, "normals", 1, NULL, -1.0f, 1.0f, "", "Normals", 0.0f, 0.0f);
   RNA_def_property_multi_array(parm, 2, normals_array_dim);
   RNA_def_parameter_flags(parm, PROP_DYNAMIC, PARM_REQUIRED);
@@ -301,7 +288,7 @@ void RNA_api_mesh(StructRNA *srna)
       "Define custom split normals of this mesh, from vertices' normals "
       "(use zero-vectors to keep auto ones)");
   RNA_def_function_flag(func, FUNC_USE_REPORTS);
-  /* TODO, see how array size of 0 works, this shouldn't be used */
+  /* TODO: see how array size of 0 works, this shouldn't be used. */
   parm = RNA_def_float_array(func, "normals", 1, NULL, -1.0f, 1.0f, "", "Normals", 0.0f, 0.0f);
   RNA_def_property_multi_array(parm, 2, normals_array_dim);
   RNA_def_parameter_flags(parm, PROP_DYNAMIC, PARM_REQUIRED);

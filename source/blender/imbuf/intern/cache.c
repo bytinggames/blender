@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup imbuf
@@ -95,11 +81,11 @@ static ImGlobalTileCache GLOBAL_CACHE;
 /** \name Hash Functions
  * \{ */
 
-static unsigned int imb_global_tile_hash(const void *gtile_p)
+static uint imb_global_tile_hash(const void *gtile_p)
 {
   const ImGlobalTile *gtile = gtile_p;
 
-  return ((unsigned int)(intptr_t)gtile->ibuf) * 769 + gtile->tx * 53 + gtile->ty * 97;
+  return ((uint)(intptr_t)gtile->ibuf) * 769 + gtile->tx * 53 + gtile->ty * 97;
 }
 
 static bool imb_global_tile_cmp(const void *a_p, const void *b_p)
@@ -110,11 +96,11 @@ static bool imb_global_tile_cmp(const void *a_p, const void *b_p)
   return ((a->ibuf != b->ibuf) || (a->tx != b->tx) || (a->ty != b->ty));
 }
 
-static unsigned int imb_thread_tile_hash(const void *ttile_p)
+static uint imb_thread_tile_hash(const void *ttile_p)
 {
   const ImThreadTile *ttile = ttile_p;
 
-  return ((unsigned int)(intptr_t)ttile->ibuf) * 769 + ttile->tx * 53 + ttile->ty * 97;
+  return ((uint)(intptr_t)ttile->ibuf) * 769 + ttile->tx * 53 + ttile->ty * 97;
 }
 
 static bool imb_thread_tile_cmp(const void *a_p, const void *b_p)
@@ -135,9 +121,9 @@ static void imb_global_cache_tile_load(ImGlobalTile *gtile)
 {
   ImBuf *ibuf = gtile->ibuf;
   int toffs = ibuf->xtiles * gtile->ty + gtile->tx;
-  unsigned int *rect;
+  uint *rect;
 
-  rect = MEM_callocN(sizeof(unsigned int) * ibuf->tilex * ibuf->tiley, "imb_tile");
+  rect = MEM_callocN(sizeof(uint) * ibuf->tilex * ibuf->tiley, "imb_tile");
   imb_loadtile(ibuf, gtile->tx, gtile->ty, rect);
   ibuf->tiles[toffs] = rect;
 }
@@ -150,10 +136,9 @@ static void imb_global_cache_tile_unload(ImGlobalTile *gtile)
   MEM_freeN(ibuf->tiles[toffs]);
   ibuf->tiles[toffs] = NULL;
 
-  GLOBAL_CACHE.totmem -= sizeof(unsigned int) * ibuf->tilex * ibuf->tiley;
+  GLOBAL_CACHE.totmem -= sizeof(uint) * ibuf->tilex * ibuf->tiley;
 }
 
-/* external free */
 void imb_tile_cache_tile_free(ImBuf *ibuf, int tx, int ty)
 {
   ImGlobalTile *gtile, lookuptile;
@@ -182,7 +167,7 @@ void imb_tile_cache_tile_free(ImBuf *ibuf, int tx, int ty)
 /** \} */
 
 /* -------------------------------------------------------------------- */
-/** \name Init/Exit
+/** \name Initialize/Exit
  * \{ */
 
 static void imb_thread_cache_init(ImThreadTileCache *cache)
@@ -248,7 +233,6 @@ void imb_tile_cache_exit(void)
   }
 }
 
-/* presumed to be called when no threads are running */
 void IMB_tile_cache_params(int totthread, int maxmem)
 {
   int a;
@@ -359,7 +343,7 @@ static ImGlobalTile *imb_global_cache_get_tile(ImBuf *ibuf,
     BLI_addhead(&GLOBAL_CACHE.tiles, gtile);
 
     /* mark as being loaded and unlock to allow other threads to load too */
-    GLOBAL_CACHE.totmem += sizeof(unsigned int) * ibuf->tilex * ibuf->tiley;
+    GLOBAL_CACHE.totmem += sizeof(uint) * ibuf->tilex * ibuf->tiley;
 
     BLI_mutex_unlock(&GLOBAL_CACHE.mutex);
 
@@ -379,10 +363,7 @@ static ImGlobalTile *imb_global_cache_get_tile(ImBuf *ibuf,
 /** \name Per-Thread Cache
  * \{ */
 
-static unsigned int *imb_thread_cache_get_tile(ImThreadTileCache *cache,
-                                               ImBuf *ibuf,
-                                               int tx,
-                                               int ty)
+static uint *imb_thread_cache_get_tile(ImThreadTileCache *cache, ImBuf *ibuf, int tx, int ty)
 {
   ImThreadTile *ttile, lookuptile;
   ImGlobalTile *gtile, *replacetile;
@@ -434,7 +415,7 @@ static unsigned int *imb_thread_cache_get_tile(ImThreadTileCache *cache,
   return ibuf->tiles[toffs];
 }
 
-unsigned int *IMB_gettile(ImBuf *ibuf, int tx, int ty, int thread)
+uint *IMB_gettile(ImBuf *ibuf, int tx, int ty, int thread)
 {
   return imb_thread_cache_get_tile(&GLOBAL_CACHE.thread_cache[thread + 1], ibuf, tx, ty);
 }
@@ -443,7 +424,7 @@ void IMB_tiles_to_rect(ImBuf *ibuf)
 {
   ImBuf *mipbuf;
   ImGlobalTile *gtile;
-  unsigned int *to, *from;
+  uint *to, *from;
   int a, tx, ty, y, w, h;
 
   for (a = 0; a < ibuf->miptot; a++) {
@@ -451,8 +432,7 @@ void IMB_tiles_to_rect(ImBuf *ibuf)
 
     /* don't call imb_addrectImBuf, it frees all mipmaps */
     if (!mipbuf->rect) {
-      if ((mipbuf->rect = MEM_callocN(ibuf->x * ibuf->y * sizeof(unsigned int),
-                                      "imb_addrectImBuf"))) {
+      if ((mipbuf->rect = MEM_callocN(ibuf->x * ibuf->y * sizeof(uint), "imb_addrectImBuf"))) {
         mipbuf->mall |= IB_rect;
         mipbuf->flags |= IB_rect;
       }
@@ -476,7 +456,7 @@ void IMB_tiles_to_rect(ImBuf *ibuf)
         h = (ty == mipbuf->ytiles - 1) ? mipbuf->y - ty * mipbuf->tiley : mipbuf->tiley;
 
         for (y = 0; y < h; y++) {
-          memcpy(to, from, sizeof(unsigned int) * w);
+          memcpy(to, from, sizeof(uint) * w);
           from += mipbuf->tilex;
           to += mipbuf->x;
         }

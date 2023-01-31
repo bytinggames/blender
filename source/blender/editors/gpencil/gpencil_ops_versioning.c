@@ -1,25 +1,9 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2018, Blender Foundation,
- * This is a new part of Blender
- * Use deprecated data to convert old 2.7x files
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2018 Blender Foundation. */
 
 /** \file
  * \ingroup edgpencil
+ * Use deprecated data to convert old 2.7x files.
  */
 
 /* Allow using deprecated functionality. */
@@ -108,7 +92,7 @@ static int gpencil_convert_old_files_exec(bContext *C, wmOperator *op)
   if ((!is_annotation) && (view_layer != NULL)) {
     Object *ob;
     ob = BKE_object_add_for_data(
-        bmain, view_layer, OB_GPENCIL, "GP_Scene", &scene->gpd->id, false);
+        bmain, scene, view_layer, OB_GPENCIL, "GP_Scene", &scene->gpd->id, false);
     zero_v3(ob->loc);
     DEG_relations_tag_update(bmain); /* added object */
 
@@ -138,7 +122,7 @@ static int gpencil_convert_old_files_exec(bContext *C, wmOperator *op)
         LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
           LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
             LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
-              if ((gps->colorname[0] != '\0') && (STREQ(gps->colorname, palcolor->info))) {
+              if ((gps->colorname[0] != '\0') && STREQ(gps->colorname, palcolor->info)) {
                 gps->mat_nr = ob->totcol - 1;
                 gps->colorname[0] = '\0';
                 /* weights array */
@@ -176,7 +160,7 @@ static int gpencil_convert_old_files_exec(bContext *C, wmOperator *op)
           gpl->tintcolor[3] = 0.0f;
           LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
             LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
-              if ((gps->colorname[0] != '\0') && (STREQ(gps->colorname, palcolor->info))) {
+              if ((gps->colorname[0] != '\0') && STREQ(gps->colorname, palcolor->info)) {
                 /* copy color settings */
                 copy_v4_v4(gpl->color, palcolor->color);
               }

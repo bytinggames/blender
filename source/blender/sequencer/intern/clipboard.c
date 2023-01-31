@@ -1,43 +1,32 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- *
- * - Blender Foundation, 2003-2009
- * - Peter Schlaile <peter [at] schlaile [dot] de> 2005/2006
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved.
+ *           2003-2009 Blender Foundation.
+ *           2005-2006 Peter Schlaile <peter [at] schlaile [dot] de> */
 
 /** \file
  * \ingroup bke
  */
 
+#include <string.h>
+
 #include "MEM_guardedalloc.h"
 
+#include "DNA_anim_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_sequence_types.h"
 #include "DNA_sound_types.h"
 
 #include "BLI_listbase.h"
+#include "BLI_string.h"
 
+#include "BKE_fcurve.h"
 #include "BKE_main.h"
 #include "BKE_movieclip.h"
 #include "BKE_scene.h"
 #include "BKE_sound.h"
 
 #include "SEQ_clipboard.h"
+#include "SEQ_select.h"
 
 #include "sequencer.h"
 
@@ -54,21 +43,25 @@
  */
 
 ListBase seqbase_clipboard;
+ListBase fcurves_clipboard;
 int seqbase_clipboard_frame;
+static char seq_clipboard_active_seq_name[SEQ_NAME_MAXSTR];
 
 void seq_clipboard_pointers_free(struct ListBase *seqbase);
 
 void SEQ_clipboard_free(void)
 {
-  Sequence *seq, *nseq;
-
   seq_clipboard_pointers_free(&seqbase_clipboard);
 
-  for (seq = seqbase_clipboard.first; seq; seq = nseq) {
-    nseq = seq->next;
+  LISTBASE_FOREACH_MUTABLE (Sequence *, seq, &seqbase_clipboard) {
     seq_free_sequence_recurse(NULL, seq, false);
   }
   BLI_listbase_clear(&seqbase_clipboard);
+
+  LISTBASE_FOREACH_MUTABLE (FCurve *, fcu, &fcurves_clipboard) {
+    BKE_fcurve_free(fcu);
+  }
+  BLI_listbase_clear(&fcurves_clipboard);
 }
 
 #define ID_PT (*id_pt)
@@ -100,7 +93,7 @@ static void seqclipboard_ptr_restore(Main *bmain, ID **id_pt)
       id_restore = (ID_PT)->newid;
     }
     else {
-      /* the pointer of the same name still exists  */
+      /* The pointer of the same name still exists. */
       id_restore = BLI_findstring(lb, (ID_PT)->name + 2, offsetof(ID, name) + 2);
     }
 
@@ -176,4 +169,20 @@ void SEQ_clipboard_pointers_restore(ListBase *seqbase, Main *bmain)
     sequence_clipboard_pointers(bmain, seq, seqclipboard_ptr_restore);
     SEQ_clipboard_pointers_restore(&seq->seqbase, bmain);
   }
+}
+
+void SEQ_clipboard_active_seq_name_store(Scene *scene)
+{
+  Sequence *active_seq = SEQ_select_active_get(scene);
+  if (active_seq != NULL) {
+    STRNCPY(seq_clipboard_active_seq_name, active_seq->name);
+  }
+  else {
+    seq_clipboard_active_seq_name[0] = '\0';
+  }
+}
+
+bool SEQ_clipboard_pasted_seq_was_active(Sequence *pasted_seq)
+{
+  return STREQ(pasted_seq->name, seq_clipboard_active_seq_name);
 }

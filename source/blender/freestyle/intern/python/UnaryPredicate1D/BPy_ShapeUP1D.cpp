@@ -1,24 +1,12 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
  */
 
 #include "BPy_ShapeUP1D.h"
+
+#include "BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,7 +44,7 @@ static char ShapeUP1D___doc__[] =
 static int ShapeUP1D___init__(BPy_ShapeUP1D *self, PyObject *args, PyObject *kwds)
 {
   static const char *kwlist[] = {"first", "second", nullptr};
-  unsigned u1, u2 = 0;
+  uint u1, u2 = 0;
 
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "I|I", (char **)kwlist, &u1, &u2)) {
     return -1;
@@ -80,7 +68,7 @@ PyTypeObject ShapeUP1D_Type = {
     nullptr,                                       /* tp_as_number */
     nullptr,                                       /* tp_as_sequence */
     nullptr,                                       /* tp_as_mapping */
-    nullptr,                                       /* tp_hash  */
+    nullptr,                                       /* tp_hash */
     nullptr,                                       /* tp_call */
     nullptr,                                       /* tp_str */
     nullptr,                                       /* tp_getattro */

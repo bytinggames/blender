@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -24,6 +10,8 @@
 #include "BPy_SShape.h"
 #include "Interface0D/BPy_ViewVertex.h"
 #include "Interface1D/BPy_ViewEdge.h"
+
+#include "BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -177,7 +165,7 @@ PyDoc_STRVAR(ViewShape_sshape_doc,
              "\n"
              ":type: :class:`SShape`");
 
-static PyObject *ViewShape_sshape_get(BPy_ViewShape *self, void *UNUSED(closure))
+static PyObject *ViewShape_sshape_get(BPy_ViewShape *self, void * /*closure*/)
 {
   SShape *ss = self->vs->sshape();
   if (!ss) {
@@ -186,7 +174,7 @@ static PyObject *ViewShape_sshape_get(BPy_ViewShape *self, void *UNUSED(closure)
   return BPy_SShape_from_SShape(*ss);
 }
 
-static int ViewShape_sshape_set(BPy_ViewShape *self, PyObject *value, void *UNUSED(closure))
+static int ViewShape_sshape_set(BPy_ViewShape *self, PyObject *value, void * /*closure*/)
 {
   if (!BPy_SShape_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be an SShape");
@@ -209,12 +197,12 @@ PyDoc_STRVAR(ViewShape_vertices_doc,
              "\n"
              ":type: List of :class:`ViewVertex` objects");
 
-static PyObject *ViewShape_vertices_get(BPy_ViewShape *self, void *UNUSED(closure))
+static PyObject *ViewShape_vertices_get(BPy_ViewShape *self, void * /*closure*/)
 {
   vector<ViewVertex *> vertices = self->vs->vertices();
   vector<ViewVertex *>::iterator it;
   PyObject *py_vertices = PyList_New(vertices.size());
-  unsigned int i = 0;
+  uint i = 0;
 
   for (it = vertices.begin(); it != vertices.end(); it++) {
     PyList_SET_ITEM(py_vertices, i++, Any_BPy_ViewVertex_from_ViewVertex(*(*it)));
@@ -222,7 +210,7 @@ static PyObject *ViewShape_vertices_get(BPy_ViewShape *self, void *UNUSED(closur
   return py_vertices;
 }
 
-static int ViewShape_vertices_set(BPy_ViewShape *self, PyObject *value, void *UNUSED(closure))
+static int ViewShape_vertices_set(BPy_ViewShape *self, PyObject *value, void * /*closure*/)
 {
   PyObject *item;
   vector<ViewVertex *> v;
@@ -233,7 +221,7 @@ static int ViewShape_vertices_set(BPy_ViewShape *self, PyObject *value, void *UN
   }
 
   v.reserve(PyList_GET_SIZE(value));
-  for (unsigned int i = 0; i < PyList_GET_SIZE(value); i++) {
+  for (uint i = 0; i < PyList_GET_SIZE(value); i++) {
     item = PyList_GET_ITEM(value, i);
     if (BPy_ViewVertex_Check(item)) {
       v.push_back(((BPy_ViewVertex *)item)->vv);
@@ -252,12 +240,12 @@ PyDoc_STRVAR(ViewShape_edges_doc,
              "\n"
              ":type: List of :class:`ViewEdge` objects");
 
-static PyObject *ViewShape_edges_get(BPy_ViewShape *self, void *UNUSED(closure))
+static PyObject *ViewShape_edges_get(BPy_ViewShape *self, void * /*closure*/)
 {
   vector<ViewEdge *> edges = self->vs->edges();
   vector<ViewEdge *>::iterator it;
   PyObject *py_edges = PyList_New(edges.size());
-  unsigned int i = 0;
+  uint i = 0;
 
   for (it = edges.begin(); it != edges.end(); it++) {
     PyList_SET_ITEM(py_edges, i++, BPy_ViewEdge_from_ViewEdge(*(*it)));
@@ -265,7 +253,7 @@ static PyObject *ViewShape_edges_get(BPy_ViewShape *self, void *UNUSED(closure))
   return py_edges;
 }
 
-static int ViewShape_edges_set(BPy_ViewShape *self, PyObject *value, void *UNUSED(closure))
+static int ViewShape_edges_set(BPy_ViewShape *self, PyObject *value, void * /*closure*/)
 {
   PyObject *item;
   vector<ViewEdge *> v;
@@ -295,7 +283,7 @@ PyDoc_STRVAR(ViewShape_name_doc,
              "\n"
              ":type: str");
 
-static PyObject *ViewShape_name_get(BPy_ViewShape *self, void *UNUSED(closure))
+static PyObject *ViewShape_name_get(BPy_ViewShape *self, void * /*closure*/)
 {
   return PyUnicode_FromString(self->vs->getName().c_str());
 }
@@ -305,7 +293,7 @@ PyDoc_STRVAR(ViewShape_library_path_doc,
              "\n"
              ":type: str, or None if the ViewShape is not part of a library");
 
-static PyObject *ViewShape_library_path_get(BPy_ViewShape *self, void *UNUSED(closure))
+static PyObject *ViewShape_library_path_get(BPy_ViewShape *self, void * /*closure*/)
 {
   return PyUnicode_FromString(self->vs->getLibraryPath().c_str());
 }
@@ -315,7 +303,7 @@ PyDoc_STRVAR(ViewShape_id_doc,
              "\n"
              ":type: :class:`Id`");
 
-static PyObject *ViewShape_id_get(BPy_ViewShape *self, void *UNUSED(closure))
+static PyObject *ViewShape_id_get(BPy_ViewShape *self, void * /*closure*/)
 {
   Id id(self->vs->getId());
   return BPy_Id_from_Id(id);  // return a copy
@@ -362,7 +350,7 @@ PyTypeObject ViewShape_Type = {
     nullptr,                                       /* tp_as_number */
     nullptr,                                       /* tp_as_sequence */
     nullptr,                                       /* tp_as_mapping */
-    nullptr,                                       /* tp_hash  */
+    nullptr,                                       /* tp_hash */
     nullptr,                                       /* tp_call */
     nullptr,                                       /* tp_str */
     nullptr,                                       /* tp_getattro */

@@ -1,7 +1,13 @@
 
 #pragma BLENDER_REQUIRE(common_utiltex_lib.glsl)
+// #pragma (gpu_shader_codegen_lib.glsl)
 #pragma BLENDER_REQUIRE(lights_lib.glsl)
 #pragma BLENDER_REQUIRE(lightprobe_lib.glsl)
+
+#ifndef GPU_FRAGMENT_SHADER
+#  define gl_FragCoord vec4(0.0)
+#  define gl_FrontFacing true
+#endif
 
 /**
  * Extensive use of Macros to be able to change the maximum amount of evaluated closure easily.
@@ -19,7 +25,7 @@
  * CLOSURE_EVAL_FUNCTION_3(name, Diffuse, Glossy, Refraction);
  * // Get the cl_out
  * closure.radiance = out_Diffuse_0.radiance + out_Glossy_1.radiance + out_Refraction_2.radiance;
- **/
+ */
 
 #define CLOSURE_VARS_DECLARE(t0, t1, t2, t3) \
   ClosureInputCommon in_common = CLOSURE_INPUT_COMMON_DEFAULT; \
@@ -51,53 +57,72 @@
   closure_##t2##_##subroutine(in_##t2##_2, eval_##t2##_2, cl_common, sub_data, out_##t2##_2); \
   closure_##t3##_##subroutine(in_##t3##_3, eval_##t3##_3, cl_common, sub_data, out_##t3##_3);
 
+#ifndef DEPTH_SHADER
 /* Inputs are inout so that callers can get the final inputs used for evaluation. */
-#define CLOSURE_EVAL_FUNCTION_DECLARE(name, t0, t1, t2, t3) \
-  void closure_##name##_eval(ClosureInputCommon in_common, \
-                             inout ClosureInput##t0 in_##t0##_0, \
-                             inout ClosureInput##t1 in_##t1##_1, \
-                             inout ClosureInput##t2 in_##t2##_2, \
-                             inout ClosureInput##t3 in_##t3##_3, \
-                             out ClosureOutput##t0 out_##t0##_0, \
-                             out ClosureOutput##t1 out_##t1##_1, \
-                             out ClosureOutput##t2 out_##t2##_2, \
-                             out ClosureOutput##t3 out_##t3##_3) \
-  { \
-    CLOSURE_EVAL_DECLARE(t0, t1, t2, t3); \
+#  define CLOSURE_EVAL_FUNCTION_DECLARE(name, t0, t1, t2, t3) \
+    void closure_##name##_eval(ClosureInputCommon in_common, \
+                               inout ClosureInput##t0 in_##t0##_0, \
+                               inout ClosureInput##t1 in_##t1##_1, \
+                               inout ClosureInput##t2 in_##t2##_2, \
+                               inout ClosureInput##t3 in_##t3##_3, \
+                               out ClosureOutput##t0 out_##t0##_0, \
+                               out ClosureOutput##t1 out_##t1##_1, \
+                               out ClosureOutput##t2 out_##t2##_2, \
+                               out ClosureOutput##t3 out_##t3##_3) \
+    { \
+      CLOSURE_EVAL_DECLARE(t0, t1, t2, t3); \
 \
-    /* Starts at 1 because 0 is world cubemap. */ \
-    for (int i = 1; cl_common.specular_accum > 0.0 && i < prbNumRenderCube && i < MAX_PROBE; \
-         i++) { \
-      ClosureCubemapData cube = closure_cubemap_eval_init(i, cl_common); \
-      if (cube.attenuation > 1e-8) { \
-        CLOSURE_META_SUBROUTINE_DATA(cubemap_eval, cube, t0, t1, t2, t3); \
+      /* Starts at 1 because 0 is world cubemap. */ \
+      for (int i = 1; cl_common.specular_accum > 0.0 && i < prbNumRenderCube && i < MAX_PROBE; \
+           i++) { \
+        ClosureCubemapData cube = closure_cubemap_eval_init(i, cl_common); \
+        if (cube.attenuation > 1e-8) { \
+          CLOSURE_META_SUBROUTINE_DATA(cubemap_eval, cube, t0, t1, t2, t3); \
+        } \
       } \
-    } \
 \
-    /* Starts at 1 because 0 is world irradiance. */ \
-    for (int i = 1; cl_common.diffuse_accum > 0.0 && i < prbNumRenderGrid && i < MAX_GRID; i++) { \
-      ClosureGridData grid = closure_grid_eval_init(i, cl_common); \
-      if (grid.attenuation > 1e-8) { \
-        CLOSURE_META_SUBROUTINE_DATA(grid_eval, grid, t0, t1, t2, t3); \
+      /* Starts at 1 because 0 is world irradiance. */ \
+      for (int i = 1; cl_common.diffuse_accum > 0.0 && i < prbNumRenderGrid && i < MAX_GRID; \
+           i++) { \
+        ClosureGridData grid = closure_grid_eval_init(i, cl_common); \
+        if (grid.attenuation > 1e-8) { \
+          CLOSURE_META_SUBROUTINE_DATA(grid_eval, grid, t0, t1, t2, t3); \
+        } \
       } \
-    } \
 \
-    CLOSURE_META_SUBROUTINE(indirect_end, t0, t1, t2, t3); \
+      CLOSURE_META_SUBROUTINE(indirect_end, t0, t1, t2, t3); \
 \
-    ClosurePlanarData planar = closure_planar_eval_init(cl_common); \
-    if (planar.attenuation > 1e-8) { \
-      CLOSURE_META_SUBROUTINE_DATA(planar_eval, planar, t0, t1, t2, t3); \
-    } \
-\
-    for (int i = 0; i < laNumLight && i < MAX_LIGHT; i++) { \
-      ClosureLightData light = closure_light_eval_init(cl_common, i); \
-      if (light.vis > 1e-8) { \
-        CLOSURE_META_SUBROUTINE_DATA(light_eval, light, t0, t1, t2, t3); \
+      ClosurePlanarData planar = closure_planar_eval_init(cl_common); \
+      if (planar.attenuation > 1e-8) { \
+        CLOSURE_META_SUBROUTINE_DATA(planar_eval, planar, t0, t1, t2, t3); \
       } \
-    } \
 \
-    CLOSURE_META_SUBROUTINE(eval_end, t0, t1, t2, t3); \
-  }
+      for (int i = 0; i < laNumLight && i < MAX_LIGHT; i++) { \
+        ClosureLightData light = closure_light_eval_init(cl_common, i); \
+        if (light.vis > 1e-8) { \
+          CLOSURE_META_SUBROUTINE_DATA(light_eval, light, t0, t1, t2, t3); \
+        } \
+      } \
+\
+      CLOSURE_META_SUBROUTINE(eval_end, t0, t1, t2, t3); \
+    }
+
+#else
+/* Inputs are inout so that callers can get the final inputs used for evaluation. */
+#  define CLOSURE_EVAL_FUNCTION_DECLARE(name, t0, t1, t2, t3) \
+    void closure_##name##_eval(ClosureInputCommon in_common, \
+                               inout ClosureInput##t0 in_##t0##_0, \
+                               inout ClosureInput##t1 in_##t1##_1, \
+                               inout ClosureInput##t2 in_##t2##_2, \
+                               inout ClosureInput##t3 in_##t3##_3, \
+                               out ClosureOutput##t0 out_##t0##_0, \
+                               out ClosureOutput##t1 out_##t1##_1, \
+                               out ClosureOutput##t2 out_##t2##_2, \
+                               out ClosureOutput##t3 out_##t3##_3) \
+    { \
+      CLOSURE_EVAL_DECLARE(t0, t1, t2, t3); \
+    }
+#endif
 
 #define CLOSURE_EVAL_FUNCTION(name, t0, t1, t2, t3) \
   closure_##name##_eval(in_common, \
@@ -138,7 +163,15 @@
 #define ClosureInputDummy ClosureOutput
 #define ClosureOutputDummy ClosureOutput
 #define ClosureEvalDummy ClosureOutput
-#define CLOSURE_EVAL_DUMMY ClosureOutput(vec3(0))
+#ifdef GPU_METAL
+/* C++ struct initialization. */
+#  define CLOSURE_EVAL_DUMMY \
+    { \
+      vec3(0) \
+    }
+#else
+#  define CLOSURE_EVAL_DUMMY ClosureOutput(vec3(0))
+#endif
 #define CLOSURE_INPUT_Dummy_DEFAULT CLOSURE_EVAL_DUMMY
 #define closure_Dummy_eval_init(cl_in, cl_common, cl_out) CLOSURE_EVAL_DUMMY
 #define closure_Dummy_planar_eval(cl_in, cl_eval, cl_common, data, cl_out)
@@ -153,7 +186,7 @@
 /* -------------------------------------------------------------------- */
 /** \name Common cl_eval data
  *
- * Eval data not dependant on input parameters. All might not be used but unused ones
+ * Eval data not dependent on input parameters. All might not be used but unused ones
  * will be optimized out.
  * \{ */
 
@@ -161,8 +194,15 @@ struct ClosureInputCommon {
   /** Custom occlusion value set by the user. */
   float occlusion;
 };
-
-#define CLOSURE_INPUT_COMMON_DEFAULT ClosureInputCommon(1.0)
+#ifdef GPU_METAL
+/* C++ struct initialization. */
+#  define CLOSURE_INPUT_COMMON_DEFAULT \
+    { \
+      1.0 \
+    }
+#else
+#  define CLOSURE_INPUT_COMMON_DEFAULT ClosureInputCommon(1.0)
+#endif
 
 struct ClosureEvalCommon {
   /** Result of SSAO. */
@@ -206,7 +246,11 @@ ClosureEvalCommon closure_Common_eval_init(ClosureInputCommon cl_in)
   cl_eval.N = safe_normalize(gl_FrontFacing ? worldNormal : -worldNormal);
   cl_eval.vN = safe_normalize(gl_FrontFacing ? viewNormal : -viewNormal);
   cl_eval.vP = viewPosition;
+#ifdef GPU_FRAGMENT_SHADER
   cl_eval.Ng = safe_normalize(cross(dFdx(cl_eval.P), dFdy(cl_eval.P)));
+#else
+  cl_eval.Ng = cl_eval.N;
+#endif
   cl_eval.vNg = transform_direction(ViewMatrix, cl_eval.Ng);
 
   cl_eval.occlusion_data = occlusion_load(cl_eval.vP, cl_in.occlusion);
@@ -221,7 +265,7 @@ ClosureEvalCommon closure_Common_eval_init(ClosureInputCommon cl_in)
 /* -------------------------------------------------------------------- */
 /** \name Loop data
  *
- * Loop datas are conveniently packed into struct to make it future proof.
+ * Loop data is conveniently packed into struct to make it future proof.
  * \{ */
 
 struct ClosureLightData {
@@ -272,7 +316,7 @@ ClosurePlanarData closure_planar_eval_init(inout ClosureEvalCommon cl_common)
   ClosurePlanarData planar;
   planar.attenuation = 0.0;
 
-  /* Find planar with the maximum weight. TODO(fclem)  */
+  /* TODO(fclem): Find planar with the maximum weight. */
   for (int i = 0; i < prbNumPlanar && i < MAX_PLANAR; i++) {
     float attenuation = probe_attenuation_planar(planars_data[i], cl_common.P);
     if (attenuation > planar.attenuation) {
@@ -303,3 +347,8 @@ ClosureGridData closure_grid_eval_init(int id, inout ClosureEvalCommon cl_common
 }
 
 /** \} */
+
+#ifndef GPU_FRAGMENT_SHADER
+#  undef gl_FragCoord
+#  undef gl_FrontFacing
+#endif

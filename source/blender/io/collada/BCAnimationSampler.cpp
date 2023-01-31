@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 #include <algorithm> /* std::find */
 #include <map>
@@ -161,10 +145,12 @@ void BCAnimationSampler::update_animation_curves(BCAnimation &animation,
 BCSample &BCAnimationSampler::sample_object(Object *ob, int frame_index, bool for_opensim)
 {
   BCSample &ob_sample = sample_data.add(ob, frame_index);
-  // if (export_settings.get_apply_global_orientation()) {
-  //  const BCMatrix &global_transform = export_settings.get_global_transform();
-  //  ob_sample.get_matrix(global_transform);
-  //}
+#if 0
+  if (export_settings.get_apply_global_orientation()) {
+    const BCMatrix &global_transform = export_settings.get_global_transform();
+    ob_sample.get_matrix(global_transform);
+  }
+#endif
 
   if (ob->type == OB_ARMATURE) {
     bPoseChannel *pchan;
@@ -239,24 +225,26 @@ bool BCAnimationSampler::is_animated_by_constraint(Object *ob,
   for (con = (bConstraint *)conlist->first; con; con = con->next) {
     ListBase targets = {nullptr, nullptr};
 
-    const bConstraintTypeInfo *cti = BKE_constraint_typeinfo_get(con);
-
     if (!bc_validateConstraints(con)) {
       continue;
     }
 
-    if (cti && cti->get_constraint_targets) {
+    if (BKE_constraint_targets_get(con, &targets)) {
       bConstraintTarget *ct;
       Object *obtar;
-      cti->get_constraint_targets(con, &targets);
+      bool found = false;
+
       for (ct = (bConstraintTarget *)targets.first; ct; ct = ct->next) {
         obtar = ct->tar;
         if (obtar) {
           if (animated_objects.find(obtar) != animated_objects.end()) {
-            return true;
+            found = true;
+            break;
           }
         }
       }
+      BKE_constraint_targets_flush(con, &targets, true);
+      return found;
     }
   }
   return false;
@@ -416,11 +404,6 @@ void BCAnimationSampler::generate_transforms(Object *ob, Bone *bone, BCAnimation
   }
 }
 
-/**
- * Collect all keyframes from all animation curves related to the object.
- * The bc_get... functions check for NULL and correct object type.
- * The #add_keyframes_from() function checks for NULL.
- */
 void BCAnimationSampler::initialize_keyframes(BCFrameSet &frameset, Object *ob)
 {
   frameset.clear();
@@ -445,10 +428,9 @@ void BCAnimationSampler::initialize_curves(BCAnimationCurveMap &curves, Object *
     for (; fcu; fcu = fcu->next) {
       object_type = BC_ANIMATION_TYPE_OBJECT;
       if (ob->type == OB_ARMATURE) {
-        char *boneName = BLI_str_quoted_substrN(fcu->rna_path, "pose.bones[");
-        if (boneName) {
+        char boneName[MAXBONENAME];
+        if (BLI_str_quoted_substr(fcu->rna_path, "pose.bones[", boneName, sizeof(boneName))) {
           object_type = BC_ANIMATION_TYPE_BONE;
-          MEM_freeN(boneName);
         }
       }
 
@@ -488,7 +470,7 @@ void BCAnimationSampler::initialize_curves(BCAnimationCurveMap &curves, Object *
     }
   }
 
-  /* Add curves on Object->material actions*/
+  /* Add curves on Object->material actions. */
   object_type = BC_ANIMATION_TYPE_MATERIAL;
   for (int a = 0; a < ob->totcol; a++) {
     /* Export Material parameter animations. */
@@ -516,7 +498,6 @@ BCSample &BCSampleFrame::add(Object *ob)
   return *sample;
 }
 
-/* Get the matrix for the given key, returns Unity when the key does not exist */
 const BCSample *BCSampleFrame::get_sample(Object *ob) const
 {
   BCSampleMap::const_iterator it = sampleMap.find(ob);
@@ -536,7 +517,6 @@ const BCMatrix *BCSampleFrame::get_sample_matrix(Object *ob) const
   return &sample->get_matrix();
 }
 
-/* Get the matrix for the given Bone, returns Unity when the Object is not sampled. */
 const BCMatrix *BCSampleFrame::get_sample_matrix(Object *ob, Bone *bone) const
 {
   BCSampleMap::const_iterator it = sampleMap.find(ob);
@@ -549,13 +529,11 @@ const BCMatrix *BCSampleFrame::get_sample_matrix(Object *ob, Bone *bone) const
   return bc_bone;
 }
 
-/* Check if the key is in this BCSampleFrame */
 bool BCSampleFrame::has_sample_for(Object *ob) const
 {
   return sampleMap.find(ob) != sampleMap.end();
 }
 
-/* Check if the Bone is in this BCSampleFrame */
 bool BCSampleFrame::has_sample_for(Object *ob, Bone *bone) const
 {
   const BCMatrix *bc_bone = get_sample_matrix(ob, bone);
@@ -574,7 +552,6 @@ BCSample &BCSampleFrameContainer::add(Object *ob, int frame_index)
 /* Below are the getters which we need to export the data */
 /* ====================================================== */
 
-/* Return either the BCSampleFrame or NULL if frame does not exist*/
 BCSampleFrame *BCSampleFrameContainer::get_frame(int frame_index)
 {
   BCSampleFrameMap::iterator it = sample_frames.find(frame_index);
@@ -582,7 +559,6 @@ BCSampleFrame *BCSampleFrameContainer::get_frame(int frame_index)
   return frame;
 }
 
-/* Return a list of all frames that need to be sampled */
 int BCSampleFrameContainer::get_frames(std::vector<int> &frames) const
 {
   frames.clear(); /* safety; */

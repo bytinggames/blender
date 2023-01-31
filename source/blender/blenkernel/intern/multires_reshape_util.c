@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2020 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2020 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -26,12 +10,14 @@
 #include "MEM_guardedalloc.h"
 
 #include "DNA_mesh_types.h"
+#include "DNA_meshdata_types.h"
 #include "DNA_modifier_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 
 #include "BLI_task.h"
 
+#include "BKE_customdata.h"
 #include "BKE_mesh.h"
 #include "BKE_mesh_runtime.h"
 #include "BKE_multires.h"
@@ -47,8 +33,6 @@
 /** \name Construct/destruct reshape context
  * \{ */
 
-/* Create subdivision surface descriptor which is configured for surface evaluation at a given
- * multires modifier. */
 Subdiv *multires_reshape_create_subdiv(Depsgraph *depsgraph,
                                        /*const*/ Object *object,
                                        const MultiresModifierData *mmd)
@@ -67,7 +51,7 @@ Subdiv *multires_reshape_create_subdiv(Depsgraph *depsgraph,
   SubdivSettings subdiv_settings;
   BKE_multires_subdiv_settings_init(&subdiv_settings, mmd);
   Subdiv *subdiv = BKE_subdiv_new_from_mesh(&subdiv_settings, base_mesh);
-  if (!BKE_subdiv_eval_begin_from_mesh(subdiv, base_mesh, NULL)) {
+  if (!BKE_subdiv_eval_begin_from_mesh(subdiv, base_mesh, NULL, SUBDIV_EVALUATOR_TYPE_CPU, NULL)) {
     BKE_subdiv_free(subdiv);
     return NULL;
   }
@@ -82,11 +66,11 @@ static void context_zero(MultiresReshapeContext *reshape_context)
 static void context_init_lookup(MultiresReshapeContext *reshape_context)
 {
   const Mesh *base_mesh = reshape_context->base_mesh;
-  const MPoly *mpoly = base_mesh->mpoly;
+  const MPoly *mpoly = reshape_context->base_polys;
   const int num_faces = base_mesh->totpoly;
 
   reshape_context->face_start_grid_index = MEM_malloc_arrayN(
-      sizeof(int), num_faces, "face_start_grid_index");
+      num_faces, sizeof(int), "face_start_grid_index");
   int num_grids = 0;
   int num_ptex_faces = 0;
   for (int face_index = 0; face_index < num_faces; ++face_index) {
@@ -97,9 +81,9 @@ static void context_init_lookup(MultiresReshapeContext *reshape_context)
   }
 
   reshape_context->grid_to_face_index = MEM_malloc_arrayN(
-      sizeof(int), num_grids, "grid_to_face_index");
+      num_grids, sizeof(int), "grid_to_face_index");
   reshape_context->ptex_start_grid_index = MEM_malloc_arrayN(
-      sizeof(int), num_ptex_faces, "ptex_start_grid_index");
+      num_ptex_faces, sizeof(int), "ptex_start_grid_index");
   for (int face_index = 0, grid_index = 0, ptex_index = 0; face_index < num_faces; ++face_index) {
     const int num_corners = mpoly[face_index].totloop;
     const int num_face_ptex_faces = (num_corners == 4) ? 1 : num_corners;
@@ -137,7 +121,7 @@ static void context_init_commoon(MultiresReshapeContext *reshape_context)
 static bool context_is_valid(MultiresReshapeContext *reshape_context)
 {
   if (reshape_context->mdisps == NULL) {
-    /* Multires displacement has been removed before current changes were applies. */
+    /* Multi-resolution displacement has been removed before current changes were applies. */
     return false;
   }
   return true;
@@ -168,6 +152,10 @@ bool multires_reshape_context_create_from_base_mesh(MultiresReshapeContext *resh
   reshape_context->mmd = mmd;
 
   reshape_context->base_mesh = base_mesh;
+  reshape_context->base_verts = BKE_mesh_verts(base_mesh);
+  reshape_context->base_edges = BKE_mesh_edges(base_mesh);
+  reshape_context->base_polys = BKE_mesh_polys(base_mesh);
+  reshape_context->base_loops = BKE_mesh_loops(base_mesh);
 
   reshape_context->subdiv = multires_reshape_create_subdiv(NULL, object, mmd);
   reshape_context->need_free_subdiv = true;
@@ -201,6 +189,10 @@ bool multires_reshape_context_create_from_object(MultiresReshapeContext *reshape
   reshape_context->mmd = mmd;
 
   reshape_context->base_mesh = base_mesh;
+  reshape_context->base_verts = BKE_mesh_verts(base_mesh);
+  reshape_context->base_edges = BKE_mesh_edges(base_mesh);
+  reshape_context->base_polys = BKE_mesh_polys(base_mesh);
+  reshape_context->base_loops = BKE_mesh_loops(base_mesh);
 
   reshape_context->subdiv = multires_reshape_create_subdiv(depsgraph, object, mmd);
   reshape_context->need_free_subdiv = true;
@@ -212,6 +204,9 @@ bool multires_reshape_context_create_from_object(MultiresReshapeContext *reshape
 
   reshape_context->top.level = mmd->totlvl;
   reshape_context->top.grid_size = BKE_subdiv_grid_size_from_level(reshape_context->top.level);
+
+  reshape_context->cd_vertex_crease = CustomData_get_layer(&base_mesh->vdata, CD_CREASE);
+  reshape_context->cd_edge_crease = CustomData_get_layer(&base_mesh->edata, CD_CREASE);
 
   context_init_commoon(reshape_context);
 
@@ -226,6 +221,10 @@ bool multires_reshape_context_create_from_ccg(MultiresReshapeContext *reshape_co
   context_zero(reshape_context);
 
   reshape_context->base_mesh = base_mesh;
+  reshape_context->base_verts = BKE_mesh_verts(base_mesh);
+  reshape_context->base_edges = BKE_mesh_edges(base_mesh);
+  reshape_context->base_polys = BKE_mesh_polys(base_mesh);
+  reshape_context->base_loops = BKE_mesh_loops(base_mesh);
 
   reshape_context->subdiv = subdiv_ccg->subdiv;
   reshape_context->need_free_subdiv = false;
@@ -269,6 +268,12 @@ bool multires_reshape_context_create_from_subdiv(MultiresReshapeContext *reshape
 
   reshape_context->mmd = mmd;
   reshape_context->base_mesh = base_mesh;
+  reshape_context->base_verts = BKE_mesh_verts(base_mesh);
+  reshape_context->base_edges = BKE_mesh_edges(base_mesh);
+  reshape_context->base_polys = BKE_mesh_polys(base_mesh);
+  reshape_context->base_loops = BKE_mesh_loops(base_mesh);
+  reshape_context->cd_vertex_crease = (const float *)CustomData_get_layer(&base_mesh->edata,
+                                                                          CD_CREASE);
 
   reshape_context->subdiv = subdiv;
   reshape_context->need_free_subdiv = false;
@@ -332,7 +337,6 @@ void multires_reshape_context_free(MultiresReshapeContext *reshape_context)
 /** \name Helper accessors
  * \{ */
 
-/* For the given grid index get index of face it was created for. */
 int multires_reshape_grid_to_face_index(const MultiresReshapeContext *reshape_context,
                                         int grid_index)
 {
@@ -345,7 +349,6 @@ int multires_reshape_grid_to_face_index(const MultiresReshapeContext *reshape_co
   return reshape_context->grid_to_face_index[grid_index];
 }
 
-/* For the given grid index get corner of a face it was created for. */
 int multires_reshape_grid_to_corner(const MultiresReshapeContext *reshape_context, int grid_index)
 {
   BLI_assert(grid_index >= 0);
@@ -360,11 +363,10 @@ int multires_reshape_grid_to_corner(const MultiresReshapeContext *reshape_contex
 
 bool multires_reshape_is_quad_face(const MultiresReshapeContext *reshape_context, int face_index)
 {
-  const MPoly *base_poly = &reshape_context->base_mesh->mpoly[face_index];
+  const MPoly *base_poly = &reshape_context->base_polys[face_index];
   return (base_poly->totloop == 4);
 }
 
-/* For the given grid index get index of corresponding ptex face. */
 int multires_reshape_grid_to_ptex_index(const MultiresReshapeContext *reshape_context,
                                         int grid_index)
 {
@@ -374,7 +376,6 @@ int multires_reshape_grid_to_ptex_index(const MultiresReshapeContext *reshape_co
   return reshape_context->face_ptex_offset[face_index] + (is_quad ? 0 : corner);
 }
 
-/* Convert normalized coordinate within a grid to a normalized coordinate within a ptex face. */
 PTexCoord multires_reshape_grid_coord_to_ptex(const MultiresReshapeContext *reshape_context,
                                               const GridCoord *grid_coord)
 {
@@ -402,7 +403,6 @@ PTexCoord multires_reshape_grid_coord_to_ptex(const MultiresReshapeContext *resh
   return ptex_coord;
 }
 
-/* Convert a normalized coordinate within a ptex face to a normalized coordinate within a grid. */
 GridCoord multires_reshape_ptex_coord_to_grid(const MultiresReshapeContext *reshape_context,
                                               const PTexCoord *ptex_coord)
 {
@@ -655,8 +655,7 @@ static void foreach_grid_face_coordinate_task(void *__restrict userdata_v,
 
   const MultiresReshapeContext *reshape_context = data->reshape_context;
 
-  const Mesh *base_mesh = data->reshape_context->base_mesh;
-  const MPoly *mpoly = base_mesh->mpoly;
+  const MPoly *mpoly = reshape_context->base_polys;
   const int grid_size = data->grid_size;
   const float grid_size_1_inv = 1.0f / (((float)grid_size) - 1.0f);
 

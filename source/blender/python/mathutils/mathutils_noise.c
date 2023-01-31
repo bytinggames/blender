@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup mathutils
@@ -41,48 +27,20 @@
 /*-----------------------------------------*/
 /* 'mersenne twister' random number generator */
 
-/*
- * A C-program for MT19937, with initialization improved 2002/2/10.
+/* A C-program for MT19937, with initialization improved 2002/2/10.
  * Coded by Takuji Nishimura and Makoto Matsumoto.
  * This is a faster version by taking Shawn Cokus's optimization,
  * Matthe Bellew's simplification, Isaku Wada's real version.
  *
- * Before using, initialize the state by using init_genrand(seed)
- * or init_by_array(init_key, key_length).
+ * Before using, initialize the state by using
+ * `init_genrand(seed)` or `init_by_array(init_key, key_length)`.
  *
- * Copyright (C) 1997 - 2002, Makoto Matsumoto and Takuji Nishimura,
- * All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ * Copyright 1997-2002 Makoto Matsumoto and Takuji Nishimura, All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- *   1. Redistributions of source code must retain the above copyright
- *      notice, this list of conditions and the following disclaimer.
- *
- *   2. Redistributions in binary form must reproduce the above copyright
- *      notice, this list of conditions and the following disclaimer in the
- *      documentation and/or other materials provided with the distribution.
- *
- *   3. The names of its contributors may not be used to endorse or promote
- *      products derived from this software without specific prior written
- *      permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
- * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * Any feedback is very welcome.
  * http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/emt.html
- * email: m-mat @ math.sci.hiroshima-u.ac.jp (remove space)
- */
+ * email: `m-mat @ math.sci.hiroshima-u.ac.jp` (remove space). */
 
 /* Period parameters */
 #define N 624
@@ -93,7 +51,7 @@
 #define MIXBITS(u, v) (((u)&UMASK) | ((v)&LMASK))
 #define TWIST(u, v) ((MIXBITS(u, v) >> 1) ^ ((v)&1UL ? MATRIX_A : 0UL))
 
-static ulong state[N]; /* the array for the state vector  */
+static ulong state[N]; /* The array for the state vector. */
 static int left = 1;
 static int initf = 0;
 static ulong *next;
@@ -106,10 +64,10 @@ static void init_genrand(ulong s)
   state[0] = s & 0xffffffffUL;
   for (j = 1; j < N; j++) {
     state[j] = (1812433253UL * (state[j - 1] ^ (state[j - 1] >> 30)) + j);
-    /* See Knuth TAOCP Vol2. 3rd Ed. P.106 for multiplier. */
-    /* In the previous versions, MSBs of the seed affect   */
-    /* only MSBs of the array state[].                        */
-    /* 2002/01/09 modified by Makoto Matsumoto             */
+    /* See Knuth TAOCP Vol2. 3rd Ed. P.106 for multiplier.
+     * In the previous versions, MSBs of the seed affect
+     * only MSBs of the array state[].
+     * 2002/01/09 modified by Makoto Matsumoto. */
     state[j] &= 0xffffffffUL; /* for >32 bit machines */
   }
   left = 1;
@@ -131,8 +89,7 @@ static void next_state(void)
   ulong *p = state;
   int j;
 
-  /* if init_genrand() has not been called, */
-  /* a default initial seed is used         */
+  /* If init_genrand() has not been called, a default initial seed is used. */
   if (initf == 0) {
     init_genrand(5489UL);
   }
@@ -163,7 +120,7 @@ static void setRndSeed(int seed)
   }
 }
 
-/* float number in range [0, 1) using the mersenne twister rng */
+/* Float number in range [0, 1) using the mersenne twister random number generator. */
 static float frand(void)
 {
   ulong y;
@@ -230,7 +187,7 @@ static PyC_FlagSet bpy_noise_metrics[] = {
     {0, NULL},
 };
 
-/* Fills an array of length size with random numbers in the range (-1, 1)*/
+/* Fills an array of length size with random numbers in the range (-1, 1). */
 static void rand_vn(float *array_tar, const int size)
 {
   float *array_pt = array_tar + (size - 1);
@@ -348,23 +305,24 @@ static PyObject *M_Noise_random_unit_vector(PyObject *UNUSED(self), PyObject *ar
   static const char *kwlist[] = {"size", NULL};
   float vec[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float norm = 2.0f;
-  int size = 3;
+  int vec_num = 3;
 
-  if (!PyArg_ParseTupleAndKeywords(args, kw, "|$i:random_unit_vector", (char **)kwlist, &size)) {
+  if (!PyArg_ParseTupleAndKeywords(
+          args, kw, "|$i:random_unit_vector", (char **)kwlist, &vec_num)) {
     return NULL;
   }
 
-  if (size > 4 || size < 2) {
+  if (vec_num > 4 || vec_num < 2) {
     PyErr_SetString(PyExc_ValueError, "Vector(): invalid size");
     return NULL;
   }
 
   while (norm == 0.0f || norm > 1.0f) {
-    rand_vn(vec, size);
-    norm = normalize_vn(vec, size);
+    rand_vn(vec, vec_num);
+    norm = normalize_vn(vec, vec_num);
   }
 
-  return Vector_CreatePyObject(vec, size, NULL);
+  return Vector_CreatePyObject(vec, vec_num, NULL);
 }
 
 PyDoc_STRVAR(M_Noise_random_vector_doc,
@@ -380,22 +338,22 @@ static PyObject *M_Noise_random_vector(PyObject *UNUSED(self), PyObject *args, P
 {
   static const char *kwlist[] = {"size", NULL};
   float *vec = NULL;
-  int size = 3;
+  int vec_num = 3;
 
-  if (!PyArg_ParseTupleAndKeywords(args, kw, "|$i:random_vector", (char **)kwlist, &size)) {
+  if (!PyArg_ParseTupleAndKeywords(args, kw, "|$i:random_vector", (char **)kwlist, &vec_num)) {
     return NULL;
   }
 
-  if (size < 2) {
+  if (vec_num < 2) {
     PyErr_SetString(PyExc_ValueError, "Vector(): invalid size");
     return NULL;
   }
 
-  vec = PyMem_New(float, size);
+  vec = PyMem_New(float, vec_num);
 
-  rand_vn(vec, size);
+  rand_vn(vec, vec_num);
 
-  return Vector_CreatePyObject_alloc(vec, size, NULL);
+  return Vector_CreatePyObject_alloc(vec, vec_num, NULL);
 }
 
 PyDoc_STRVAR(M_Noise_seed_set_doc,
@@ -563,7 +521,7 @@ PyDoc_STRVAR(M_Noise_turbulence_vector_doc,
              "   :type octaves: int\n"
              "   :arg hard: Specifies whether returned turbulence is hard (sharp transitions) or "
              "soft (smooth transitions).\n"
-             "   :type hard: :boolean\n" BPY_NOISE_BASIS_ENUM_DOC
+             "   :type hard: boolean\n" BPY_NOISE_BASIS_ENUM_DOC
              "   :arg amplitude_scale: The amplitude scaling factor.\n"
              "   :type amplitude_scale: float\n"
              "   :arg frequency_scale: The frequency scaling factor\n"
@@ -1131,7 +1089,7 @@ static struct PyModuleDef M_Noise_module_def = {
     M_Noise_doc,       /* m_doc */
     0,                 /* m_size */
     M_Noise_methods,   /* m_methods */
-    NULL,              /* m_reload */
+    NULL,              /* m_slots */
     NULL,              /* m_traverse */
     NULL,              /* m_clear */
     NULL,              /* m_free */

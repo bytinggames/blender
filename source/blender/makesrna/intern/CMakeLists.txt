@@ -1,26 +1,14 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# The Original Code is Copyright (C) 2006, Blender Foundation
-# All rights reserved.
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright 2006 Blender Foundation. All rights reserved.
 
 if(CMAKE_COMPILER_IS_GNUCC)
   # add here so we fail early.
   string(APPEND CMAKE_C_FLAGS " -Werror=implicit-function-declaration")
+endif()
+
+# Needed for `mallocn.c`.
+if(HAVE_MALLOC_STATS_H)
+  add_definitions(-DHAVE_MALLOC_STATS_H)
 endif()
 
 # files rna_access.c rna_define.c makesrna.c intentionally excluded.
@@ -43,6 +31,7 @@ set(DEFSRC
   rna_context.c
   rna_curve.c
   rna_curveprofile.c
+  rna_curves.c
   rna_depsgraph.c
   rna_dynamicpaint.c
   rna_fcurve.c
@@ -70,6 +59,7 @@ set(DEFSRC
   rna_packedfile.c
   rna_palette.c
   rna_particle.c
+  rna_pointcloud.c
   rna_pose.c
   rna_render.c
   rna_rigidbody.c
@@ -99,12 +89,8 @@ set(DEFSRC
 )
 
 if(WITH_EXPERIMENTAL_FEATURES)
-  add_definitions(-DWITH_GEOMETRY_NODES)
-  add_definitions(-DWITH_POINT_CLOUD)
-  add_definitions(-DWITH_HAIR_NODES)
+  add_definitions(-DWITH_SIMULATION_DATABLOCK)
   list(APPEND DEFSRC
-    rna_hair.c
-    rna_pointcloud.c
     rna_simulation.c
   )
 endif()
@@ -140,6 +126,7 @@ set(APISRC
 string(REGEX REPLACE "rna_([a-zA-Z0-9_-]*).c" "${CMAKE_CURRENT_BINARY_DIR}/rna_\\1_gen.c" GENSRC "${DEFSRC}")
 list(APPEND GENSRC
   "${CMAKE_CURRENT_BINARY_DIR}/rna_prototypes_gen.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/../RNA_prototypes.h"
 )
 set_source_files_properties(${GENSRC} PROPERTIES GENERATED TRUE)
 
@@ -175,7 +162,9 @@ set(SRC_RNA_INC
   ../RNA_access.h
   ../RNA_define.h
   ../RNA_documentation.h
+  ../RNA_enum_items.h
   ../RNA_enum_types.h
+  ../RNA_path.h
   ../RNA_types.h
 )
 
@@ -196,12 +185,40 @@ set(SRC
 )
 
 set(INC
-  ../../../../intern/clog
-
-  # Needed for defaults forward declarations.
+  .
+  ..
+  ../../blenfont
+  ../../blenkernel
+  ../../blenlib
   ../../blenloader
+  ../../blentranslation
+  ../../bmesh
+  ../../depsgraph
+  ../../draw
+  ../../gpu
+  ../../ikplugin
+  ../../imbuf
+  ../../makesdna
+  ../../modifiers
+  ../../nodes
+  ../../sequencer
+  ../../simulation
+  ../../windowmanager
+  ../../editors/include
+  ../../render
+  ../../../../intern/clog
+  ../../../../intern/cycles/blender
+  ../../../../intern/atomic
+  ../../../../intern/guardedalloc
+  ../../../../intern/memutil
+  ../../../../intern/mantaflow/extern
 
   ${CMAKE_BINARY_DIR}/source/blender/makesdna/intern
+
+  # dna_type_offsets.h
+  ${CMAKE_CURRENT_BINARY_DIR}/../../makesdna/intern
+  # RNA_prototypes.h
+  ${CMAKE_CURRENT_BINARY_DIR}/../../makesrna/
 )
 
 set(INC_SYS
@@ -245,6 +262,10 @@ endif()
 
 if(WITH_IMAGE_HDR)
   add_definitions(-DWITH_HDR)
+endif()
+
+if(WITH_IMAGE_WEBP)
+  add_definitions(-DWITH_WEBP)
 endif()
 
 if(WITH_AUDASPACE)
@@ -371,39 +392,12 @@ if(WITH_GMP)
 endif()
 
 # Build makesrna executable
-blender_include_dirs(
-  .
-  ..
-  ../../blenfont
-  ../../blenkernel
-  ../../blenlib
-  ../../blentranslation
-  ../../bmesh
-  ../../depsgraph
-  ../../draw
-  ../../gpu
-  ../../ikplugin
-  ../../imbuf
-  ../../makesdna
-  ../../modifiers
-  ../../nodes/
-  ../../sequencer
-  ../../simulation
-  ../../windowmanager
-  ../../editors/include
-  ../../render
-  ../../../../intern/cycles/blender
-  ../../../../intern/atomic
-  ../../../../intern/glew-mx
-  ../../../../intern/guardedalloc
-  ../../../../intern/memutil
-  ../../../../intern/mantaflow/extern
-)
-
 add_cc_flags_custom_test(makesrna)
 
 add_executable(makesrna ${SRC} ${SRC_RNA_INC} ${SRC_DNA_INC})
 setup_platform_linker_flags(makesrna)
+blender_target_include_dirs(makesrna ${INC})
+blender_target_include_dirs_sys(makesrna ${INC_SYS})
 
 target_link_libraries(makesrna bf_dna)
 target_link_libraries(makesrna bf_dna_blenlib)
@@ -412,11 +406,12 @@ if(WIN32 AND NOT UNIX)
   target_link_libraries(makesrna ${PTHREADS_LIBRARIES})
 endif()
 
-# Output rna_*_gen.c
-# note (linux only): with crashes try add this after COMMAND: valgrind --leak-check=full --track-origins=yes
+# Output `rna_*_gen.c`.
+# NOTE: (Linux only): with crashes try add this after COMMAND:
+# `valgrind --leak-check=full --track-origins=yes`
 add_custom_command(
   OUTPUT ${GENSRC}
-  COMMAND "$<TARGET_FILE:makesrna>" ${CMAKE_CURRENT_BINARY_DIR}/
+  COMMAND "$<TARGET_FILE:makesrna>" ${CMAKE_CURRENT_BINARY_DIR}/  ${CMAKE_CURRENT_BINARY_DIR}/../
   DEPENDS makesrna
 )
 
@@ -424,6 +419,7 @@ add_custom_command(
 set(SRC
   rna_access.c
   rna_access_compare_override.c
+  rna_path.cc
   ${GENSRC}
 
   ${SRC_RNA_INC}
@@ -441,6 +437,7 @@ set(LIB
   bf_editor_armature
   bf_editor_asset
   bf_editor_curve
+  bf_editor_curves
   bf_editor_gizmo_library
   bf_editor_gpencil
   bf_editor_io
@@ -454,8 +451,6 @@ set(LIB
   bf_editor_transform
   bf_editor_undo
 )
-
-add_definitions(${GL_DEFINITIONS})
 
 blender_add_lib(bf_rna "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
 

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pythonintern
@@ -46,6 +32,8 @@
 
 #include "RNA_access.h"
 #include "RNA_enum_types.h"
+#include "RNA_path.h"
+#include "RNA_prototypes.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -54,6 +42,7 @@
 #include "bpy_rna.h"
 #include "bpy_rna_anim.h"
 
+#include "../generic/py_capi_rna.h"
 #include "../generic/python_utildefines.h"
 
 #include "DEG_depsgraph_build.h"
@@ -240,7 +229,7 @@ static int pyrna_struct_keyframe_parse(PointerRNA *ptr,
   PyObject *pyoptions = NULL;
   const char *path;
 
-  /* note, parse_str MUST start with 's|ifsO!' */
+  /* NOTE: `parse_str` MUST start with `s|ifsO!`. */
   if (!PyArg_ParseTupleAndKeywords(args,
                                    kw,
                                    parse_str,
@@ -265,7 +254,7 @@ static int pyrna_struct_keyframe_parse(PointerRNA *ptr,
   /* flag may be null (no option currently for remove keyframes e.g.). */
   if (r_options) {
     if (pyoptions &&
-        (pyrna_set_to_enum_bitfield(
+        (pyrna_enum_bitfield_from_set(
              rna_enum_keying_flag_items_api, pyoptions, r_options, error_prefix) == -1)) {
       return -1;
     }
@@ -324,7 +313,7 @@ PyObject *pyrna_struct_keyframe_insert(BPy_StructRNA *self, PyObject *args, PyOb
   if (pyrna_struct_keyframe_parse(&self->ptr,
                                   args,
                                   kw,
-                                  "s|ifsO!:bpy_struct.keyframe_insert()",
+                                  "s|$ifsO!:bpy_struct.keyframe_insert()",
                                   "bpy_struct.keyframe_insert()",
                                   &path_full,
                                   &index,
@@ -333,6 +322,11 @@ PyObject *pyrna_struct_keyframe_insert(BPy_StructRNA *self, PyObject *args, PyOb
                                   &options) == -1) {
     return NULL;
   }
+
+  ReportList reports;
+  bool result = false;
+
+  BKE_reports_init(&reports, RPT_STORE);
 
   /* This assumes that keyframes are only added on original data & using the active depsgraph. If
    * it turns out to be necessary for some reason to insert keyframes on evaluated objects, we can
@@ -351,14 +345,10 @@ PyObject *pyrna_struct_keyframe_insert(BPy_StructRNA *self, PyObject *args, PyOb
      * strips themselves. These are stored separately or else the properties will
      * not have any effect.
      */
-    ReportList reports;
-    bool result = false;
 
     PointerRNA ptr = self->ptr;
     PropertyRNA *prop = NULL;
     const char *prop_name;
-
-    BKE_reports_init(&reports, RPT_STORE);
 
     /* Retrieve the property identifier from the full path, since we can't get it any other way */
     prop_name = strrchr(path_full, '.');
@@ -375,37 +365,32 @@ PyObject *pyrna_struct_keyframe_insert(BPy_StructRNA *self, PyObject *args, PyOb
     else {
       BKE_reportf(&reports, RPT_ERROR, "Could not resolve path (%s)", path_full);
     }
-    MEM_freeN((void *)path_full);
+  }
+  else {
+    ID *id = self->ptr.owner_id;
 
-    if (BPy_reports_to_error(&reports, PyExc_RuntimeError, true) == -1) {
-      return NULL;
-    }
-
-    return PyBool_FromLong(result);
+    BLI_assert(BKE_id_is_in_global_main(id));
+    result = (insert_keyframe(G_MAIN,
+                              &reports,
+                              id,
+                              NULL,
+                              group_name,
+                              path_full,
+                              index,
+                              &anim_eval_context,
+                              keytype,
+                              NULL,
+                              options) != 0);
   }
 
-  ID *id = self->ptr.owner_id;
-  ReportList reports;
-  bool result;
-
-  BKE_reports_init(&reports, RPT_STORE);
-
-  BLI_assert(BKE_id_is_in_global_main(id));
-  result = (insert_keyframe(G_MAIN,
-                            &reports,
-                            id,
-                            NULL,
-                            group_name,
-                            path_full,
-                            index,
-                            &anim_eval_context,
-                            keytype,
-                            NULL,
-                            options) != 0);
   MEM_freeN((void *)path_full);
 
   if (BPy_reports_to_error(&reports, PyExc_RuntimeError, true) == -1) {
     return NULL;
+  }
+
+  if (result) {
+    WM_event_add_notifier(C, NC_ANIMATION | ND_ANIMCHAN | NA_EDITED, NULL);
   }
 
   return PyBool_FromLong(result);
@@ -443,7 +428,7 @@ PyObject *pyrna_struct_keyframe_delete(BPy_StructRNA *self, PyObject *args, PyOb
   if (pyrna_struct_keyframe_parse(&self->ptr,
                                   args,
                                   kw,
-                                  "s|ifsO!:bpy_struct.keyframe_delete()",
+                                  "s|$ifsO!:bpy_struct.keyframe_delete()",
                                   "bpy_struct.keyframe_insert()",
                                   &path_full,
                                   &index,
@@ -452,19 +437,21 @@ PyObject *pyrna_struct_keyframe_delete(BPy_StructRNA *self, PyObject *args, PyOb
                                   NULL) == -1) {
     return NULL;
   }
+
+  ReportList reports;
+  bool result = false;
+
+  BKE_reports_init(&reports, RPT_STORE);
+
   if (self->ptr.type == &RNA_NlaStrip) {
     /* Handle special properties for NLA Strips, whose F-Curves are stored on the
      * strips themselves. These are stored separately or else the properties will
      * not have any effect.
      */
-    ReportList reports;
-    bool result = false;
 
     PointerRNA ptr = self->ptr;
     PropertyRNA *prop = NULL;
     const char *prop_name;
-
-    BKE_reports_init(&reports, RPT_STORE);
 
     /* Retrieve the property identifier from the full path, since we can't get it any other way */
     prop_name = strrchr(path_full, '.');
@@ -501,7 +488,8 @@ PyObject *pyrna_struct_keyframe_delete(BPy_StructRNA *self, PyObject *args, PyOb
         i = BKE_fcurve_bezt_binarysearch_index(fcu->bezt, cfra, fcu->totvert, &found);
         if (found) {
           /* delete the key at the index (will sanity check + do recalc afterwards) */
-          delete_fcurve_key(fcu, i, 1);
+          BKE_fcurve_delete_key(fcu, i);
+          BKE_fcurve_handles_recalc(fcu);
           result = true;
         }
       }
@@ -509,22 +497,12 @@ PyObject *pyrna_struct_keyframe_delete(BPy_StructRNA *self, PyObject *args, PyOb
     else {
       BKE_reportf(&reports, RPT_ERROR, "Could not resolve path (%s)", path_full);
     }
-    MEM_freeN((void *)path_full);
-
-    if (BPy_reports_to_error(&reports, PyExc_RuntimeError, true) == -1) {
-      return NULL;
-    }
-
-    return PyBool_FromLong(result);
+  }
+  else {
+    result = (delete_keyframe(
+                  G.main, &reports, self->ptr.owner_id, NULL, path_full, index, cfra) != 0);
   }
 
-  bool result;
-  ReportList reports;
-
-  BKE_reports_init(&reports, RPT_STORE);
-
-  result = (delete_keyframe(G.main, &reports, self->ptr.owner_id, NULL, path_full, index, cfra) !=
-            0);
   MEM_freeN((void *)path_full);
 
   if (BPy_reports_to_error(&reports, PyExc_RuntimeError, true) == -1) {
@@ -605,7 +583,7 @@ PyObject *pyrna_struct_driver_add(BPy_StructRNA *self, PyObject *args)
     DEG_relations_tag_update(CTX_data_main(context));
   }
   else {
-    /* XXX, should be handled by reports, */
+    /* XXX: should be handled by reports. */
     PyErr_SetString(PyExc_TypeError,
                     "bpy_struct.driver_add(): failed because of an internal error");
     return NULL;

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edobj
@@ -29,6 +15,8 @@
 #include "BLI_kdopbvh.h"
 #include "BLI_math.h"
 #include "BLI_utildefines.h"
+
+#include "PIL_time.h"
 
 #include "BLT_translation.h"
 
@@ -106,69 +94,76 @@ static const char *object_mode_op_string(eObjectMode mode)
   if (mode == OB_MODE_VERTEX_GPENCIL) {
     return "GPENCIL_OT_vertexmode_toggle";
   }
+  if (mode == OB_MODE_SCULPT_CURVES) {
+    return "CURVES_OT_sculptmode_toggle";
+  }
   return NULL;
 }
 
-/**
- * Checks the mode to be set is compatible with the object
- * should be made into a generic function
- */
 bool ED_object_mode_compat_test(const Object *ob, eObjectMode mode)
 {
-  if (ob) {
-    if (mode == OB_MODE_OBJECT) {
-      return true;
-    }
+  if (mode == OB_MODE_OBJECT) {
+    return true;
+  }
 
-    switch (ob->type) {
-      case OB_MESH:
-        if (mode & (OB_MODE_EDIT | OB_MODE_SCULPT | OB_MODE_VERTEX_PAINT | OB_MODE_WEIGHT_PAINT |
-                    OB_MODE_TEXTURE_PAINT | OB_MODE_PARTICLE_EDIT)) {
+  switch (ob->type) {
+    case OB_MESH:
+      if (mode & (OB_MODE_EDIT | OB_MODE_SCULPT | OB_MODE_VERTEX_PAINT | OB_MODE_WEIGHT_PAINT |
+                  OB_MODE_TEXTURE_PAINT)) {
+        return true;
+      }
+      if (mode & OB_MODE_PARTICLE_EDIT) {
+        if (ED_object_particle_edit_mode_supported(ob)) {
           return true;
         }
-        break;
-      case OB_CURVE:
-      case OB_SURF:
-      case OB_FONT:
-      case OB_MBALL:
+      }
+      break;
+    case OB_CURVES_LEGACY:
+    case OB_SURF:
+    case OB_FONT:
+    case OB_MBALL:
+      if (mode & OB_MODE_EDIT) {
+        return true;
+      }
+      break;
+    case OB_LATTICE:
+      if (mode & (OB_MODE_EDIT | OB_MODE_WEIGHT_PAINT)) {
+        return true;
+      }
+      break;
+    case OB_ARMATURE:
+      if (mode & (OB_MODE_EDIT | OB_MODE_POSE)) {
+        return true;
+      }
+      break;
+    case OB_GPENCIL:
+      if (mode & (OB_MODE_EDIT_GPENCIL | OB_MODE_PAINT_GPENCIL | OB_MODE_SCULPT_GPENCIL |
+                  OB_MODE_WEIGHT_GPENCIL | OB_MODE_VERTEX_GPENCIL)) {
+        return true;
+      }
+      break;
+    case OB_CURVES:
+      if (U.experimental.use_new_curves_tools) {
         if (mode & OB_MODE_EDIT) {
           return true;
         }
-        break;
-      case OB_LATTICE:
-        if (mode & (OB_MODE_EDIT | OB_MODE_WEIGHT_PAINT)) {
-          return true;
-        }
-        break;
-      case OB_ARMATURE:
-        if (mode & (OB_MODE_EDIT | OB_MODE_POSE)) {
-          return true;
-        }
-        break;
-      case OB_GPENCIL:
-        if (mode & (OB_MODE_EDIT | OB_MODE_EDIT_GPENCIL | OB_MODE_PAINT_GPENCIL |
-                    OB_MODE_SCULPT_GPENCIL | OB_MODE_WEIGHT_GPENCIL | OB_MODE_VERTEX_GPENCIL)) {
-          return true;
-        }
-        break;
-    }
+      }
+      if (mode & OB_MODE_SCULPT_CURVES) {
+        return true;
+      }
+      break;
   }
 
   return false;
 }
 
-/**
- * Sets the mode to a compatible state (use before entering the mode).
- *
- * This is so each mode's exec function can call
- */
 bool ED_object_mode_compat_set(bContext *C, Object *ob, eObjectMode mode, ReportList *reports)
 {
   bool ok;
   if (!ELEM(ob->mode, mode, OB_MODE_OBJECT)) {
     const char *opstring = object_mode_op_string(ob->mode);
 
-    WM_operator_name_call(C, opstring, WM_OP_EXEC_REGION_WIN, NULL);
+    WM_operator_name_call(C, opstring, WM_OP_EXEC_REGION_WIN, NULL, NULL);
     ok = ELEM(ob->mode, mode, OB_MODE_OBJECT);
     if (!ok) {
       wmOperatorType *ot = WM_operatortype_find(opstring, false);
@@ -195,8 +190,11 @@ bool ED_object_mode_compat_set(bContext *C, Object *ob, eObjectMode mode, Report
 bool ED_object_mode_set_ex(bContext *C, eObjectMode mode, bool use_undo, ReportList *reports)
 {
   wmWindowManager *wm = CTX_wm_manager(C);
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *ob = OBACT(view_layer);
+
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
   if (ob == NULL) {
     return (mode == OB_MODE_OBJECT);
   }
@@ -219,7 +217,7 @@ bool ED_object_mode_set_ex(bContext *C, eObjectMode mode, bool use_undo, ReportL
   if (!use_undo) {
     wm->op_undo_depth++;
   }
-  WM_operator_name_call_ptr(C, ot, WM_OP_EXEC_REGION_WIN, NULL);
+  WM_operator_name_call_ptr(C, ot, WM_OP_EXEC_REGION_WIN, NULL, NULL);
   if (!use_undo) {
     wm->op_undo_depth--;
   }
@@ -332,9 +330,11 @@ static void ed_object_posemode_set_for_weight_paint_ex(bContext *C,
                                                        const bool is_mode_set)
 {
   View3D *v3d = CTX_wm_view3d(C);
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
 
   if (ob_arm != NULL) {
+    BKE_view_layer_synced_ensure(scene, view_layer);
     const Base *base_arm = BKE_view_layer_base_find(view_layer, ob_arm);
     if (base_arm && BASE_VISIBLE(v3d, base_arm)) {
       if (is_mode_set) {
@@ -396,9 +396,9 @@ void ED_object_mode_generic_exit(struct Main *bmain,
   ed_object_mode_generic_exit_ex(bmain, depsgraph, scene, ob, false);
 }
 
-bool ED_object_mode_generic_has_data(struct Depsgraph *depsgraph, struct Object *ob)
+bool ED_object_mode_generic_has_data(struct Depsgraph *depsgraph, const struct Object *ob)
 {
-  return ed_object_mode_generic_exit_ex(NULL, depsgraph, NULL, ob, true);
+  return ed_object_mode_generic_exit_ex(NULL, depsgraph, NULL, (Object *)ob, true);
 }
 
 /** \} */
@@ -416,7 +416,7 @@ static bool object_transfer_mode_poll(bContext *C)
     return false;
   }
   const Object *ob = CTX_data_active_object(C);
-  return ob && (ob->mode & (OB_MODE_SCULPT));
+  return ob && (ob->mode != OB_MODE_OBJECT);
 }
 
 /* Update the viewport rotation origin to the mouse cursor. */
@@ -433,6 +433,13 @@ static void object_transfer_mode_reposition_view_pivot(bContext *C, const int mv
   copy_v3_v3(ups->average_stroke_accum, global_loc);
   ups->average_stroke_counter = 1;
   ups->last_stroke_valid = true;
+}
+
+static void object_overlay_mode_transfer_animation_start(bContext *C, Object *ob_dst)
+{
+  Depsgraph *depsgraph = CTX_data_depsgraph_pointer(C);
+  Object *ob_dst_eval = DEG_get_evaluated_object(depsgraph, ob_dst);
+  ob_dst_eval->runtime.overlay_mode_transfer_start_time = PIL_check_seconds_timer();
 }
 
 static bool object_transfer_mode_to_base(bContext *C, wmOperator *op, Base *base_dst)
@@ -456,14 +463,15 @@ static bool object_transfer_mode_to_base(bContext *C, wmOperator *op, Base *base
     return false;
   }
 
-  bool mode_transfered = false;
+  bool mode_transferred = false;
 
   ED_undo_group_begin(C);
 
   if (ED_object_mode_set_ex(C, OB_MODE_OBJECT, true, op->reports)) {
     Object *ob_dst_orig = DEG_get_original_object(ob_dst);
+    BKE_view_layer_synced_ensure(scene, view_layer);
     Base *base = BKE_view_layer_base_find(view_layer, ob_dst_orig);
-    BKE_view_layer_base_deselect_all(view_layer);
+    BKE_view_layer_base_deselect_all(scene, view_layer);
     BKE_view_layer_base_select_and_set_active(view_layer, base);
     DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
 
@@ -472,66 +480,27 @@ static bool object_transfer_mode_to_base(bContext *C, wmOperator *op, Base *base
     ob_dst_orig = DEG_get_original_object(ob_dst);
     ED_object_mode_set_ex(C, last_mode, true, op->reports);
 
+    if (RNA_boolean_get(op->ptr, "use_flash_on_transfer")) {
+      object_overlay_mode_transfer_animation_start(C, ob_dst);
+    }
+
     WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
     WM_toolsystem_update_from_context_view3d(C);
-    mode_transfered = true;
+    mode_transferred = true;
   }
 
   ED_undo_group_end(C);
-  return mode_transfered;
-}
-
-static int object_transfer_mode_modal(bContext *C, wmOperator *op, const wmEvent *event)
-{
-  switch (event->type) {
-    case LEFTMOUSE:
-      if (event->val == KM_PRESS) {
-        WM_cursor_modal_restore(CTX_wm_window(C));
-        ED_workspace_status_text(C, NULL);
-
-        /* This ensures that the click was done in an viewport region. */
-        bScreen *screen = CTX_wm_screen(C);
-        ARegion *region = BKE_screen_find_main_region_at_xy(
-            screen, SPACE_VIEW3D, event->x, event->y);
-        if (!region) {
-          return OPERATOR_CANCELLED;
-        }
-
-        const int mval[2] = {event->x - region->winrct.xmin, event->y - region->winrct.ymin};
-        Base *base_dst = ED_view3d_give_base_under_cursor(C, mval);
-        const bool mode_transfered = object_transfer_mode_to_base(C, op, base_dst);
-        if (!mode_transfered) {
-          return OPERATOR_CANCELLED;
-        }
-
-        return OPERATOR_FINISHED;
-      }
-      break;
-    case RIGHTMOUSE: {
-      WM_cursor_modal_restore(CTX_wm_window(C));
-      ED_workspace_status_text(C, NULL);
-      return OPERATOR_CANCELLED;
-    }
-  }
-  return OPERATOR_RUNNING_MODAL;
+  return mode_transferred;
 }
 
 static int object_transfer_mode_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-  const bool use_eyedropper = RNA_boolean_get(op->ptr, "use_eyedropper");
-  if (use_eyedropper) {
-    ED_workspace_status_text(C, TIP_("Click in the viewport to select an object"));
-    WM_cursor_modal_set(CTX_wm_window(C), WM_CURSOR_EYEDROPPER);
-    WM_event_add_modal_handler(C, op);
-    return OPERATOR_RUNNING_MODAL;
-  }
-
   Object *ob_src = CTX_data_active_object(C);
   const eObjectMode src_mode = (eObjectMode)ob_src->mode;
 
   Base *base_dst = ED_view3d_give_base_under_cursor(C, event->mval);
-  const bool mode_transfered = object_transfer_mode_to_base(C, op, base_dst);
-  if (!mode_transfered) {
+  const bool mode_transferred = object_transfer_mode_to_base(C, op, base_dst);
+  if (!mode_transferred) {
     return OPERATOR_CANCELLED;
   }
 
@@ -553,17 +522,18 @@ void OBJECT_OT_transfer_mode(wmOperatorType *ot)
 
   /* api callbacks */
   ot->invoke = object_transfer_mode_invoke;
-  ot->modal = object_transfer_mode_modal;
   ot->poll = object_transfer_mode_poll;
 
   /* Undo push is handled by the operator. */
-  ot->flag = OPTYPE_REGISTER;
+  ot->flag = OPTYPE_REGISTER | OPTYPE_DEPENDS_ON_CURSOR;
+
+  ot->cursor_pending = WM_CURSOR_EYEDROPPER;
 
   RNA_def_boolean(ot->srna,
-                  "use_eyedropper",
-                  false,
-                  "Use Eyedropper",
-                  "Pick the object to switch to using an eyedropper");
+                  "use_flash_on_transfer",
+                  true,
+                  "Flash On Transfer",
+                  "Flash the target object when transferring the mode");
 }
 
 /** \} */

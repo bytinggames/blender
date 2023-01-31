@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pythonintern
@@ -45,6 +31,7 @@
 #include "bpy_capi_utils.h"
 #include "bpy_rna_id_collection.h"
 
+#include "../generic/py_capi_rna.h"
 #include "../generic/py_capi_utils.h"
 #include "../generic/python_utildefines.h"
 
@@ -93,7 +80,7 @@ static int foreach_libblock_id_user_map_callback(LibraryIDLinkCallbackData *cb_d
     }
 
     if (cb_flag & IDWALK_CB_LOOPBACK) {
-      /* We skip loop-back pointers like Object.proxy_from or Key.from here,
+      /* We skip loop-back pointers like Key.from here,
        * since it's some internal pointer which is not relevant info for py/API level. */
       return IDWALK_RET_NOP;
     }
@@ -130,7 +117,7 @@ static int foreach_libblock_id_user_map_callback(LibraryIDLinkCallbackData *cb_d
 }
 
 PyDoc_STRVAR(bpy_user_map_doc,
-             ".. method:: user_map([subset=(id1, id2, ...)], key_types={..}, value_types={..})\n"
+             ".. method:: user_map(subset, key_types, value_types)\n"
              "\n"
              "   Returns a mapping of all ID data-blocks in current ``bpy.data`` to a set of all "
              "datablocks using them.\n"
@@ -171,14 +158,22 @@ static PyObject *bpy_user_map(PyObject *UNUSED(self), PyObject *args, PyObject *
   IDUserMapData data_cb = {NULL};
 
   static const char *_keywords[] = {"subset", "key_types", "value_types", NULL};
-  static _PyArg_Parser _parser = {"|O$O!O!:user_map", _keywords, 0};
+  static _PyArg_Parser _parser = {
+      "|$" /* Optional keyword only arguments. */
+      "O"  /* `subset` */
+      "O!" /* `key_types` */
+      "O!" /* `value_types` */
+      ":user_map",
+      _keywords,
+      0,
+  };
   if (!_PyArg_ParseTupleAndKeywordsFast(
           args, kwds, &_parser, &subset, &PySet_Type, &key_types, &PySet_Type, &val_types)) {
     return NULL;
   }
 
   if (key_types) {
-    key_types_bitmap = pyrna_set_to_enum_bitmap(
+    key_types_bitmap = pyrna_enum_bitmap_from_set(
         rna_enum_id_type_items, key_types, sizeof(short), true, USHRT_MAX, "key types");
     if (key_types_bitmap == NULL) {
       goto error;
@@ -186,7 +181,7 @@ static PyObject *bpy_user_map(PyObject *UNUSED(self), PyObject *args, PyObject *
   }
 
   if (val_types) {
-    val_types_bitmap = pyrna_set_to_enum_bitmap(
+    val_types_bitmap = pyrna_enum_bitmap_from_set(
         rna_enum_id_type_items, val_types, sizeof(short), true, USHRT_MAX, "value types");
     if (val_types_bitmap == NULL) {
       goto error;
@@ -227,7 +222,7 @@ static PyObject *bpy_user_map(PyObject *UNUSED(self), PyObject *args, PyObject *
       }
 
       if (!data_cb.is_subset &&
-          /* We do not want to pre-add keys of flitered out types. */
+          /* We do not want to pre-add keys of filtered out types. */
           (key_types_bitmap == NULL || id_check_type(id, key_types_bitmap)) &&
           /* We do not want to pre-add keys when we have filter on value types,
            * but not on key types. */
@@ -277,7 +272,7 @@ error:
 }
 
 PyDoc_STRVAR(bpy_batch_remove_doc,
-             ".. method:: batch_remove(ids=(id1, id2, ...))\n"
+             ".. method:: batch_remove(ids)\n"
              "\n"
              "   Remove (delete) several IDs at once.\n"
              "\n"
@@ -304,7 +299,12 @@ static PyObject *bpy_batch_remove(PyObject *UNUSED(self), PyObject *args, PyObje
   PyObject *ret = NULL;
 
   static const char *_keywords[] = {"ids", NULL};
-  static _PyArg_Parser _parser = {"O:batch_remove", _keywords, 0};
+  static _PyArg_Parser _parser = {
+      "O" /* `ids` */
+      ":batch_remove",
+      _keywords,
+      0,
+  };
   if (!_PyArg_ParseTupleAndKeywordsFast(args, kwds, &_parser, &ids)) {
     return ret;
   }
@@ -377,9 +377,24 @@ static PyObject *bpy_orphans_purge(PyObject *UNUSED(self), PyObject *args, PyObj
   bool do_recursive_cleanup = false;
 
   static const char *_keywords[] = {"do_local_ids", "do_linked_ids", "do_recursive", NULL};
-  static _PyArg_Parser _parser = {"|$ppp:orphans_purge", _keywords, 0};
-  if (!_PyArg_ParseTupleAndKeywordsFast(
-          args, kwds, &_parser, &do_local_ids, &do_linked_ids, &do_recursive_cleanup)) {
+  static _PyArg_Parser _parser = {
+      "|"  /* Optional arguments. */
+      "O&" /* `do_local_ids` */
+      "O&" /* `do_linked_ids` */
+      "O&" /* `do_recursive` */
+      ":orphans_purge",
+      _keywords,
+      0,
+  };
+  if (!_PyArg_ParseTupleAndKeywordsFast(args,
+                                        kwds,
+                                        &_parser,
+                                        PyC_ParseBool,
+                                        &do_local_ids,
+                                        PyC_ParseBool,
+                                        &do_linked_ids,
+                                        PyC_ParseBool,
+                                        &do_recursive_cleanup)) {
     return NULL;
   }
 

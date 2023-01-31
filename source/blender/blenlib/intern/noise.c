@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup bli
@@ -131,8 +115,8 @@ static const float hashpntf[768] = {
     0.713870, 0.555261, 0.951333,
 };
 
-extern const unsigned char BLI_noise_hash_uchar_512[512]; /* Quiet warning. */
-const unsigned char BLI_noise_hash_uchar_512[512] = {
+extern const uchar BLI_noise_hash_uchar_512[512]; /* Quiet warning. */
+const uchar BLI_noise_hash_uchar_512[512] = {
     0xA2, 0xA0, 0x19, 0x3B, 0xF8, 0xEB, 0xAA, 0xEE, 0xF3, 0x1C, 0x67, 0x28, 0x1D, 0xED, 0x0,  0xDE,
     0x95, 0x2E, 0xDC, 0x3F, 0x3A, 0x82, 0x35, 0x4D, 0x6C, 0xBA, 0x36, 0xD0, 0xF6, 0xC,  0x79, 0x32,
     0xD1, 0x59, 0xF4, 0x8,  0x8B, 0x63, 0x89, 0x2F, 0xB8, 0xB4, 0x97, 0x83, 0xF2, 0x8F, 0x18, 0xC7,
@@ -429,15 +413,17 @@ static float orgBlenderNoise(float x, float y, float z)
   return n;
 }
 
-/* as orgBlenderNoise(), returning signed noise */
 static float orgBlenderNoiseS(float x, float y, float z)
 {
+  /* NOTE: As #orgBlenderNoise(), returning signed noise. */
+
   return (2.0f * orgBlenderNoise(x, y, z) - 1.0f);
 }
 
-/* separated from orgBlenderNoise above, with scaling */
 float BLI_noise_hnoise(float noisesize, float x, float y, float z)
 {
+  /* NOTE: Separated from orgBlenderNoise, with scaling. */
+
   if (noisesize == 0.0f) {
     return 0.0f;
   }
@@ -447,7 +433,6 @@ float BLI_noise_hnoise(float noisesize, float x, float y, float z)
   return orgBlenderNoise(x, y, z);
 }
 
-/* original turbulence functions */
 float BLI_noise_turbulence(float noisesize, float x, float y, float z, int nr)
 {
   float s, d = 0.5, div = 1.0;
@@ -884,7 +869,7 @@ static float dist_Real(float x, float y, float z, float e)
   (void)e;
   return sqrtf(x * x + y * y + z * z);
 }
-/* manhattan/taxicab/cityblock distance */
+/* Manhattan/Taxi-Cab/City-Block distance. */
 static float dist_Manhattan(float x, float y, float z, float e)
 {
   (void)e;
@@ -926,8 +911,6 @@ static float dist_Minkovsky(float x, float y, float z, float e)
   return powf(powf(fabsf(x), e) + powf(fabsf(y), e) + powf(fabsf(z), e), 1.0f / e);
 }
 
-/* Not 'pure' Worley, but the results are virtually the same.
- * Returns distances in da and point coords in pa */
 void BLI_noise_voronoi(float x, float y, float z, float *da, float *pa, float me, int dtype)
 {
   float (*distfunc)(float, float, float, float);
@@ -956,9 +939,9 @@ void BLI_noise_voronoi(float x, float y, float z, float *da, float *pa, float me
       break;
   }
 
-  int xi = (int)(floor(x));
-  int yi = (int)(floor(y));
-  int zi = (int)(floor(z));
+  int xi = (int)floor(x);
+  int yi = (int)floor(y);
+  int zi = (int)floor(z);
   da[0] = da[1] = da[2] = da[3] = 1e10f;
   for (int xx = xi - 1; xx <= xi + 1; xx++) {
     for (int yy = yi - 1; yy <= yi + 1; yy++) {
@@ -1129,35 +1112,33 @@ static float BLI_cellNoiseU(float x, float y, float z)
   y = (y + 0.000001f) * 1.00001f;
   z = (z + 0.000001f) * 1.00001f;
 
-  int xi = (int)(floor(x));
-  int yi = (int)(floor(y));
-  int zi = (int)(floor(z));
-  unsigned int n = xi + yi * 1301 + zi * 314159;
+  int xi = (int)floor(x);
+  int yi = (int)floor(y);
+  int zi = (int)floor(z);
+  uint n = xi + yi * 1301 + zi * 314159;
   n ^= (n << 13);
   return ((float)(n * (n * n * 15731 + 789221) + 1376312589) / 4294967296.0f);
 }
 
-/* idem, signed */
 float BLI_noise_cell(float x, float y, float z)
 {
   return (2.0f * BLI_cellNoiseU(x, y, z) - 1.0f);
 }
 
-/* returns a vector/point/color in ca, using point hasharray directly */
-void BLI_noise_cell_v3(float x, float y, float z, float ca[3])
+void BLI_noise_cell_v3(float x, float y, float z, float r_ca[3])
 {
   /* avoid precision issues on unit coordinates */
   x = (x + 0.000001f) * 1.00001f;
   y = (y + 0.000001f) * 1.00001f;
   z = (z + 0.000001f) * 1.00001f;
 
-  int xi = (int)(floor(x));
-  int yi = (int)(floor(y));
-  int zi = (int)(floor(z));
+  int xi = (int)floor(x);
+  int yi = (int)floor(y);
+  int zi = (int)floor(z);
   const float *p = HASHPNT(xi, yi, zi);
-  ca[0] = p[0];
-  ca[1] = p[1];
-  ca[2] = p[2];
+  r_ca[0] = p[0];
+  r_ca[1] = p[1];
+  r_ca[2] = p[2];
 }
 
 /** \} */
@@ -1166,9 +1147,6 @@ void BLI_noise_cell_v3(float x, float y, float z, float ca[3])
 /** \name Public API's
  * \{ */
 
-/**
- * newnoise: generic noise function for use with different `noisebasis`.
- */
 float BLI_noise_generic_noise(
     float noisesize, float x, float y, float z, bool hard, int noisebasis)
 {
@@ -1226,7 +1204,6 @@ float BLI_noise_generic_noise(
   return noisefunc(x, y, z);
 }
 
-/* newnoise: generic turbulence function for use with different noisebasis */
 float BLI_noise_generic_turbulence(
     float noisesize, float x, float y, float z, int oct, bool hard, int noisebasis)
 {
@@ -1289,22 +1266,12 @@ float BLI_noise_generic_turbulence(
   return sum;
 }
 
-/*
- * The following code is based on Ken Musgrave's explanations and sample
- * source code in the book "Texturing and Modeling: A procedural approach"
- */
-
-/*
- * Procedural fBm evaluated at "point"; returns value stored in "value".
- *
- * Parameters:
- *    ``H''  is the fractal increment parameter
- *    ``lacunarity''  is the gap between successive frequencies
- *    ``octaves''  is the number of frequencies in the fBm
- */
 float BLI_noise_mg_fbm(
     float x, float y, float z, float H, float lacunarity, float octaves, int noisebasis)
 {
+  /* The following code is based on Ken Musgrave's explanations and sample
+   * source code in the book "Texturing and Modeling: A procedural approach". */
+
   float (*noisefunc)(float, float, float);
   switch (noisebasis) {
     case 1:
@@ -1359,23 +1326,13 @@ float BLI_noise_mg_fbm(
 
 } /* fBm() */
 
-/*
- * Procedural multifractal evaluated at "point";
- * returns value stored in "value".
- *
- * Parameters:
- *    ``H''  determines the highest fractal dimension
- *    ``lacunarity''  is gap between successive frequencies
- *    ``octaves''  is the number of frequencies in the fBm
- *    ``offset''  is the zero offset, which determines multifractality (NOT USED??)
- */
-
-/* this one is in fact rather confusing,
- * there seem to be errors in the original source code (in all three versions of proc.text&mod),
- * I modified it to something that made sense to me, so it might be wrong... */
 float BLI_noise_mg_multi_fractal(
     float x, float y, float z, float H, float lacunarity, float octaves, int noisebasis)
 {
+  /* This one is in fact rather confusing, there seem to be errors in the original source code
+   * (in all three versions of `proc.text & mod`),
+   * I modified it to something that made sense to me, so it might be wrong. */
+
   float (*noisefunc)(float, float, float);
   switch (noisebasis) {
     case 1:
@@ -1426,19 +1383,8 @@ float BLI_noise_mg_multi_fractal(
   }
 
   return value;
+}
 
-} /* multifractal() */
-
-/*
- * Heterogeneous procedural terrain function: stats by altitude method.
- * Evaluated at "point"; returns value stored in "value".
- *
- * Parameters:
- *       ``H''  determines the fractal dimension of the roughest areas
- *       ``lacunarity''  is the gap between successive frequencies
- *       ``octaves''  is the number of frequencies in the fBm
- *       ``offset''  raises the terrain from `sea level'
- */
 float BLI_noise_mg_hetero_terrain(float x,
                                   float y,
                                   float z,
@@ -1509,13 +1455,6 @@ float BLI_noise_mg_hetero_terrain(float x,
   return value;
 }
 
-/* Hybrid additive/multiplicative multifractal terrain model.
- *
- * Some good parameter values to start with:
- *
- *      H:           0.25
- *      offset:      0.7
- */
 float BLI_noise_mg_hybrid_multi_fractal(float x,
                                         float y,
                                         float z,
@@ -1592,14 +1531,6 @@ float BLI_noise_mg_hybrid_multi_fractal(float x,
 
 } /* HybridMultifractal() */
 
-/* Ridged multifractal terrain model.
- *
- * Some good parameter values to start with:
- *
- *      H:           1.0
- *      offset:      1.0
- *      gain:        2.0
- */
 float BLI_noise_mg_ridged_multi_fractal(float x,
                                         float y,
                                         float z,
@@ -1671,9 +1602,6 @@ float BLI_noise_mg_ridged_multi_fractal(float x,
   return result;
 } /* RidgedMultifractal() */
 
-/* "Variable Lacunarity Noise"
- * A distorted variety of Perlin noise.
- */
 float BLI_noise_mg_variable_lacunarity(
     float x, float y, float z, float distortion, int nbas1, int nbas2)
 {

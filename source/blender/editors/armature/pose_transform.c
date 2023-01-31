@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edarmature
@@ -51,6 +35,7 @@
 
 #include "RNA_access.h"
 #include "RNA_define.h"
+#include "RNA_prototypes.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -92,10 +77,10 @@ static void applyarmature_fix_boneparents(const bContext *C, Scene *scene, Objec
       /* apply current transform from parent (not yet destroyed),
        * then calculate new parent inverse matrix
        */
-      BKE_object_apply_mat4(ob, ob->obmat, false, false);
+      BKE_object_apply_mat4(ob, ob->object_to_world, false, false);
 
       BKE_object_workob_calc_parent(depsgraph, scene, ob, &workob);
-      invert_m4_m4(ob->parentinv, workob.obmat);
+      invert_m4_m4(ob->parentinv, workob.object_to_world);
     }
   }
 }
@@ -144,26 +129,25 @@ static void applyarmature_transfer_properties(EditBone *curbone,
   if (pchan->bone->segments > 1) {
     /* Combine rest/pose values. */
     curbone->curve_in_x += pchan_eval->curve_in_x;
-    curbone->curve_in_y += pchan_eval->curve_in_y;
+    curbone->curve_in_z += pchan_eval->curve_in_z;
     curbone->curve_out_x += pchan_eval->curve_out_x;
-    curbone->curve_out_y += pchan_eval->curve_out_y;
+    curbone->curve_out_z += pchan_eval->curve_out_z;
     curbone->roll1 += pchan_eval->roll1;
     curbone->roll2 += pchan_eval->roll2;
     curbone->ease1 += pchan_eval->ease1;
     curbone->ease2 += pchan_eval->ease2;
 
-    curbone->scale_in_x *= pchan_eval->scale_in_x;
-    curbone->scale_in_y *= pchan_eval->scale_in_y;
-    curbone->scale_out_x *= pchan_eval->scale_out_x;
-    curbone->scale_out_y *= pchan_eval->scale_out_y;
+    mul_v3_v3(curbone->scale_in, pchan_eval->scale_in);
+    mul_v3_v3(curbone->scale_out, pchan_eval->scale_out);
 
     /* Reset pose values. */
     pchan->curve_in_x = pchan->curve_out_x = 0.0f;
-    pchan->curve_in_y = pchan->curve_out_y = 0.0f;
+    pchan->curve_in_z = pchan->curve_out_z = 0.0f;
     pchan->roll1 = pchan->roll2 = 0.0f;
     pchan->ease1 = pchan->ease2 = 0.0f;
-    pchan->scale_in_x = pchan->scale_in_y = 1.0f;
-    pchan->scale_out_x = pchan->scale_out_y = 1.0f;
+
+    copy_v3_fl(pchan->scale_in, 1.0f);
+    copy_v3_fl(pchan->scale_out, 1.0f);
   }
 
   /* Clear transform values for pchan. */
@@ -377,7 +361,7 @@ static void applyarmature_reset_constraints(bPose *pose, const bool use_selected
   }
 }
 
-/* set the current pose as the restpose */
+/* Set the current pose as the rest-pose. */
 static int apply_armature_pose2bones_exec(bContext *C, wmOperator *op)
 {
   Main *bmain = CTX_data_main(C);
@@ -420,10 +404,10 @@ static int apply_armature_pose2bones_exec(bContext *C, wmOperator *op)
     }
   }
 
-  /* Get editbones of active armature to alter */
+  /* Get edit-bones of active armature to alter. */
   ED_armature_to_edit(arm);
 
-  /* get pose of active object and move it out of posemode */
+  /* Get pose of active object and move it out of pose-mode. */
   pose = ob->pose;
 
   if (use_selected) {
@@ -445,11 +429,11 @@ static int apply_armature_pose2bones_exec(bContext *C, wmOperator *op)
     }
   }
 
-  /* convert editbones back to bones, and then free the edit-data */
+  /* Convert edit-bones back to bones, and then free the edit-data. */
   ED_armature_from_edit(bmain, arm);
   ED_armature_edit_free(arm);
 
-  /* flush positions of posebones */
+  /* Flush positions of pose-bones. */
   BKE_pose_where_is(depsgraph, scene, ob);
 
   /* fix parenting of objects which are bone-parented */
@@ -458,7 +442,7 @@ static int apply_armature_pose2bones_exec(bContext *C, wmOperator *op)
   /* For the affected bones, reset specific constraints that are now known to be invalid. */
   applyarmature_reset_constraints(pose, use_selected);
 
-  /* note, notifier might evolve */
+  /* NOTE: notifier might evolve. */
   WM_event_add_notifier(C, NC_OBJECT | ND_POSE, ob);
   DEG_id_tag_update(&ob->id, ID_RECALC_COPY_ON_WRITE);
 
@@ -507,13 +491,14 @@ void POSE_OT_armature_apply(wmOperatorType *ot)
 /* set the current pose as the restpose */
 static int pose_visual_transform_apply_exec(bContext *C, wmOperator *UNUSED(op))
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
 
   /* Needed to ensure #bPoseChannel.pose_mat are up to date. */
   CTX_data_ensure_evaluated_depsgraph(C);
 
-  FOREACH_OBJECT_IN_MODE_BEGIN (view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
+  FOREACH_OBJECT_IN_MODE_BEGIN (scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
     const bArmature *arm = ob->data;
 
     int chanbase_len = BLI_listbase_count(&ob->pose->chanbase);
@@ -558,7 +543,7 @@ static int pose_visual_transform_apply_exec(bContext *C, wmOperator *UNUSED(op))
 
       DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
 
-      /* note, notifier might evolve */
+      /* NOTE: notifier might evolve. */
       WM_event_add_notifier(C, NC_OBJECT | ND_POSE, ob);
     }
 
@@ -699,18 +684,17 @@ static bPoseChannel *pose_bone_do_paste(Object *ob,
 
   /* B-Bone posing options should also be included... */
   pchan->curve_in_x = chan->curve_in_x;
-  pchan->curve_in_y = chan->curve_in_y;
+  pchan->curve_in_z = chan->curve_in_z;
   pchan->curve_out_x = chan->curve_out_x;
-  pchan->curve_out_y = chan->curve_out_y;
+  pchan->curve_out_z = chan->curve_out_z;
 
   pchan->roll1 = chan->roll1;
   pchan->roll2 = chan->roll2;
   pchan->ease1 = chan->ease1;
   pchan->ease2 = chan->ease2;
-  pchan->scale_in_x = chan->scale_in_x;
-  pchan->scale_in_y = chan->scale_in_y;
-  pchan->scale_out_x = chan->scale_out_x;
-  pchan->scale_out_y = chan->scale_out_y;
+
+  copy_v3_v3(pchan->scale_in, chan->scale_in);
+  copy_v3_v3(pchan->scale_out, chan->scale_out);
 
   /* paste flipped pose? */
   if (flip) {
@@ -789,7 +773,7 @@ static int pose_copy_exec(bContext *C, wmOperator *op)
    * any datablock expansion?
    */
   Main *temp_bmain = BKE_main_new();
-  STRNCPY(temp_bmain->name, BKE_main_blendfile_path_from_global());
+  STRNCPY(temp_bmain->filepath, BKE_main_blendfile_path_from_global());
 
   Object ob_copy = *ob;
   ob_copy.adt = NULL;
@@ -799,13 +783,13 @@ static int pose_copy_exec(bContext *C, wmOperator *op)
   BLI_addtail(&temp_bmain->objects, &ob_copy);
   BLI_addtail(&temp_bmain->armatures, &arm_copy);
   /* begin copy buffer on a temp bmain. */
-  BKE_copybuffer_begin(temp_bmain);
+  BKE_copybuffer_copy_begin(temp_bmain);
   /* Store the whole object to the copy buffer because pose can't be
    * existing on its own.
    */
-  BKE_copybuffer_tag_ID(&ob_copy.id);
-  BLI_join_dirfile(str, sizeof(str), BKE_tempdir_base(), "copybuffer_pose.blend");
-  BKE_copybuffer_save(temp_bmain, str, op->reports);
+  BKE_copybuffer_copy_tag_ID(&ob_copy.id);
+  BLI_path_join(str, sizeof(str), BKE_tempdir_base(), "copybuffer_pose.blend");
+  BKE_copybuffer_copy_end(temp_bmain, str, op->reports);
   /* We clear the lists so no datablocks gets freed,
    * This is required because objects in temp bmain shares same pointers
    * as the real ones.
@@ -858,9 +842,9 @@ static int pose_paste_exec(bContext *C, wmOperator *op)
   /* Read copy buffer .blend file. */
   char str[FILE_MAX];
   Main *tmp_bmain = BKE_main_new();
-  STRNCPY(tmp_bmain->name, BKE_main_blendfile_path_from_global());
+  STRNCPY(tmp_bmain->filepath, BKE_main_blendfile_path_from_global());
 
-  BLI_join_dirfile(str, sizeof(str), BKE_tempdir_base(), "copybuffer_pose.blend");
+  BLI_path_join(str, sizeof(str), BKE_tempdir_base(), "copybuffer_pose.blend");
   if (!BKE_copybuffer_read(tmp_bmain, str, op->reports, FILTER_ID_OB)) {
     BKE_report(op->reports, RPT_ERROR, "Copy buffer is empty");
     BKE_main_free(tmp_bmain);
@@ -910,7 +894,7 @@ static int pose_paste_exec(bContext *C, wmOperator *op)
   DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
 
   /* Recalculate paths if any of the bones have paths... */
-  if ((ob->pose->avs.path_bakeflag & MOTIONPATH_BAKE_HAS_PATHS)) {
+  if (ob->pose->avs.path_bakeflag & MOTIONPATH_BAKE_HAS_PATHS) {
     ED_pose_recalculate_paths(C, scene, ob, POSE_PATH_CALC_RANGE_FULL);
   }
 
@@ -972,8 +956,9 @@ static void pchan_clear_scale(bPoseChannel *pchan)
 
   pchan->ease1 = 0.0f;
   pchan->ease2 = 0.0f;
-  pchan->scale_in_x = pchan->scale_in_y = 1.0f;
-  pchan->scale_out_x = pchan->scale_out_y = 1.0f;
+
+  copy_v3_fl(pchan->scale_in, 1.0f);
+  copy_v3_fl(pchan->scale_out, 1.0f);
 }
 /* Clear the scale. When X-mirror is enabled,
  * also clear the scale of the mirrored pose channel. */
@@ -1116,7 +1101,7 @@ static void pchan_clear_rot(bPoseChannel *pchan)
         copy_v3_v3(pchan->eul, eul);
       }
     }
-  } /* Duplicated in source/blender/editors/object/object_transform.c */
+  } /* Duplicated in source/blender/editors/object/object_transform.cc */
   else {
     if (pchan->rotmode == ROT_MODE_QUAT) {
       unit_qt(pchan->quat);
@@ -1131,14 +1116,14 @@ static void pchan_clear_rot(bPoseChannel *pchan)
   }
 
   /* Clear also Bendy Bone stuff - Roll is obvious,
-   * but Curve X/Y stuff is also kindof rotational in nature... */
+   * but Curve X/Y stuff is also kind of rotational in nature... */
   pchan->roll1 = 0.0f;
   pchan->roll2 = 0.0f;
 
   pchan->curve_in_x = 0.0f;
-  pchan->curve_in_y = 0.0f;
+  pchan->curve_in_z = 0.0f;
   pchan->curve_out_x = 0.0f;
-  pchan->curve_out_y = 0.0f;
+  pchan->curve_out_z = 0.0f;
 }
 /* Clear the rotation. When X-mirror is enabled,
  * also clear the rotation of the mirrored pose channel. */
@@ -1184,8 +1169,8 @@ static int pose_clear_transform_generic_exec(bContext *C,
   /* only clear relevant transforms for selected bones */
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
-  FOREACH_OBJECT_IN_MODE_BEGIN (view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob_iter) {
-    /* XXX: UGLY HACK (for autokey + clear transforms) */
+  FOREACH_OBJECT_IN_MODE_BEGIN (scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob_iter) {
+    /* XXX: UGLY HACK (for auto-key + clear transforms). */
     Object *ob_eval = DEG_get_evaluated_object(depsgraph, ob_iter);
     ListBase dsources = {NULL, NULL};
     bool changed = false;
@@ -1217,10 +1202,10 @@ static int pose_clear_transform_generic_exec(bContext *C,
         KeyingSet *ks = ANIM_get_keyingset_for_autokeying(scene, default_ksName);
 
         /* insert keyframes */
-        ANIM_apply_keyingset(C, &dsources, NULL, ks, MODIFYKEY_MODE_INSERT, (float)CFRA);
+        ANIM_apply_keyingset(C, &dsources, NULL, ks, MODIFYKEY_MODE_INSERT, (float)scene->r.cfra);
 
         /* now recalculate paths */
-        if ((ob_iter->pose->avs.path_bakeflag & MOTIONPATH_BAKE_HAS_PATHS)) {
+        if (ob_iter->pose->avs.path_bakeflag & MOTIONPATH_BAKE_HAS_PATHS) {
           ED_pose_recalculate_paths(C, scene, ob_iter, POSE_PATH_CALC_RANGE_FULL);
         }
 
@@ -1229,7 +1214,7 @@ static int pose_clear_transform_generic_exec(bContext *C,
 
       DEG_id_tag_update(&ob_iter->id, ID_RECALC_GEOMETRY);
 
-      /* note, notifier might evolve */
+      /* NOTE: notifier might evolve. */
       WM_event_add_notifier(C, NC_OBJECT | ND_TRANSFORM, ob_iter);
     }
   }
@@ -1359,11 +1344,11 @@ static int pose_clear_user_transforms_exec(bContext *C, wmOperator *op)
   View3D *v3d = CTX_wm_view3d(C);
   Scene *scene = CTX_data_scene(C);
   Depsgraph *depsgraph = CTX_data_depsgraph_pointer(C);
-  const AnimationEvalContext anim_eval_context = BKE_animsys_eval_context_construct(depsgraph,
-                                                                                    (float)CFRA);
+  const AnimationEvalContext anim_eval_context = BKE_animsys_eval_context_construct(
+      depsgraph, (float)scene->r.cfra);
   const bool only_select = RNA_boolean_get(op->ptr, "only_selected");
 
-  FOREACH_OBJECT_IN_MODE_BEGIN (view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
+  FOREACH_OBJECT_IN_MODE_BEGIN (scene, view_layer, v3d, OB_ARMATURE, OB_MODE_POSE, ob) {
     if ((ob->adt) && (ob->adt->action)) {
       /* XXX: this is just like this to avoid contaminating anything else;
        * just pose values should change, so this should be fine
@@ -1384,7 +1369,7 @@ static int pose_clear_user_transforms_exec(bContext *C, wmOperator *op)
       BKE_animsys_evaluate_animdata(
           &workob.id, workob.adt, &anim_eval_context, ADT_RECALC_ANIM, false);
 
-      /* copy back values, but on selected bones only  */
+      /* Copy back values, but on selected bones only. */
       for (pchan = dummyPose->chanbase.first; pchan; pchan = pchan->next) {
         pose_bone_do_paste(ob, pchan, only_select, 0);
       }

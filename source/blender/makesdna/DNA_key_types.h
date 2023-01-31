@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 #pragma once
 
 /** \file
@@ -46,10 +30,10 @@ typedef struct KeyBlock {
    * so this value increments by 0.1f per frame.
    */
   float pos;
-  /** influence (typically [0 - 1] but can be more), (Key->type == KEY_RELATIVE) only.*/
+  /** influence (typically [0 - 1] but can be more), `(Key->type == KEY_RELATIVE)` only. */
   float curval;
 
-  /** interpolation type (Key->type == KEY_NORMAL) only. */
+  /** Interpolation type `(Key->type == KEY_NORMAL)` only. */
   short type;
   char _pad1[2];
 
@@ -62,7 +46,7 @@ typedef struct KeyBlock {
   /** for meshes only, match the unique number with the customdata layer */
   int uid;
 
-  /** array of shape key values, size is (Key->elemsize * KeyBlock->totelem) */
+  /** array of shape key values, size is `(Key->elemsize * KeyBlock->totelem)` */
   void *data;
   /** MAX_NAME (unique name, user assigned) */
   char name[64];
@@ -81,7 +65,7 @@ typedef struct Key {
   struct AnimData *adt;
 
   /**
-   * commonly called 'Basis', (Key->type == KEY_RELATIVE) only.
+   * commonly called 'Basis', `(Key->type == KEY_RELATIVE)` only.
    * Looks like this is  _always_ 'key->block.first',
    * perhaps later on it could be defined as some other KeyBlock - campbell
    */

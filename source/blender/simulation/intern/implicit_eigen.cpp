@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup sim
@@ -797,7 +781,7 @@ void SIM_mass_spring_force_drag(Implicit_Data *data, float drag)
   for (int i = 0; i < numverts; i++) {
     float tmp[3][3];
 
-    /* NB: uses root space velocity, no need to transform */
+    /* NOTE: Uses root space velocity, no need to transform. */
     madd_v3_v3fl(data->F.v3(i), data->V.v3(i), -drag);
 
     copy_m3_m3(tmp, I);
@@ -894,8 +878,8 @@ BLI_INLINE void dfdx_damp(float to[3][3],
                           float rest,
                           float damping)
 {
-  /* inner spring damping   vel is the relative velocity  of the endpoints. */
-  //  return (I-outerprod(dir, dir)) * (-damping * -(dot(dir, vel)/Max(length, rest)));
+  /* Inner spring damping vel is the relative velocity of the endpoints. */
+  // return (I - outerprod(dir, dir)) * (-damping * -(dot(dir, vel) / Max(length, rest)));
   mul_fvectorT_fvector(to, dir, dir);
   sub_fmatrix_fmatrix(to, I, to);
   mul_fmatrix_S(to, (-damping * -(dot_v3v3(dir, vel) / MAX2(length, rest))));
@@ -1223,7 +1207,7 @@ BLI_INLINE void spring_angbend_estimate_dfdx(Implicit_Data *data,
                                              int q,
                                              float dfdx[3][3])
 {
-  const float delta = 0.00001f; /* TODO find a good heuristic for this */
+  const float delta = 0.00001f; /* TODO: find a good heuristic for this. */
   float dvec_null[3][3], dvec_pos[3][3], dvec_neg[3][3];
   float f[3];
   int a, b;
@@ -1234,7 +1218,7 @@ BLI_INLINE void spring_angbend_estimate_dfdx(Implicit_Data *data,
   copy_m3_m3(dvec_neg, dvec_pos);
   negate_m3(dvec_neg);
 
-  /* XXX TODO offset targets to account for position dependency */
+  /* XXX TODO: offset targets to account for position dependency. */
 
   for (a = 0; a < 3; a++) {
     spring_angbend_forces(
@@ -1262,7 +1246,7 @@ BLI_INLINE void spring_angbend_estimate_dfdv(Implicit_Data *data,
                                              int q,
                                              float dfdv[3][3])
 {
-  const float delta = 0.00001f; /* TODO find a good heuristic for this */
+  const float delta = 0.00001f; /* TODO: find a good heuristic for this. */
   float dvec_null[3][3], dvec_pos[3][3], dvec_neg[3][3];
   float f[3];
   int a, b;
@@ -1273,7 +1257,7 @@ BLI_INLINE void spring_angbend_estimate_dfdv(Implicit_Data *data,
   copy_m3_m3(dvec_neg, dvec_pos);
   negate_m3(dvec_neg);
 
-  /* XXX TODO offset targets to account for position dependency */
+  /* XXX TODO: offset targets to account for position dependency. */
 
   for (a = 0; a < 3; a++) {
     spring_angbend_forces(

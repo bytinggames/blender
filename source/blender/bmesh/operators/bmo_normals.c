@@ -1,23 +1,9 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
  *
- * normal recalculation.
+ * Functionality for flipping faces to make normals consistent.
  */
 
 #include "MEM_guardedalloc.h"
@@ -61,7 +47,7 @@ static bool bmo_recalc_normal_loop_filter_cb(const BMLoop *l, void *UNUSED(user_
  *        +------------+
  * </pre>
  *
- * In the example above, the a\ face can point towards the \a center
+ * In the example above, the \a face can point towards the \a center
  * which would end up flipping the normals inwards.
  *
  * To take these spikes into account, find the furthest face-loop-vertex.
@@ -138,7 +124,7 @@ static int recalc_face_normals_find_index(BMesh *bm,
    * then the outer-most loop attached to that vertex.
    *
    * Important this is correctly detected,
-   * where casting a ray from the center wont hit any loops past this one.
+   * where casting a ray from the center won't hit any loops past this one.
    * Otherwise the result may be incorrect.
    */
   for (i = 0; i < faces_len; i++) {

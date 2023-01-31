@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spbuttons
@@ -54,6 +38,7 @@
 #include "BKE_screen.h"
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "ED_buttons.h"
 #include "ED_physics.h"
@@ -72,7 +57,7 @@ static int set_pointer_type(ButsContextPath *path, bContextDataResult *result, S
     PointerRNA *ptr = &path->ptr[i];
 
     if (RNA_struct_is_a(ptr->type, type)) {
-      CTX_data_pointer_set(result, ptr->owner_id, ptr->type, ptr->data);
+      CTX_data_pointer_set_ptr(result, ptr);
       return CTX_RESULT_OK;
     }
   }
@@ -126,7 +111,7 @@ static bool buttons_context_path_view_layer(ButsContextPath *path, wmWindow *win
   return false;
 }
 
-/* note: this function can return true without adding a world to the path
+/* NOTE: this function can return true without adding a world to the path
  * so the buttons stay visible, but be sure to check the ID type if a ID_WO */
 static bool buttons_context_path_world(ButsContextPath *path)
 {
@@ -154,7 +139,9 @@ static bool buttons_context_path_world(ButsContextPath *path)
   return false;
 }
 
-static bool buttons_context_path_collection(ButsContextPath *path, wmWindow *window)
+static bool buttons_context_path_collection(const bContext *C,
+                                            ButsContextPath *path,
+                                            wmWindow *window)
 {
   PointerRNA *ptr = &path->ptr[path->len - 1];
 
@@ -162,10 +149,20 @@ static bool buttons_context_path_collection(ButsContextPath *path, wmWindow *win
   if (RNA_struct_is_a(ptr->type, &RNA_Collection)) {
     return true;
   }
+
+  Scene *scene = CTX_data_scene(C);
+
   /* if we have a view layer, use the view layer's active collection */
   if (buttons_context_path_view_layer(path, window)) {
     ViewLayer *view_layer = path->ptr[path->len - 1].data;
-    Collection *c = view_layer->active_collection->collection;
+    BKE_view_layer_synced_ensure(scene, view_layer);
+    Collection *c = BKE_view_layer_active_collection_get(view_layer)->collection;
+
+    /* Do not show collection tab for master collection. */
+    if (c == scene->master_collection) {
+      return false;
+    }
+
     if (c) {
       RNA_id_pointer_create(&c->id, &path->ptr[path->len]);
       path->len++;
@@ -213,7 +210,7 @@ static bool buttons_context_path_object(ButsContextPath *path)
   }
 
   ViewLayer *view_layer = ptr->data;
-  Object *ob = (view_layer->basact) ? view_layer->basact->object : NULL;
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
 
   if (ob) {
     RNA_id_pointer_create(&ob->id, &path->ptr[path->len]);
@@ -231,55 +228,53 @@ static bool buttons_context_path_data(ButsContextPath *path, int type)
   PointerRNA *ptr = &path->ptr[path->len - 1];
 
   /* if we already have a data, we're done */
-  if (RNA_struct_is_a(ptr->type, &RNA_Mesh) && (type == -1 || type == OB_MESH)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_Mesh) && ELEM(type, -1, OB_MESH)) {
     return true;
   }
   if (RNA_struct_is_a(ptr->type, &RNA_Curve) &&
-      (type == -1 || ELEM(type, OB_CURVE, OB_SURF, OB_FONT))) {
+      (type == -1 || ELEM(type, OB_CURVES_LEGACY, OB_SURF, OB_FONT))) {
     return true;
   }
-  if (RNA_struct_is_a(ptr->type, &RNA_Armature) && (type == -1 || type == OB_ARMATURE)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_Armature) && ELEM(type, -1, OB_ARMATURE)) {
     return true;
   }
-  if (RNA_struct_is_a(ptr->type, &RNA_MetaBall) && (type == -1 || type == OB_MBALL)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_MetaBall) && ELEM(type, -1, OB_MBALL)) {
     return true;
   }
-  if (RNA_struct_is_a(ptr->type, &RNA_Lattice) && (type == -1 || type == OB_LATTICE)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_Lattice) && ELEM(type, -1, OB_LATTICE)) {
     return true;
   }
-  if (RNA_struct_is_a(ptr->type, &RNA_Camera) && (type == -1 || type == OB_CAMERA)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_Camera) && ELEM(type, -1, OB_CAMERA)) {
     return true;
   }
-  if (RNA_struct_is_a(ptr->type, &RNA_Light) && (type == -1 || type == OB_LAMP)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_Light) && ELEM(type, -1, OB_LAMP)) {
     return true;
   }
-  if (RNA_struct_is_a(ptr->type, &RNA_Speaker) && (type == -1 || type == OB_SPEAKER)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_Speaker) && ELEM(type, -1, OB_SPEAKER)) {
     return true;
   }
-  if (RNA_struct_is_a(ptr->type, &RNA_LightProbe) && (type == -1 || type == OB_LIGHTPROBE)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_LightProbe) && ELEM(type, -1, OB_LIGHTPROBE)) {
     return true;
   }
-  if (RNA_struct_is_a(ptr->type, &RNA_GreasePencil) && (type == -1 || type == OB_GPENCIL)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_GreasePencil) && ELEM(type, -1, OB_GPENCIL)) {
     return true;
   }
-#ifdef WITH_HAIR_NODES
-  if (RNA_struct_is_a(ptr->type, &RNA_Hair) && (type == -1 || type == OB_HAIR)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_Curves) && ELEM(type, -1, OB_CURVES)) {
     return true;
   }
-#endif
 #ifdef WITH_POINT_CLOUD
-  if (RNA_struct_is_a(ptr->type, &RNA_PointCloud) && (type == -1 || type == OB_POINTCLOUD)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_PointCloud) && ELEM(type, -1, OB_POINTCLOUD)) {
     return true;
   }
 #endif
-  if (RNA_struct_is_a(ptr->type, &RNA_Volume) && (type == -1 || type == OB_VOLUME)) {
+  if (RNA_struct_is_a(ptr->type, &RNA_Volume) && ELEM(type, -1, OB_VOLUME)) {
     return true;
   }
   /* try to get an object in the path, no pinning supported here */
   if (buttons_context_path_object(path)) {
     Object *ob = path->ptr[path->len - 1].data;
 
-    if (ob && (type == -1 || type == ob->type)) {
+    if (ob && ELEM(type, -1, ob->type)) {
       RNA_id_pointer_create(ob->data, &path->ptr[path->len]);
       path->len++;
 
@@ -298,12 +293,12 @@ static bool buttons_context_path_modifier(ButsContextPath *path)
 
     if (ELEM(ob->type,
              OB_MESH,
-             OB_CURVE,
+             OB_CURVES_LEGACY,
              OB_FONT,
              OB_SURF,
              OB_LATTICE,
              OB_GPENCIL,
-             OB_HAIR,
+             OB_CURVES,
              OB_POINTCLOUD,
              OB_VOLUME)) {
       ModifierData *md = BKE_object_active_modifier(ob);
@@ -600,7 +595,7 @@ static bool buttons_context_path(
       found = buttons_context_path_world(path);
       break;
     case BCONTEXT_COLLECTION: /* This is for Line Art collection flags */
-      found = buttons_context_path_collection(path, window);
+      found = buttons_context_path_collection(C, path, window);
       break;
     case BCONTEXT_TOOL:
       found = true;
@@ -648,8 +643,10 @@ static bool buttons_context_path(
 static bool buttons_shading_context(const bContext *C, int mainb)
 {
   wmWindow *window = CTX_wm_window(C);
+  const Scene *scene = WM_window_get_active_scene(window);
   ViewLayer *view_layer = WM_window_get_active_view_layer(window);
-  Object *ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
 
   if (ELEM(mainb, BCONTEXT_MATERIAL, BCONTEXT_WORLD, BCONTEXT_TEXTURE)) {
     return true;
@@ -664,8 +661,10 @@ static bool buttons_shading_context(const bContext *C, int mainb)
 static int buttons_shading_new_context(const bContext *C, int flag)
 {
   wmWindow *window = CTX_wm_window(C);
+  const Scene *scene = WM_window_get_active_scene(window);
   ViewLayer *view_layer = WM_window_get_active_view_layer(window);
-  Object *ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
 
   if (flag & (1 << BCONTEXT_MATERIAL)) {
     return BCONTEXT_MATERIAL;
@@ -834,9 +833,7 @@ const char *buttons_context_dir[] = {
     "line_style",
     "collection",
     "gpencil",
-#ifdef WITH_HAIR_NODES
-    "hair",
-#endif
+    "curves",
 #ifdef WITH_POINT_CLOUD
     "pointcloud",
 #endif
@@ -930,12 +927,10 @@ int /*eContextResult*/ buttons_context(const bContext *C,
     set_pointer_type(path, result, &RNA_LightProbe);
     return CTX_RESULT_OK;
   }
-#ifdef WITH_HAIR_NODES
-  if (CTX_data_equals(member, "hair")) {
-    set_pointer_type(path, result, &RNA_Hair);
+  if (CTX_data_equals(member, "curves")) {
+    set_pointer_type(path, result, &RNA_Curves);
     return CTX_RESULT_OK;
   }
-#endif
 #ifdef WITH_POINT_CLOUD
   if (CTX_data_equals(member, "pointcloud")) {
     set_pointer_type(path, result, &RNA_PointCloud);
@@ -975,7 +970,9 @@ int /*eContextResult*/ buttons_context(const bContext *C,
         if (matnr < 0) {
           matnr = 0;
         }
-        CTX_data_pointer_set(result, &ob->id, &RNA_MaterialSlot, &ob->mat[matnr]);
+        /* Keep aligned with rna_Object_material_slots_get. */
+        CTX_data_pointer_set(
+            result, &ob->id, &RNA_MaterialSlot, (void *)(matnr + (uintptr_t)&ob->id));
       }
     }
 
@@ -990,7 +987,7 @@ int /*eContextResult*/ buttons_context(const bContext *C,
 
     if (ct->user && ct->user->ptr.data) {
       ButsTextureUser *user = ct->user;
-      CTX_data_pointer_set(result, user->ptr.owner_id, user->ptr.type, user->ptr.data);
+      CTX_data_pointer_set_ptr(result, &user->ptr);
     }
 
     return CTX_RESULT_OK;
@@ -1079,7 +1076,7 @@ int /*eContextResult*/ buttons_context(const bContext *C,
     PointerRNA *ptr = get_pointer_type(path, &RNA_ParticleSettings);
 
     if (ptr && ptr->data) {
-      CTX_data_pointer_set(result, ptr->owner_id, &RNA_ParticleSettings, ptr->data);
+      CTX_data_pointer_set_ptr(result, ptr);
       return CTX_RESULT_OK;
     }
 
@@ -1191,35 +1188,35 @@ static void buttons_panel_context_draw(const bContext *C, Panel *panel)
     PointerRNA *ptr = &path->ptr[i];
 
     /* Skip scene and view layer to save space. */
-    if ((!ELEM(sbuts->mainb,
-               BCONTEXT_RENDER,
-               BCONTEXT_OUTPUT,
-               BCONTEXT_SCENE,
-               BCONTEXT_VIEW_LAYER,
-               BCONTEXT_WORLD) &&
-         ptr->type == &RNA_Scene)) {
+    if (!ELEM(sbuts->mainb,
+              BCONTEXT_RENDER,
+              BCONTEXT_OUTPUT,
+              BCONTEXT_SCENE,
+              BCONTEXT_VIEW_LAYER,
+              BCONTEXT_WORLD) &&
+        ptr->type == &RNA_Scene) {
       continue;
     }
-    if ((!ELEM(sbuts->mainb,
-               BCONTEXT_RENDER,
-               BCONTEXT_OUTPUT,
-               BCONTEXT_SCENE,
-               BCONTEXT_VIEW_LAYER,
-               BCONTEXT_WORLD) &&
-         ptr->type == &RNA_ViewLayer)) {
+    if (!ELEM(sbuts->mainb,
+              BCONTEXT_RENDER,
+              BCONTEXT_OUTPUT,
+              BCONTEXT_SCENE,
+              BCONTEXT_VIEW_LAYER,
+              BCONTEXT_WORLD) &&
+        ptr->type == &RNA_ViewLayer) {
       continue;
     }
 
     /* Add > triangle. */
     if (!first) {
-      uiItemL(row, "", ICON_SMALL_TRI_RIGHT_VEC);
+      uiItemL(row, "", ICON_RIGHTARROW);
     }
 
     if (ptr->data == NULL) {
       continue;
     }
 
-    /* Add icon and name .*/
+    /* Add icon and name. */
     int icon = RNA_struct_ui_icon(ptr->type);
     char namebuf[128];
     char *name = RNA_struct_name_get_alloc(ptr, namebuf, sizeof(namebuf), NULL);
@@ -1272,7 +1269,7 @@ ID *buttons_context_id_path(const bContext *C)
   for (int i = path->len - 1; i >= 0; i--) {
     PointerRNA *ptr = &path->ptr[i];
 
-    /* pin particle settings instead of system, since only settings are an idblock*/
+    /* Pin particle settings instead of system, since only settings are an idblock. */
     if (sbuts->mainb == BCONTEXT_PARTICLE && sbuts->flag & SB_PIN_CONTEXT) {
       if (ptr->type == &RNA_ParticleSystem && ptr->data) {
         ParticleSystem *psys = ptr->data;
@@ -1280,7 +1277,7 @@ ID *buttons_context_id_path(const bContext *C)
       }
     }
 
-    /* There is no valid image ID panel, Image Empty objects need this workaround.*/
+    /* There is no valid image ID panel, Image Empty objects need this workaround. */
     if (sbuts->mainb == BCONTEXT_DATA && sbuts->flag & SB_PIN_CONTEXT) {
       if (ptr->type == &RNA_Image && ptr->data) {
         continue;

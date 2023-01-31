@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup spview3d
@@ -38,6 +24,7 @@
 #include "MEM_guardedalloc.h"
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -58,8 +45,10 @@ static bool WIDGETGROUP_light_spot_poll(const bContext *C, wmGizmoGroupType *UNU
     return false;
   }
 
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Base *base = BASACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Base *base = BKE_view_layer_active_base_get(view_layer);
   if (base && BASE_SELECTABLE(v3d, base)) {
     Object *ob = base->object;
     if (ob->type == OB_LAMP) {
@@ -89,17 +78,19 @@ static void WIDGETGROUP_light_spot_refresh(const bContext *C, wmGizmoGroup *gzgr
 {
   wmGizmoWrapper *wwrapper = gzgroup->customdata;
   wmGizmo *gz = wwrapper->gizmo;
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
   Light *la = ob->data;
   float dir[3];
 
-  negate_v3_v3(dir, ob->obmat[2]);
+  negate_v3_v3(dir, ob->object_to_world[2]);
 
   WM_gizmo_set_matrix_rotation_from_z_axis(gz, dir);
-  WM_gizmo_set_matrix_location(gz, ob->obmat[3]);
+  WM_gizmo_set_matrix_location(gz, ob->object_to_world[3]);
 
-  /* need to set property here for undo. TODO would prefer to do this in _init */
+  /* need to set property here for undo. TODO: would prefer to do this in _init. */
   PointerRNA lamp_ptr;
   const char *propname = "spot_size";
   RNA_pointer_create(&la->id, &RNA_Light, la, &lamp_ptr);
@@ -169,8 +160,10 @@ static bool WIDGETGROUP_light_area_poll(const bContext *C, wmGizmoGroupType *UNU
     return false;
   }
 
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Base *base = BASACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Base *base = BKE_view_layer_active_base_get(view_layer);
   if (base && BASE_SELECTABLE(v3d, base)) {
     Object *ob = base->object;
     if (ob->type == OB_LAMP) {
@@ -199,12 +192,14 @@ static void WIDGETGROUP_light_area_setup(const bContext *UNUSED(C), wmGizmoGroup
 static void WIDGETGROUP_light_area_refresh(const bContext *C, wmGizmoGroup *gzgroup)
 {
   wmGizmoWrapper *wwrapper = gzgroup->customdata;
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
   Light *la = ob->data;
   wmGizmo *gz = wwrapper->gizmo;
 
-  copy_m4_m4(gz->matrix_basis, ob->obmat);
+  copy_m4_m4(gz->matrix_basis, ob->object_to_world);
 
   int flag = ED_GIZMO_CAGE2D_XFORM_FLAG_SCALE;
   if (ELEM(la->area_shape, LA_AREA_SQUARE, LA_AREA_DISK)) {
@@ -212,7 +207,7 @@ static void WIDGETGROUP_light_area_refresh(const bContext *C, wmGizmoGroup *gzgr
   }
   RNA_enum_set(gz->ptr, "transform", flag);
 
-  /* need to set property here for undo. TODO would prefer to do this in _init */
+  /* need to set property here for undo. TODO: would prefer to do this in _init. */
   WM_gizmo_target_property_def_func(gz,
                                     "matrix",
                                     &(const struct wmGizmoPropertyFnParams){
@@ -252,13 +247,15 @@ static bool WIDGETGROUP_light_target_poll(const bContext *C, wmGizmoGroupType *U
     return false;
   }
 
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Base *base = BASACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Base *base = BKE_view_layer_active_base_get(view_layer);
   if (base && BASE_SELECTABLE(v3d, base)) {
     Object *ob = base->object;
     if (ob->type == OB_LAMP) {
       Light *la = ob->data;
-      return (ELEM(la->type, LA_SUN, LA_SPOT, LA_AREA));
+      return ELEM(la->type, LA_SUN, LA_SPOT, LA_AREA);
     }
 #if 0
     else if (ob->type == OB_CAMERA) {
@@ -293,11 +290,13 @@ static void WIDGETGROUP_light_target_setup(const bContext *UNUSED(C), wmGizmoGro
 static void WIDGETGROUP_light_target_draw_prepare(const bContext *C, wmGizmoGroup *gzgroup)
 {
   wmGizmoWrapper *wwrapper = gzgroup->customdata;
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
   wmGizmo *gz = wwrapper->gizmo;
 
-  normalize_m4_m4(gz->matrix_basis, ob->obmat);
+  normalize_m4_m4(gz->matrix_basis, ob->object_to_world);
   unit_m4(gz->matrix_offset);
 
   if (ob->type == OB_LAMP) {

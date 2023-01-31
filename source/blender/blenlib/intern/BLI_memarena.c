@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup bli
@@ -45,6 +29,7 @@
 #  define VALGRIND_CREATE_MEMPOOL(pool, rzB, is_zeroed) UNUSED_VARS(pool, rzB, is_zeroed)
 #  define VALGRIND_DESTROY_MEMPOOL(pool) UNUSED_VARS(pool)
 #  define VALGRIND_MEMPOOL_ALLOC(pool, addr, size) UNUSED_VARS(pool, addr, size)
+#  define VALGRIND_MOVE_MEMPOOL(pool_a, pool_b) UNUSED_VARS(pool_a, pool_b)
 #endif
 
 struct MemBuf {
@@ -53,7 +38,7 @@ struct MemBuf {
 };
 
 struct MemArena {
-  unsigned char *curbuf;
+  uchar *curbuf;
   const char *name;
   struct MemBuf *bufs;
 
@@ -68,7 +53,7 @@ static void memarena_buf_free_all(struct MemBuf *mb)
   while (mb != NULL) {
     struct MemBuf *mb_next = mb->next;
 
-    /* Unpoison memory because MEM_freeN might overwrite it. */
+    /* Unpoison memory because #MEM_freeN might overwrite it. */
     BLI_asan_unpoison(mb, (uint)MEM_allocN_len(mb));
 
     MEM_freeN(mb);
@@ -121,9 +106,9 @@ void BLI_memarena_free(MemArena *ma)
 /** Align alloc'ed memory (needed if `align > 8`). */
 static void memarena_curbuf_align(MemArena *ma)
 {
-  unsigned char *tmp;
+  uchar *tmp;
 
-  tmp = (unsigned char *)PADUP((intptr_t)ma->curbuf, (int)ma->align);
+  tmp = (uchar *)PADUP((intptr_t)ma->curbuf, (int)ma->align);
   ma->cursize -= (size_t)(tmp - ma->curbuf);
   ma->curbuf = tmp;
 }
@@ -173,19 +158,58 @@ void *BLI_memarena_calloc(MemArena *ma, size_t size)
   BLI_assert(ma->use_calloc == false);
 
   ptr = BLI_memarena_alloc(ma, size);
+  BLI_assert(ptr != NULL);
   memset(ptr, 0, size);
 
   return ptr;
 }
 
-/**
- * Clear for reuse, avoids re-allocation when an arena may
- * otherwise be free'd and recreated.
- */
+void BLI_memarena_merge(MemArena *ma_dst, MemArena *ma_src)
+{
+  /* Memory arenas must be compatible. */
+  BLI_assert(ma_dst != ma_src);
+  BLI_assert(ma_dst->align == ma_src->align);
+  BLI_assert(ma_dst->use_calloc == ma_src->use_calloc);
+  BLI_assert(ma_dst->bufsize == ma_src->bufsize);
+
+  if (ma_src->bufs == NULL) {
+    return;
+  }
+
+  if (UNLIKELY(ma_dst->bufs == NULL)) {
+    BLI_assert(ma_dst->curbuf == NULL);
+    ma_dst->bufs = ma_src->bufs;
+    ma_dst->curbuf = ma_src->curbuf;
+    ma_dst->cursize = ma_src->cursize;
+  }
+  else {
+    /* Keep the 'ma_dst->curbuf' for simplicity.
+     * Insert buffers after the first. */
+    if (ma_dst->bufs->next != NULL) {
+      /* Loop over `ma_src` instead of `ma_dst` since it's likely the destination is larger
+       * when used for accumulating from multiple sources. */
+      struct MemBuf *mb_src = ma_src->bufs;
+      mb_src = ma_src->bufs;
+      while (mb_src && mb_src->next) {
+        mb_src = mb_src->next;
+      }
+      mb_src->next = ma_dst->bufs->next;
+    }
+    ma_dst->bufs->next = ma_src->bufs;
+  }
+
+  ma_src->bufs = NULL;
+  ma_src->curbuf = NULL;
+  ma_src->cursize = 0;
+
+  VALGRIND_MOVE_MEMPOOL(ma_src, ma_dst);
+  VALGRIND_CREATE_MEMPOOL(ma_src, 0, false);
+}
+
 void BLI_memarena_clear(MemArena *ma)
 {
   if (ma->bufs) {
-    unsigned char *curbuf_prev;
+    uchar *curbuf_prev;
     size_t curbuf_used;
 
     if (ma->bufs->next) {

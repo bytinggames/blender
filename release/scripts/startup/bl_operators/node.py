@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8-80 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 from __future__ import annotations
 
 import bpy
@@ -31,6 +13,8 @@ from bpy.props import (
     IntProperty,
     StringProperty,
 )
+
+from bpy.app.translations import pgettext_tip as tip_
 
 
 class NodeSetting(PropertyGroup):
@@ -89,7 +73,11 @@ class NodeAddOperator:
         for n in tree.nodes:
             n.select = False
 
-        node = tree.nodes.new(type=node_type)
+        try:
+            node = tree.nodes.new(type=node_type)
+        except RuntimeError as e:
+            self.report({'ERROR'}, str(e))
+            return None
 
         for setting in self.settings:
             # XXX catch exceptions here?
@@ -120,7 +108,7 @@ class NodeAddOperator:
     def poll(cls, context):
         space = context.space_data
         # needs active node editor and a tree to add nodes to
-        return ((space.type == 'NODE_EDITOR') and
+        return (space and (space.type == 'NODE_EDITOR') and
                 space.edit_tree and not space.edit_tree.library)
 
     # Default execute simply adds a node
@@ -143,6 +131,15 @@ class NodeAddOperator:
 
         return result
 
+    @classmethod
+    def description(cls, _context, properties):
+        nodetype = properties["type"]
+        bl_rna = bpy.types.Node.bl_rna_get_subclass(nodetype)
+        if bl_rna is not None:
+            return tip_(bl_rna.description)
+        else:
+            return ""
+
 
 # Simple basic operator for adding a node
 class NODE_OT_add_node(NodeAddOperator, Operator):
@@ -150,109 +147,6 @@ class NODE_OT_add_node(NodeAddOperator, Operator):
     bl_idname = "node.add_node"
     bl_label = "Add Node"
     bl_options = {'REGISTER', 'UNDO'}
-
-
-# Add a node and link it to an existing socket
-class NODE_OT_add_and_link_node(NodeAddOperator, Operator):
-    '''Add a node to the active tree and link to an existing socket'''
-    bl_idname = "node.add_and_link_node"
-    bl_label = "Add and Link Node"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    link_socket_index: IntProperty(
-        name="Link Socket Index",
-        description="Index of the socket to link",
-    )
-
-    def execute(self, context):
-        space = context.space_data
-        ntree = space.edit_tree
-
-        node = self.create_node(context)
-        if not node:
-            return {'CANCELLED'}
-
-        to_socket = getattr(context, "link_to_socket", None)
-        if to_socket:
-            ntree.links.new(node.outputs[self.link_socket_index], to_socket)
-
-        from_socket = getattr(context, "link_from_socket", None)
-        if from_socket:
-            ntree.links.new(from_socket, node.inputs[self.link_socket_index])
-
-        return {'FINISHED'}
-
-
-class NODE_OT_add_search(NodeAddOperator, Operator):
-    '''Add a node to the active tree'''
-    bl_idname = "node.add_search"
-    bl_label = "Search and Add Node"
-    bl_options = {'REGISTER', 'UNDO'}
-    bl_property = "node_item"
-
-    _enum_item_hack = []
-
-    # Create an enum list from node items
-    def node_enum_items(self, context):
-        import nodeitems_utils
-
-        enum_items = NODE_OT_add_search._enum_item_hack
-        enum_items.clear()
-
-        for index, item in enumerate(nodeitems_utils.node_items_iter(context)):
-            if isinstance(item, nodeitems_utils.NodeItem):
-                enum_items.append(
-                    (str(index),
-                     item.label,
-                     "",
-                     index,
-                     ))
-        return enum_items
-
-    # Look up the item based on index
-    def find_node_item(self, context):
-        import nodeitems_utils
-
-        node_item = int(self.node_item)
-        for index, item in enumerate(nodeitems_utils.node_items_iter(context)):
-            if index == node_item:
-                return item
-        return None
-
-    node_item: EnumProperty(
-        name="Node Type",
-        description="Node type",
-        items=NODE_OT_add_search.node_enum_items,
-    )
-
-    def execute(self, context):
-        item = self.find_node_item(context)
-
-        # no need to keep
-        self._enum_item_hack.clear()
-
-        if item:
-            # apply settings from the node item
-            for setting in item.settings.items():
-                ops = self.settings.add()
-                ops.name = setting[0]
-                ops.value = setting[1]
-
-            self.create_node(context, item.nodetype)
-
-            if self.use_transform:
-                bpy.ops.node.translate_attach_remove_on_cancel(
-                    'INVOKE_DEFAULT')
-
-            return {'FINISHED'}
-        else:
-            return {'CANCELLED'}
-
-    def invoke(self, context, event):
-        self.store_mouse_cursor(context, event)
-        # Delayed execution in the search popup
-        context.window_manager.invoke_search_popup(self)
-        return {'CANCELLED'}
 
 
 class NODE_OT_collapse_hide_unused_toggle(Operator):
@@ -265,7 +159,7 @@ class NODE_OT_collapse_hide_unused_toggle(Operator):
     def poll(cls, context):
         space = context.space_data
         # needs active node editor and a tree
-        return ((space.type == 'NODE_EDITOR') and
+        return (space and (space.type == 'NODE_EDITOR') and
                 (space.edit_tree and not space.edit_tree.library))
 
     def execute(self, context):
@@ -296,7 +190,7 @@ class NODE_OT_tree_path_parent(Operator):
     def poll(cls, context):
         space = context.space_data
         # needs active node editor and a tree
-        return (space.type == 'NODE_EDITOR' and len(space.path) > 1)
+        return (space and (space.type == 'NODE_EDITOR') and len(space.path) > 1)
 
     def execute(self, context):
         space = context.space_data
@@ -306,69 +200,10 @@ class NODE_OT_tree_path_parent(Operator):
         return {'FINISHED'}
 
 
-class NODE_OT_active_preview_toggle(Operator):
-    '''Toggle active preview state of node'''
-    bl_idname = "node.active_preview_toggle"
-    bl_label = "Toggle Active Preview"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        space = context.space_data
-        if space.type != 'NODE_EDITOR':
-            return False
-        if space.edit_tree is None:
-            return False
-        if space.edit_tree.nodes.active is None:
-            return False
-        return True
-
-    def execute(self, context):
-        node_editor = context.space_data
-        ntree = node_editor.edit_tree
-        active_node = ntree.nodes.active
-
-        if active_node.active_preview:
-            self.disable_preview(context, ntree, active_node)
-        else:
-            self.enable_preview(context, node_editor, ntree, active_node)
-
-        return {'FINISHED'}
-
-    def enable_preview(self, context, node_editor, ntree, active_node):
-        spreadsheets = self.find_unpinned_spreadsheets(context)
-
-        for spreadsheet in spreadsheets:
-            spreadsheet.set_geometry_node_context(node_editor, active_node)
-
-        for node in ntree.nodes:
-            node.active_preview = False
-        active_node.active_preview = True
-
-    def disable_preview(self, context, ntree, active_node):
-        spreadsheets = self.find_unpinned_spreadsheets(context)
-        for spreadsheet in spreadsheets:
-            spreadsheet.context_path.clear()
-
-        active_node.active_preview = False
-
-    def find_unpinned_spreadsheets(self, context):
-        spreadsheets = []
-        for window in context.window_manager.windows:
-            for area in window.screen.areas:
-                space = area.spaces.active
-                if space.type == 'SPREADSHEET' and not space.is_pinned:
-                    spreadsheets.append(space)
-        return spreadsheets
-
-
 classes = (
     NodeSetting,
 
-    NODE_OT_add_and_link_node,
     NODE_OT_add_node,
-    NODE_OT_add_search,
     NODE_OT_collapse_hide_unused_toggle,
     NODE_OT_tree_path_parent,
-    NODE_OT_active_preview_toggle,
 )

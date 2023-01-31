@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -27,6 +11,7 @@
 #include "MEM_guardedalloc.h"
 
 #include "BLI_alloca.h"
+#include "BLI_bitmap.h"
 #include "BLI_linklist_stack.h"
 #include "BLI_math.h"
 #include "BLI_memarena.h"
@@ -50,6 +35,106 @@
 
 /* -------------------------------------------------------------------- */
 /** \name Container TransCustomData Creation
+ * \{ */
+
+static void tc_mesh_customdata_free_fn(struct TransInfo *t,
+                                       struct TransDataContainer *tc,
+                                       struct TransCustomData *custom_data);
+
+struct TransCustomDataLayer;
+static void tc_mesh_customdatacorrect_free(struct TransCustomDataLayer *tcld);
+
+struct TransCustomData_PartialUpdate {
+  struct BMPartialUpdate *cache;
+
+  /** The size of proportional editing used for #BMPartialUpdate. */
+  float prop_size;
+  /** The size of proportional editing for the last update. */
+  float prop_size_prev;
+};
+
+/**
+ * \note It's important to order from least to greatest (which updates more data),
+ * since the larger values are used when values change between updates
+ * (which can happen when rotation is enabled with snapping).
+ */
+enum ePartialType {
+  PARTIAL_NONE = -1,
+  /**
+   * Update only faces between tagged and non-tagged faces (affine transformations).
+   * Use when transforming is guaranteed not to change the relative locations of vertices.
+   *
+   * This has the advantage that selecting the entire mesh or only isolated elements,
+   * can skip normal/tessellation updates entirely, so it's worth using when possible.
+   */
+  PARTIAL_TYPE_GROUP = 0,
+  /**
+   * Update for all tagged vertices (any kind of deformation).
+   * Use as a default since it can be used with any kind of deformation.
+   */
+  PARTIAL_TYPE_ALL = 1,
+};
+
+#define PARTIAL_TYPE_MAX 2
+
+/**
+ * Settings used for a single update,
+ * use for comparison with previous updates.
+ */
+struct PartialTypeState {
+  enum ePartialType for_looptri;
+  enum ePartialType for_normals;
+};
+
+struct TransCustomDataMesh {
+  struct TransCustomDataLayer *cd_layer_correct;
+  struct TransCustomData_PartialUpdate partial_update[PARTIAL_TYPE_MAX];
+  struct PartialTypeState partial_update_state_prev;
+};
+
+static struct TransCustomDataMesh *tc_mesh_customdata_ensure(TransDataContainer *tc)
+{
+  struct TransCustomDataMesh *tcmd = tc->custom.type.data;
+  BLI_assert(tc->custom.type.data == NULL ||
+             tc->custom.type.free_cb == tc_mesh_customdata_free_fn);
+  if (tc->custom.type.data == NULL) {
+    tc->custom.type.data = MEM_callocN(sizeof(struct TransCustomDataMesh), __func__);
+    tc->custom.type.free_cb = tc_mesh_customdata_free_fn;
+    tcmd = tc->custom.type.data;
+    tcmd->partial_update_state_prev.for_looptri = PARTIAL_NONE;
+    tcmd->partial_update_state_prev.for_normals = PARTIAL_NONE;
+  }
+  return tcmd;
+}
+
+static void tc_mesh_customdata_free(struct TransCustomDataMesh *tcmd)
+{
+  if (tcmd->cd_layer_correct != NULL) {
+    tc_mesh_customdatacorrect_free(tcmd->cd_layer_correct);
+  }
+
+  for (int i = 0; i < ARRAY_SIZE(tcmd->partial_update); i++) {
+    if (tcmd->partial_update[i].cache != NULL) {
+      BM_mesh_partial_destroy(tcmd->partial_update[i].cache);
+    }
+  }
+
+  MEM_freeN(tcmd);
+}
+
+static void tc_mesh_customdata_free_fn(struct TransInfo *UNUSED(t),
+                                       struct TransDataContainer *UNUSED(tc),
+                                       struct TransCustomData *custom_data)
+{
+  struct TransCustomDataMesh *tcmd = custom_data->data;
+  tc_mesh_customdata_free(tcmd);
+  custom_data->data = NULL;
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name CustomData TransCustomDataLayer Creation
  * \{ */
 
 struct TransCustomDataMergeGroup {
@@ -82,33 +167,6 @@ struct TransCustomDataLayer {
 
   bool use_merge_group;
 };
-
-static void tc_mesh_customdatacorrect_free_fn(struct TransInfo *UNUSED(t),
-                                              struct TransDataContainer *UNUSED(tc),
-                                              struct TransCustomData *custom_data)
-{
-  struct TransCustomDataLayer *tcld = custom_data->data;
-  bmesh_edit_end(tcld->bm, BMO_OPTYPE_FLAG_UNTAN_MULTIRES);
-
-  if (tcld->bm_origfaces) {
-    BM_mesh_free(tcld->bm_origfaces);
-  }
-  if (tcld->origfaces) {
-    BLI_ghash_free(tcld->origfaces, NULL, NULL);
-  }
-  if (tcld->merge_group.origverts) {
-    BLI_ghash_free(tcld->merge_group.origverts, NULL, NULL);
-  }
-  if (tcld->arena) {
-    BLI_memarena_free(tcld->arena);
-  }
-  if (tcld->merge_group.customdatalayer_map) {
-    MEM_freeN(tcld->merge_group.customdatalayer_map);
-  }
-
-  MEM_freeN(tcld);
-  custom_data->data = NULL;
-}
 
 #define USE_FACE_SUBSTITUTE
 #ifdef USE_FACE_SUBSTITUTE
@@ -292,8 +350,8 @@ static void tc_mesh_customdatacorrect_init_container_merge_group(TransDataContai
       tcld->arena, tcld->merge_group.data_len * sizeof(*tcld->merge_group.data));
 }
 
-static struct TransCustomDataLayer *tc_mesh_customdatacorrect_create(TransDataContainer *tc,
-                                                                     const bool use_merge_group)
+static struct TransCustomDataLayer *tc_mesh_customdatacorrect_create_impl(
+    TransDataContainer *tc, const bool use_merge_group)
 {
   BMEditMesh *em = BKE_editmesh_from_object(tc->obedit);
   BMesh *bm = em->bm;
@@ -341,18 +399,41 @@ static struct TransCustomDataLayer *tc_mesh_customdatacorrect_create(TransDataCo
   return tcld;
 }
 
-static void tc_mesh_customdata_create(TransDataContainer *tc, const bool use_merge_group)
+static void tc_mesh_customdatacorrect_create(TransDataContainer *tc, const bool use_merge_group)
 {
   struct TransCustomDataLayer *customdatacorrect;
-  customdatacorrect = tc_mesh_customdatacorrect_create(tc, use_merge_group);
+  customdatacorrect = tc_mesh_customdatacorrect_create_impl(tc, use_merge_group);
 
   if (!customdatacorrect) {
     return;
   }
 
-  BLI_assert(tc->custom.type.data == NULL);
-  tc->custom.type.data = customdatacorrect;
-  tc->custom.type.free_cb = tc_mesh_customdatacorrect_free_fn;
+  struct TransCustomDataMesh *tcmd = tc_mesh_customdata_ensure(tc);
+  BLI_assert(tcmd->cd_layer_correct == NULL);
+  tcmd->cd_layer_correct = customdatacorrect;
+}
+
+static void tc_mesh_customdatacorrect_free(struct TransCustomDataLayer *tcld)
+{
+  bmesh_edit_end(tcld->bm, BMO_OPTYPE_FLAG_UNTAN_MULTIRES);
+
+  if (tcld->bm_origfaces) {
+    BM_mesh_free(tcld->bm_origfaces);
+  }
+  if (tcld->origfaces) {
+    BLI_ghash_free(tcld->origfaces, NULL, NULL);
+  }
+  if (tcld->merge_group.origverts) {
+    BLI_ghash_free(tcld->merge_group.origverts, NULL, NULL);
+  }
+  if (tcld->arena) {
+    BLI_memarena_free(tcld->arena);
+  }
+  if (tcld->merge_group.customdatalayer_map) {
+    MEM_freeN(tcld->merge_group.customdatalayer_map);
+  }
+
+  MEM_freeN(tcld);
 }
 
 void transform_convert_mesh_customdatacorrect_init(TransInfo *t)
@@ -390,10 +471,14 @@ void transform_convert_mesh_customdatacorrect_init(TransInfo *t)
 
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     if (tc->custom.type.data != NULL) {
-      tc_mesh_customdatacorrect_free_fn(t, tc, &tc->custom.type);
+      struct TransCustomDataMesh *tcmd = tc->custom.type.data;
+      if (tcmd && tcmd->cd_layer_correct) {
+        tc_mesh_customdatacorrect_free(tcmd->cd_layer_correct);
+        tcmd->cd_layer_correct = NULL;
+      }
     }
 
-    tc_mesh_customdata_create(tc, use_merge_group);
+    tc_mesh_customdatacorrect_create(tc, use_merge_group);
   }
 }
 
@@ -555,10 +640,11 @@ static void tc_mesh_customdatacorrect_apply_vert(struct TransCustomDataLayer *tc
 
 static void tc_mesh_customdatacorrect_apply(TransDataContainer *tc, bool is_final)
 {
-  if (!tc->custom.type.data) {
+  struct TransCustomDataMesh *tcmd = tc->custom.type.data;
+  struct TransCustomDataLayer *tcld = tcmd ? tcmd->cd_layer_correct : NULL;
+  if (tcld == NULL) {
     return;
   }
-  struct TransCustomDataLayer *tcld = tc->custom.type.data;
   const bool use_merge_group = tcld->use_merge_group;
 
   struct TransCustomDataMergeGroup *merge_data = tcld->merge_group.data;
@@ -590,7 +676,8 @@ static void tc_mesh_customdatacorrect_apply(TransDataContainer *tc, bool is_fina
 static void tc_mesh_customdatacorrect_restore(struct TransInfo *t)
 {
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
-    struct TransCustomDataLayer *tcld = tc->custom.type.data;
+    struct TransCustomDataMesh *tcmd = tc->custom.type.data;
+    struct TransCustomDataLayer *tcld = tcmd ? tcmd->cd_layer_correct : NULL;
     if (!tcld) {
       continue;
     }
@@ -897,11 +984,6 @@ static bool bmesh_test_loose_edge(BMEdge *edge)
   return true;
 }
 
-/**
- * \param mtx: Measure distance in this space.
- * \param dists: Store the closest connected distance to selected vertices.
- * \param index: Optionally store the original index we're measuring the distance to (can be NULL).
- */
 void transform_convert_mesh_connectivity_distance(struct BMesh *bm,
                                                   const float mtx[3][3],
                                                   float *dists,
@@ -1204,8 +1286,6 @@ void transform_convert_mesh_mirrordata_free(struct TransMirrorData *mirror_data)
 /** \name Crazy Space
  * \{ */
 
-/* Detect CrazySpace [tm].
- * Vertices with space affected by quats are marked with #BM_ELEM_TAG */
 void transform_convert_mesh_crazyspace_detect(TransInfo *t,
                                               struct TransDataContainer *tc,
                                               struct BMEditMesh *em,
@@ -1234,7 +1314,8 @@ void transform_convert_mesh_crazyspace_detect(TransInfo *t,
      * correction with \a quats, relative to the coordinates after
      * the modifiers that support deform matrices \a defcos. */
 
-#if 0 /* TODO, fix crazy-space & extrude so it can be enabled for general use - campbell */
+#if 0 /* TODO(@campbellbarton): fix crazy-space & extrude so it can be enabled for general use. \
+       */
       if ((totleft > 0) || (totleft == -1))
 #else
     if (totleft > 0)
@@ -1328,7 +1409,6 @@ static void VertsToTransData(TransInfo *t,
                              TransDataExtension *tx,
                              BMEditMesh *em,
                              BMVert *eve,
-                             float *bweight,
                              const struct TransIslandData *island_data,
                              const int island_index)
 {
@@ -1343,8 +1423,7 @@ static void VertsToTransData(TransInfo *t,
   copy_v3_v3(td->iloc, td->loc);
 
   if ((t->mode == TFM_SHRINKFATTEN) && (em->selectmode & SCE_SELECT_FACE) &&
-      BM_elem_flag_test(eve, BM_ELEM_SELECT) &&
-      (BM_vert_calc_normal_ex(eve, BM_ELEM_SELECT, _no))) {
+      BM_elem_flag_test(eve, BM_ELEM_SELECT) && BM_vert_calc_normal_ex(eve, BM_ELEM_SELECT, _no)) {
     no = _no;
   }
   else {
@@ -1369,17 +1448,13 @@ static void VertsToTransData(TransInfo *t,
   td->ext = NULL;
   td->val = NULL;
   td->extra = eve;
-  if (t->mode == TFM_BWEIGHT) {
-    td->val = bweight;
-    td->ival = *bweight;
-  }
-  else if (t->mode == TFM_SHRINKFATTEN) {
+  if (t->mode == TFM_SHRINKFATTEN) {
     td->ext = tx;
     tx->isize[0] = BM_vert_calc_shell_factor_ex(eve, no, BM_ELEM_SELECT);
   }
 }
 
-void createTransEditVerts(TransInfo *t)
+static void createTransEditVerts(bContext *UNUSED(C), TransInfo *t)
 {
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransDataExtension *tx = NULL;
@@ -1452,7 +1527,7 @@ void createTransEditVerts(TransInfo *t)
           em, calc_single_islands, calc_island_center, calc_island_axismtx, &island_data);
     }
 
-    copy_m3_m4(mtx, tc->obedit->obmat);
+    copy_m3_m4(mtx, tc->obedit->object_to_world);
     /* we use a pseudo-inverse so that when one of the axes is scaled to 0,
      * matrix inversion still works and we can still moving along the other */
     pseudoinverse_m3_m3(smtx, mtx, PSEUDOINVERSE_EPSILON);
@@ -1509,12 +1584,6 @@ void createTransEditVerts(TransInfo *t)
                                       "TransObData ext");
     }
 
-    int cd_vert_bweight_offset = -1;
-    if (t->mode == TFM_BWEIGHT) {
-      BM_mesh_cd_flag_ensure(bm, BKE_mesh_from_object(tc->obedit), ME_CDFLAG_VERT_BWEIGHT);
-      cd_vert_bweight_offset = CustomData_get_offset(&bm->vdata, CD_BWEIGHT);
-    }
-
     TransData *tob = tc->data;
     TransDataMirror *td_mirror = tc->data_mirror;
     BM_ITER_MESH_INDEX (eve, &iter, bm, BM_VERTS_OF_MESH, a) {
@@ -1547,13 +1616,9 @@ void createTransEditVerts(TransInfo *t)
         td_mirror++;
       }
       else if (prop_mode || BM_elem_flag_test(eve, BM_ELEM_SELECT)) {
-        float *bweight = (cd_vert_bweight_offset != -1) ?
-                             BM_ELEM_CD_GET_VOID_P(eve, cd_vert_bweight_offset) :
-                             NULL;
-
         /* Do not use the island center in case we are using islands
          * only to get axis for snap/rotate to normal... */
-        VertsToTransData(t, tob, tx, em, eve, bweight, &island_data, island_index);
+        VertsToTransData(t, tob, tx, em, eve, &island_data, island_index);
         if (tx) {
           tx++;
         }
@@ -1614,6 +1679,318 @@ void createTransEditVerts(TransInfo *t)
 /** \} */
 
 /* -------------------------------------------------------------------- */
+/** \name Recalc Mesh Data (Partial Update)
+ * \{ */
+
+static BMPartialUpdate *tc_mesh_partial_ensure(TransInfo *t,
+                                               TransDataContainer *tc,
+                                               enum ePartialType partial_type)
+{
+  struct TransCustomDataMesh *tcmd = tc_mesh_customdata_ensure(tc);
+
+  struct TransCustomData_PartialUpdate *pupdate = &tcmd->partial_update[partial_type];
+
+  if (pupdate->cache) {
+
+    /* Recalculate partial update data when the proportional editing size changes.
+     *
+     * Note that decreasing the proportional editing size requires the existing
+     * partial data is used before recreating this partial data at the smaller size.
+     * Since excluding geometry from being transformed requires an update.
+     *
+     * Extra logic is needed to account for this situation. */
+
+    bool recalc;
+    if (pupdate->prop_size_prev < t->prop_size) {
+      /* Size increase, simply recalculate. */
+      recalc = true;
+    }
+    else if (pupdate->prop_size_prev > t->prop_size) {
+      /* Size decreased, first use this partial data since reducing the size will transform
+       * geometry which needs recalculating. */
+      pupdate->prop_size_prev = t->prop_size;
+      recalc = false;
+    }
+    else if (pupdate->prop_size != t->prop_size) {
+      BLI_assert(pupdate->prop_size > pupdate->prop_size_prev);
+      recalc = true;
+    }
+    else {
+      BLI_assert(t->prop_size == pupdate->prop_size_prev);
+      recalc = false;
+    }
+
+    if (!recalc) {
+      return pupdate->cache;
+    }
+
+    BM_mesh_partial_destroy(pupdate->cache);
+    pupdate->cache = NULL;
+  }
+
+  BMEditMesh *em = BKE_editmesh_from_object(tc->obedit);
+
+  BM_mesh_elem_index_ensure(em->bm, BM_VERT);
+
+  /* Only use `verts_group` or `verts_mask`. */
+  int *verts_group = NULL;
+  int verts_group_count = 0; /* Number of non-zero elements in `verts_group`. */
+
+  BLI_bitmap *verts_mask = NULL;
+  int verts_mask_count = 0; /* Number of elements enabled in `verts_mask`. */
+
+  if ((partial_type == PARTIAL_TYPE_GROUP) &&
+      ((t->flag & T_PROP_EDIT) || tc->use_mirror_axis_any)) {
+    verts_group = MEM_callocN(sizeof(*verts_group) * em->bm->totvert, __func__);
+    int i;
+    TransData *td;
+    for (i = 0, td = tc->data; i < tc->data_len; i++, td++) {
+      if (td->factor == 0.0f) {
+        continue;
+      }
+      const BMVert *v = (BMVert *)td->extra;
+      const int v_index = BM_elem_index_get(v);
+      BLI_assert(verts_group[v_index] == 0);
+      if (td->factor < 1.0f) {
+        /* Don't use grouping logic with the factor is under 1.0. */
+        verts_group[v_index] = -1;
+      }
+      else {
+        BLI_assert(td->factor == 1.0f);
+        verts_group[v_index] = 1;
+        if (tc->use_mirror_axis_any) {
+          /* Use bits 2-4 for central alignment (don't overlap the first bit). */
+          const int flag = td->flag & (TD_MIRROR_EDGE_X | TD_MIRROR_EDGE_Y | TD_MIRROR_EDGE_Z);
+          verts_group[v_index] |= (flag >> TD_MIRROR_EDGE_AXIS_SHIFT) << 1;
+        }
+      }
+      verts_mask_count += 1;
+    }
+
+    TransDataMirror *td_mirror = tc->data_mirror;
+    for (i = 0; i < tc->data_mirror_len; i++, td_mirror++) {
+      BMVert *v_mirr = (BMVert *)POINTER_OFFSET(td_mirror->loc_src, -offsetof(BMVert, co));
+      /* The equality check is to account for the case when topology mirror moves
+       * the vertex from it's original location to match it's symmetrical position,
+       * with proportional editing enabled. */
+      const int v_mirr_index = BM_elem_index_get(v_mirr);
+      if (verts_group[v_mirr_index] == 0 && equals_v3v3(td_mirror->loc, td_mirror->iloc)) {
+        continue;
+      }
+
+      BMVert *v_mirr_other = (BMVert *)td_mirror->extra;
+      /* This assert should never fail since there is no overlap
+       * between mirrored vertices and non-mirrored. */
+      BLI_assert(verts_group[BM_elem_index_get(v_mirr_other)] == 0);
+      const int v_mirr_other_index = BM_elem_index_get(v_mirr_other);
+
+      if (verts_group[v_mirr_index] == -1) {
+        verts_group[v_mirr_other_index] = -1;
+      }
+      else {
+        /* Use bits 5-8 for mirror (don't overlap previous bits). */
+        const int flag = td_mirror->flag & (TD_MIRROR_X | TD_MIRROR_Y | TD_MIRROR_Z);
+        verts_group[v_mirr_other_index] |= (flag >> TD_MIRROR_EDGE_AXIS_SHIFT) << 4;
+      }
+      verts_mask_count += 1;
+    }
+  }
+  else {
+    /* See the body of the comments in the previous block for details. */
+    verts_mask = BLI_BITMAP_NEW(em->bm->totvert, __func__);
+    int i;
+    TransData *td;
+    for (i = 0, td = tc->data; i < tc->data_len; i++, td++) {
+      if (td->factor == 0.0f) {
+        continue;
+      }
+      const BMVert *v = (BMVert *)td->extra;
+      const int v_index = BM_elem_index_get(v);
+      BLI_assert(!BLI_BITMAP_TEST(verts_mask, v_index));
+      BLI_BITMAP_ENABLE(verts_mask, v_index);
+      verts_mask_count += 1;
+    }
+
+    TransDataMirror *td_mirror = tc->data_mirror;
+    for (i = 0; i < tc->data_mirror_len; i++, td_mirror++) {
+      BMVert *v_mirr = (BMVert *)POINTER_OFFSET(td_mirror->loc_src, -offsetof(BMVert, co));
+      if (!BLI_BITMAP_TEST(verts_mask, BM_elem_index_get(v_mirr)) &&
+          equals_v3v3(td_mirror->loc, td_mirror->iloc)) {
+        continue;
+      }
+
+      BMVert *v_mirr_other = (BMVert *)td_mirror->extra;
+      BLI_assert(!BLI_BITMAP_TEST(verts_mask, BM_elem_index_get(v_mirr_other)));
+      const int v_mirr_other_index = BM_elem_index_get(v_mirr_other);
+      BLI_BITMAP_ENABLE(verts_mask, v_mirr_other_index);
+      verts_mask_count += 1;
+    }
+  }
+
+  switch (partial_type) {
+    case PARTIAL_TYPE_ALL: {
+      pupdate->cache = BM_mesh_partial_create_from_verts(em->bm,
+                                                         &(BMPartialUpdate_Params){
+                                                             .do_tessellate = true,
+                                                             .do_normals = true,
+                                                         },
+                                                         verts_mask,
+                                                         verts_mask_count);
+      break;
+    }
+    case PARTIAL_TYPE_GROUP: {
+      pupdate->cache =
+          (verts_group ? BM_mesh_partial_create_from_verts_group_multi(em->bm,
+                                                                       &(BMPartialUpdate_Params){
+                                                                           .do_tessellate = true,
+                                                                           .do_normals = true,
+                                                                       },
+                                                                       verts_group,
+                                                                       verts_group_count) :
+                         BM_mesh_partial_create_from_verts_group_single(em->bm,
+                                                                        &(BMPartialUpdate_Params){
+                                                                            .do_tessellate = true,
+                                                                            .do_normals = true,
+                                                                        },
+                                                                        verts_mask,
+                                                                        verts_mask_count));
+      break;
+    }
+    case PARTIAL_NONE: {
+      BLI_assert_unreachable();
+    }
+  }
+
+  if (verts_group) {
+    MEM_freeN(verts_group);
+  }
+  else {
+    MEM_freeN(verts_mask);
+  }
+
+  pupdate->prop_size_prev = t->prop_size;
+  pupdate->prop_size = t->prop_size;
+
+  return pupdate->cache;
+}
+
+static void tc_mesh_partial_types_calc(TransInfo *t, struct PartialTypeState *r_partial_state)
+{
+  /* Calculate the kind of partial updates which can be performed. */
+  enum ePartialType partial_for_normals = PARTIAL_NONE;
+  enum ePartialType partial_for_looptri = PARTIAL_NONE;
+
+  /* Note that operations such as #TFM_CREASE are not handled here
+   * (if they were, leaving as #PARTIAL_NONE would be appropriate). */
+  switch (t->mode) {
+    case TFM_TRANSLATION: {
+      partial_for_looptri = PARTIAL_TYPE_GROUP;
+      partial_for_normals = PARTIAL_TYPE_GROUP;
+      /* Translation can rotate when snapping to normal. */
+      if (activeSnap(t) && usingSnappingNormal(t) && validSnappingNormal(t)) {
+        partial_for_normals = PARTIAL_TYPE_ALL;
+      }
+      break;
+    }
+    case TFM_ROTATION: {
+      partial_for_looptri = PARTIAL_TYPE_GROUP;
+      partial_for_normals = PARTIAL_TYPE_ALL;
+      break;
+    }
+    case TFM_RESIZE: {
+      partial_for_looptri = PARTIAL_TYPE_GROUP;
+      partial_for_normals = PARTIAL_TYPE_GROUP;
+      /* Non-uniform scale needs to recalculate all normals
+       * since their relative locations change.
+       * Uniform negative scale can keep normals as-is since the faces are flipped,
+       * normals remain unchanged. */
+      if ((t->con.mode & CON_APPLY) ||
+          (t->values_final[0] != t->values_final[1] || t->values_final[0] != t->values_final[2])) {
+        partial_for_normals = PARTIAL_TYPE_ALL;
+      }
+      break;
+    }
+    default: {
+      partial_for_looptri = PARTIAL_TYPE_ALL;
+      partial_for_normals = PARTIAL_TYPE_ALL;
+      break;
+    }
+  }
+
+  /* With projection, transform isn't affine. */
+  if (activeSnap_SnappingIndividual(t)) {
+    if (partial_for_looptri == PARTIAL_TYPE_GROUP) {
+      partial_for_looptri = PARTIAL_TYPE_ALL;
+    }
+    if (partial_for_normals == PARTIAL_TYPE_GROUP) {
+      partial_for_normals = PARTIAL_TYPE_ALL;
+    }
+  }
+
+  r_partial_state->for_looptri = partial_for_looptri;
+  r_partial_state->for_normals = partial_for_normals;
+}
+
+static void tc_mesh_partial_update(TransInfo *t,
+                                   TransDataContainer *tc,
+                                   const struct PartialTypeState *partial_state)
+{
+  BMEditMesh *em = BKE_editmesh_from_object(tc->obedit);
+
+  struct TransCustomDataMesh *tcmd = tc_mesh_customdata_ensure(tc);
+
+  const struct PartialTypeState *partial_state_prev = &tcmd->partial_update_state_prev;
+
+  /* Promote the partial update types based on the previous state
+   * so the values that no longer modified are reset before being left as-is.
+   * Needed for translation which can toggle snap-to-normal during transform. */
+  const enum ePartialType partial_for_looptri = MAX2(partial_state->for_looptri,
+                                                     partial_state_prev->for_looptri);
+  const enum ePartialType partial_for_normals = MAX2(partial_state->for_normals,
+                                                     partial_state_prev->for_normals);
+
+  if ((partial_for_looptri == PARTIAL_TYPE_ALL) && (partial_for_normals == PARTIAL_TYPE_ALL) &&
+      (em->bm->totvert == em->bm->totvertsel)) {
+    /* The additional cost of generating the partial connectivity data isn't justified
+     * when all data needs to be updated.
+     *
+     * While proportional editing can cause all geometry to need updating with a partial
+     * selection. It's impractical to calculate this ahead of time. Further, the down side of
+     * using partial updates when their not needed is negligible. */
+    BKE_editmesh_looptri_and_normals_calc(em);
+  }
+  else {
+    if (partial_for_looptri != PARTIAL_NONE) {
+      BMPartialUpdate *bmpinfo = tc_mesh_partial_ensure(t, tc, partial_for_looptri);
+      BKE_editmesh_looptri_calc_with_partial_ex(em,
+                                                bmpinfo,
+                                                &(const struct BMeshCalcTessellation_Params){
+                                                    .face_normals = true,
+                                                });
+    }
+
+    if (partial_for_normals != PARTIAL_NONE) {
+      BMPartialUpdate *bmpinfo = tc_mesh_partial_ensure(t, tc, partial_for_normals);
+      /* While not a large difference, take advantage of existing normals where possible. */
+      const bool face_normals = !((partial_for_looptri == PARTIAL_TYPE_ALL) ||
+                                  ((partial_for_looptri == PARTIAL_TYPE_GROUP) &&
+                                   (partial_for_normals == PARTIAL_TYPE_GROUP)));
+      BM_mesh_normals_update_with_partial_ex(em->bm,
+                                             bmpinfo,
+                                             &(const struct BMeshNormalsUpdate_Params){
+                                                 .face_normals = face_normals,
+                                             });
+    }
+  }
+
+  /* Store the previous requested (not the previous used),
+   * since the values used may have been promoted based on the previous types. */
+  tcmd->partial_update_state_prev = *partial_state;
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Recalc Mesh Data
  * \{ */
 
@@ -1652,12 +2029,12 @@ static void tc_mesh_transdata_mirror_apply(TransDataContainer *tc)
   }
 }
 
-void recalcData_mesh(TransInfo *t)
+static void recalcData_mesh(TransInfo *t)
 {
   bool is_canceling = t->state == TRANS_CANCEL;
   /* Apply corrections. */
   if (!is_canceling) {
-    applyProject(t);
+    applySnappingIndividual(t);
 
     bool do_mirror = !(t->flag & T_NO_MIRROR);
     FOREACH_TRANS_DATA_CONTAINER (t, tc) {
@@ -1675,20 +2052,23 @@ void recalcData_mesh(TransInfo *t)
     tc_mesh_customdatacorrect_restore(t);
   }
 
+  struct PartialTypeState partial_state;
+  tc_mesh_partial_types_calc(t, &partial_state);
+
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
-    DEG_id_tag_update(tc->obedit->data, 0); /* sets recalc flags */
-    BMEditMesh *em = BKE_editmesh_from_object(tc->obedit);
-    EDBM_mesh_normals_update(em);
-    BKE_editmesh_looptri_calc(em);
+    DEG_id_tag_update(tc->obedit->data, ID_RECALC_GEOMETRY);
+
+    tc_mesh_partial_update(t, tc, &partial_state);
   }
 }
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
 /** \name Special After Transform Mesh
  * \{ */
 
-void special_aftertrans_update__mesh(bContext *UNUSED(C), TransInfo *t)
+static void special_aftertrans_update__mesh(bContext *UNUSED(C), TransInfo *t)
 {
   const bool is_canceling = (t->state == TRANS_CANCEL);
   const bool use_automerge = !is_canceling && (t->flag & (T_AUTOMERGE | T_AUTOSPLIT)) != 0;
@@ -1743,8 +2123,16 @@ void special_aftertrans_update__mesh(bContext *UNUSED(C), TransInfo *t)
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     /* table needs to be created for each edit command, since vertices can move etc */
     ED_mesh_mirror_spatial_table_end(tc->obedit);
-    /* TODO(campbell): xform: We need support for many mirror objects at once! */
+    /* TODO(@campbellbarton): xform: We need support for many mirror objects at once! */
     break;
   }
 }
+
 /** \} */
+
+TransConvertTypeInfo TransConvertType_Mesh = {
+    /* flags */ (T_EDIT | T_POINTS),
+    /* createTransData */ createTransEditVerts,
+    /* recalcData */ recalcData_mesh,
+    /* special_aftertrans_update */ special_aftertrans_update__mesh,
+};

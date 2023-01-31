@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2007 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2007 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup nodes
@@ -34,6 +18,7 @@
 #include "BLT_translation.h"
 
 #include "BKE_context.h"
+#include "BKE_layer.h"
 #include "BKE_linestyle.h"
 #include "BKE_node.h"
 #include "BKE_paint.h"
@@ -47,8 +32,11 @@
 #include "DEG_depsgraph.h"
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "RE_texture.h"
+
+#include "UI_resources.h"
 
 static void texture_get_from_context(const bContext *C,
                                      bNodeTreeType *UNUSED(treetype),
@@ -59,7 +47,8 @@ static void texture_get_from_context(const bContext *C,
   SpaceNode *snode = CTX_wm_space_node(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
   Tex *tx = NULL;
 
   if (snode->texfrom == SNODE_TEX_BRUSH) {
@@ -101,7 +90,7 @@ static void foreach_nodeclass(Scene *UNUSED(scene), void *calldata, bNodeClassCa
   func(calldata, NODE_CLASS_OP_COLOR, N_("Color"));
   func(calldata, NODE_CLASS_PATTERN, N_("Patterns"));
   func(calldata, NODE_CLASS_TEXTURE, N_("Textures"));
-  func(calldata, NODE_CLASS_CONVERTOR, N_("Convertor"));
+  func(calldata, NODE_CLASS_CONVERTER, N_("Converter"));
   func(calldata, NODE_CLASS_DISTORT, N_("Distort"));
   func(calldata, NODE_CLASS_GROUP, N_("Group"));
   func(calldata, NODE_CLASS_INTERFACE, N_("Interface"));
@@ -132,30 +121,16 @@ static void localize(bNodeTree *UNUSED(localtree), bNodeTree *UNUSED(ntree))
 }
 #endif
 
-static void local_sync(bNodeTree *localtree, bNodeTree *ntree)
-{
-  BKE_node_preview_sync_tree(ntree, localtree);
-}
-
-static void local_merge(Main *UNUSED(bmain), bNodeTree *localtree, bNodeTree *ntree)
-{
-  BKE_node_preview_merge_tree(ntree, localtree, true);
-}
-
 static void update(bNodeTree *ntree)
 {
   ntree_update_reroute_nodes(ntree);
-
-  if (ntree->update & NTREE_UPDATE_NODES) {
-    /* clean up preview cache, in case nodes have been removed */
-    BKE_node_preview_remove_unused(ntree);
-  }
 }
 
-static bool texture_node_tree_socket_type_valid(eNodeSocketDatatype socket_type,
-                                                bNodeTreeType *UNUSED(ntreetype))
+static bool texture_node_tree_socket_type_valid(bNodeTreeType *UNUSED(ntreetype),
+                                                bNodeSocketType *socket_type)
 {
-  return ELEM(socket_type, SOCK_FLOAT, SOCK_VECTOR, SOCK_RGBA);
+  return nodeIsStaticSocketType(socket_type) &&
+         ELEM(socket_type->type, SOCK_FLOAT, SOCK_VECTOR, SOCK_RGBA);
 }
 
 bNodeTreeType *ntreeType_Texture;
@@ -167,21 +142,77 @@ void register_node_tree_type_tex(void)
 
   tt->type = NTREE_TEXTURE;
   strcpy(tt->idname, "TextureNodeTree");
+  strcpy(tt->group_idname, "TextureNodeGroup");
   strcpy(tt->ui_name, N_("Texture Node Editor"));
-  tt->ui_icon = 0; /* defined in drawnode.c */
+  tt->ui_icon = ICON_NODE_TEXTURE; /* Defined in `drawnode.c`. */
   strcpy(tt->ui_description, N_("Texture nodes"));
 
   tt->foreach_nodeclass = foreach_nodeclass;
   tt->update = update;
   tt->localize = localize;
-  tt->local_sync = local_sync;
-  tt->local_merge = local_merge;
   tt->get_from_context = texture_get_from_context;
   tt->valid_socket_type = texture_node_tree_socket_type_valid;
 
   tt->rna_ext.srna = &RNA_TextureNodeTree;
 
   ntreeTypeAdd(tt);
+}
+
+/**** Material/Texture trees ****/
+
+bNodeThreadStack *ntreeGetThreadStack(bNodeTreeExec *exec, int thread)
+{
+  ListBase *lb = &exec->threadstack[thread];
+  bNodeThreadStack *nts;
+
+  for (nts = (bNodeThreadStack *)lb->first; nts; nts = nts->next) {
+    if (!nts->used) {
+      nts->used = true;
+      break;
+    }
+  }
+
+  if (!nts) {
+    nts = MEM_callocN(sizeof(bNodeThreadStack), "bNodeThreadStack");
+    nts->stack = (bNodeStack *)MEM_dupallocN(exec->stack);
+    nts->used = true;
+    BLI_addtail(lb, nts);
+  }
+
+  return nts;
+}
+
+void ntreeReleaseThreadStack(bNodeThreadStack *nts)
+{
+  nts->used = false;
+}
+
+bool ntreeExecThreadNodes(bNodeTreeExec *exec, bNodeThreadStack *nts, void *callerdata, int thread)
+{
+  bNodeStack *nsin[MAX_SOCKET] = {NULL};  /* arbitrary... watch this */
+  bNodeStack *nsout[MAX_SOCKET] = {NULL}; /* arbitrary... watch this */
+  bNodeExec *nodeexec;
+  bNode *node;
+  int n;
+
+  /* nodes are presorted, so exec is in order of list */
+
+  for (n = 0, nodeexec = exec->nodeexec; n < exec->totnodes; n++, nodeexec++) {
+    node = nodeexec->node;
+    if (node->need_exec) {
+      node_get_stack(node, nts->stack, nsin, nsout);
+      /* Handle muted nodes...
+       * If the mute func is not set, assume the node should never be muted,
+       * and hence execute it!
+       */
+      if (node->typeinfo->exec_fn && !(node->flag & NODE_MUTED)) {
+        node->typeinfo->exec_fn(callerdata, thread, node, &nodeexec->data, nsin, nsout);
+      }
+    }
+  }
+
+  /* signal to that all went OK, for render */
+  return true;
 }
 
 bNodeTreeExec *ntreeTexBeginExecTree_internal(bNodeExecContext *context,
@@ -220,7 +251,7 @@ bNodeTreeExec *ntreeTexBeginExecTree(bNodeTree *ntree)
 
   exec = ntreeTexBeginExecTree_internal(&context, ntree, NODE_INSTANCE_KEY_BASE);
 
-  /* XXX this should not be necessary, but is still used for cmp/sha/tex nodes,
+  /* XXX this should not be necessary, but is still used for compositor/shading/texture nodes,
    * which only store the ntree pointer. Should be fixed at some point!
    */
   ntree->execdata = exec;
@@ -277,7 +308,8 @@ void ntreeTexEndExecTree(bNodeTreeExec *exec)
     bNodeTree *ntree = exec->nodetree;
     ntreeTexEndExecTree_internal(exec);
 
-    /* XXX clear nodetree backpointer to exec data, same problem as noted in ntreeBeginExecTree */
+    /* XXX: clear node-tree back-pointer to exec data,
+     * same problem as noted in #ntreeBeginExecTree. */
     ntree->execdata = NULL;
   }
 }
@@ -296,7 +328,6 @@ int ntreeTexExecTree(bNodeTree *ntree,
                      MTex *mtex)
 {
   TexCallData data;
-  float *nor = target->nor;
   int retval = TEX_INT;
   bNodeThreadStack *nts = NULL;
   bNodeTreeExec *exec = ntree->execdata;
@@ -328,14 +359,7 @@ int ntreeTexExecTree(bNodeTree *ntree,
   ntreeExecThreadNodes(exec, nts, &data, thread);
   ntreeReleaseThreadStack(nts);
 
-  if (target->nor) {
-    retval |= TEX_NOR;
-  }
   retval |= TEX_RGB;
-  /* confusing stuff; the texture output node sets this to NULL to indicate no normal socket was
-   * set however, the texture code checks this for other reasons
-   * (namely, a normal is required for material). */
-  target->nor = nor;
 
   return retval;
 }

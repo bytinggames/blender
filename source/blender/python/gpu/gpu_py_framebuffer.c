@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bpygpu
@@ -20,8 +6,8 @@
  * This file defines the framebuffer functionalities of the 'gpu' module
  * used for off-screen OpenGL rendering.
  *
- * - Use ``bpygpu_`` for local API.
- * - Use ``BPyGPU`` for public API.
+ * - Use `bpygpu_` for local API.
+ * - Use `BPyGPU` for public API.
  */
 
 #include <Python.h>
@@ -35,11 +21,9 @@
 #include "../mathutils/mathutils.h"
 
 #include "gpu_py.h"
-#include "gpu_py_texture.h"
-
-#include "gpu_py.h"
 #include "gpu_py_buffer.h"
 #include "gpu_py_framebuffer.h" /* own include */
+#include "gpu_py_texture.h"
 
 /* -------------------------------------------------------------------- */
 /** \name GPUFrameBuffer Common Utilities
@@ -130,8 +114,8 @@ static bool pygpu_framebuffer_stack_pop_and_restore_or_error(GPUFrameBuffer *fb)
  * \{ */
 
 typedef struct {
-  PyObject_HEAD /* required python macro */
-      BPyGPUFrameBuffer *py_fb;
+  PyObject_HEAD /* Required Python macro. */
+  BPyGPUFrameBuffer *py_fb;
   int level;
 } PyFrameBufferStackContext;
 
@@ -292,7 +276,14 @@ static PyObject *pygpu_framebuffer__tp_new(PyTypeObject *UNUSED(self),
   PyObject *depth_attachment = NULL;
   PyObject *color_attachements = NULL;
   static const char *_keywords[] = {"depth_slot", "color_slots", NULL};
-  static _PyArg_Parser _parser = {"|$OO:GPUFrameBuffer.__new__", _keywords, 0};
+  static _PyArg_Parser _parser = {
+      "|$" /* Optional keyword only arguments. */
+      "O"  /* `depth_slot` */
+      "O"  /* `color_slots` */
+      ":GPUFrameBuffer.__new__",
+      _keywords,
+      0,
+  };
   if (!_PyArg_ParseTupleAndKeywordsFast(
           args, kwds, &_parser, &depth_attachment, &color_attachements)) {
     return NULL;
@@ -323,9 +314,9 @@ static PyObject *pygpu_framebuffer__tp_new(PyTypeObject *UNUSED(self),
         return NULL;
       }
 
-      for (int i = 1; i <= color_attachements_len; i++) {
+      for (int i = 0; i < color_attachements_len; i++) {
         PyObject *o = PySequence_GetItem(color_attachements, i);
-        bool ok = pygpu_framebuffer_new_parse_arg(o, &config[i]);
+        bool ok = pygpu_framebuffer_new_parse_arg(o, &config[i + 1]);
         Py_DECREF(o);
         if (!ok) {
           return NULL;
@@ -379,7 +370,15 @@ static PyObject *pygpu_framebuffer_clear(BPyGPUFrameBuffer *self, PyObject *args
   PyObject *py_stencil = NULL;
 
   static const char *_keywords[] = {"color", "depth", "stencil", NULL};
-  static _PyArg_Parser _parser = {"|$OOO:clear", _keywords, 0};
+  static _PyArg_Parser _parser = {
+      "|$" /* Optional keyword only arguments. */
+      "O"  /* `color` */
+      "O"  /* `depth` */
+      "O"  /* `stencil` */
+      ":clear",
+      _keywords,
+      0,
+  };
   if (!_PyArg_ParseTupleAndKeywordsFast(args, kwds, &_parser, &py_col, &py_depth, &py_stencil)) {
     return NULL;
   }
@@ -422,9 +421,10 @@ PyDoc_STRVAR(pygpu_framebuffer_viewport_set_doc,
              "   Set the viewport for this framebuffer object.\n"
              "   Note: The viewport state is not saved upon framebuffer rebind.\n"
              "\n"
-             "   :param x, y: lower left corner of the viewport_set rectangle, in pixels.\n"
-             "   :param xsize, ysize: width and height of the viewport_set.\n"
-             "   :type x, y, xsize, ysize: int\n");
+             "   :arg x, y: lower left corner of the viewport_set rectangle, in pixels.\n"
+             "   :type x, y: int\n"
+             "   :arg xsize, ysize: width and height of the viewport_set.\n"
+             "   :type xsize, ysize: int\n");
 static PyObject *pygpu_framebuffer_viewport_set(BPyGPUFrameBuffer *self,
                                                 PyObject *args,
                                                 void *UNUSED(type))
@@ -463,16 +463,16 @@ PyDoc_STRVAR(
     "\n"
     "   Read a block of pixels from the frame buffer.\n"
     "\n"
-    "   :param x, y: Lower left corner of a rectangular block of pixels.\n"
-    "   :param xsize, ysize: Dimensions of the pixel rectangle.\n"
+    "   :arg x, y: Lower left corner of a rectangular block of pixels.\n"
+    "   :arg xsize, ysize: Dimensions of the pixel rectangle.\n"
     "   :type x, y, xsize, ysize: int\n"
-    "   :param channels: Number of components to read.\n"
+    "   :arg channels: Number of components to read.\n"
     "   :type channels: int\n"
-    "   :param slot: The framebuffer slot to read data from.\n"
+    "   :arg slot: The framebuffer slot to read data from.\n"
     "   :type slot: int\n"
-    "   :param format: The format that describes the content of a single channel.\n"
+    "   :arg format: The format that describes the content of a single channel.\n"
     "      Possible values are `FLOAT`, `INT`, `UINT`, `UBYTE`, `UINT_24_8` and `10_11_11_REV`.\n"
-    "   :type type: str\n"
+    "   :type format: str\n"
     "   :arg data: Optional Buffer object to fill with the pixels values.\n"
     "   :type data: :class:`gpu.types.Buffer`\n"
     "   :return: The Buffer with the read pixels.\n"
@@ -489,7 +489,20 @@ static PyObject *pygpu_framebuffer_read_color(BPyGPUFrameBuffer *self,
 
   static const char *_keywords[] = {
       "x", "y", "xsize", "ysize", "channels", "slot", "format", "data", NULL};
-  static _PyArg_Parser _parser = {"iiiiiIO&|$O!:GPUTexture.__new__", _keywords, 0};
+  static _PyArg_Parser _parser = {
+      "i"  /* `x` */
+      "i"  /* `y` */
+      "i"  /* `xsize` */
+      "i"  /* `ysize` */
+      "i"  /* `channels` */
+      "I"  /* `slot` */
+      "O&" /* `format` */
+      "|$" /* Optional keyword only arguments. */
+      "O!" /* `data` */
+      ":read_color",
+      _keywords,
+      0,
+  };
   if (!_PyArg_ParseTupleAndKeywordsFast(args,
                                         kwds,
                                         &_parser,
@@ -530,6 +543,7 @@ static PyObject *pygpu_framebuffer_read_color(BPyGPUFrameBuffer *self,
       PyErr_SetString(PyExc_BufferError, "the buffer size is smaller than expected");
       return NULL;
     }
+    Py_INCREF(py_buffer);
   }
   else {
     py_buffer = BPyGPU_Buffer_CreatePyObject(
@@ -547,6 +561,69 @@ static PyObject *pygpu_framebuffer_read_color(BPyGPUFrameBuffer *self,
                              (int)slot,
                              pygpu_dataformat.value_found,
                              py_buffer->buf.as_void);
+
+  return (PyObject *)py_buffer;
+}
+
+PyDoc_STRVAR(pygpu_framebuffer_read_depth_doc,
+             ".. function:: read_depth(x, y, xsize, ysize, data=data)\n"
+             "\n"
+             "   Read a pixel depth block from the frame buffer.\n"
+             "\n"
+             "   :arg x, y: Lower left corner of a rectangular block of pixels.\n"
+             "   :type x, y: int\n"
+             "   :arg xsize, ysize: Dimensions of the pixel rectangle.\n"
+             "   :type xsize, ysize: int\n"
+             "   :arg data: Optional Buffer object to fill with the pixels values.\n"
+             "   :type data: :class:`gpu.types.Buffer`\n"
+             "   :return: The Buffer with the read pixels.\n"
+             "   :rtype: :class:`gpu.types.Buffer`\n");
+static PyObject *pygpu_framebuffer_read_depth(BPyGPUFrameBuffer *self,
+                                              PyObject *args,
+                                              PyObject *kwds)
+{
+  PYGPU_FRAMEBUFFER_CHECK_OBJ(self);
+  int x, y, w, h;
+  BPyGPUBuffer *py_buffer = NULL;
+
+  static const char *_keywords[] = {"x", "y", "xsize", "ysize", "data", NULL};
+  static _PyArg_Parser _parser = {
+      "i"  /* `x` */
+      "i"  /* `y` */
+      "i"  /* `xsize` */
+      "i"  /* `ysize` */
+      "|$" /* Optional keyword only arguments. */
+      "O!" /* `data` */
+      ":read_depth",
+      _keywords,
+      0,
+  };
+  if (!_PyArg_ParseTupleAndKeywordsFast(
+          args, kwds, &_parser, &x, &y, &w, &h, &BPyGPU_BufferType, &py_buffer)) {
+    return NULL;
+  }
+
+  if (py_buffer) {
+    if (py_buffer->format != GPU_DATA_FLOAT) {
+      PyErr_SetString(PyExc_AttributeError, "the format of the buffer must be 'GPU_DATA_FLOAT'");
+      return NULL;
+    }
+
+    size_t size_curr = bpygpu_Buffer_size(py_buffer);
+    size_t size_expected = w * h * GPU_texture_dataformat_size(GPU_DATA_FLOAT);
+    if (size_curr < size_expected) {
+      PyErr_SetString(PyExc_BufferError, "the buffer size is smaller than expected");
+      return NULL;
+    }
+    Py_INCREF(py_buffer);
+  }
+  else {
+    py_buffer = BPyGPU_Buffer_CreatePyObject(GPU_DATA_FLOAT, (Py_ssize_t[]){h, w}, 2, NULL);
+    BLI_assert(bpygpu_Buffer_size(py_buffer) ==
+               w * h * GPU_texture_dataformat_size(GPU_DATA_FLOAT));
+  }
+
+  GPU_framebuffer_read_depth(self->fb, x, y, w, h, GPU_DATA_FLOAT, py_buffer->buf.as_void);
 
   return (PyObject *)py_buffer;
 }
@@ -598,6 +675,10 @@ static struct PyMethodDef pygpu_framebuffer__tp_methods[] = {
      (PyCFunction)pygpu_framebuffer_read_color,
      METH_VARARGS | METH_KEYWORDS,
      pygpu_framebuffer_read_color_doc},
+    {"read_depth",
+     (PyCFunction)pygpu_framebuffer_read_depth,
+     METH_VARARGS | METH_KEYWORDS,
+     pygpu_framebuffer_read_depth_doc},
 #ifdef BPYGPU_USE_GPUOBJ_FREE_METHOD
     {"free", (PyCFunction)pygpu_framebuffer_free, METH_NOARGS, pygpu_framebuffer_free_doc},
 #endif
@@ -607,7 +688,7 @@ static struct PyMethodDef pygpu_framebuffer__tp_methods[] = {
 PyDoc_STRVAR(pygpu_framebuffer__tp_doc,
              ".. class:: GPUFrameBuffer(depth_slot=None, color_slots=None)\n"
              "\n"
-             "   This object gives access to framebuffer functionallities.\n"
+             "   This object gives access to framebuffer functionalities.\n"
              "   When a 'layer' is specified in a argument, a single layer of a 3D or array "
              "texture is attached to the frame-buffer.\n"
              "   For cube map textures, layer is translated into a cube map face.\n"

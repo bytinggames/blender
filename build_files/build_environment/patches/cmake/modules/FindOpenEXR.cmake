@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Module to find OpenEXR.
 #
 # This module will first look into the directories defined by the variables:
@@ -22,7 +24,7 @@
 #                       These are defined by the FindIlmBase module.
 # OPENEXR_FOUND       - True if OpenEXR was found.
 
-# Other standarnd issue macros
+# Other standard issue macros
 include(SelectLibraryConfigurations)
 include(FindPackageHandleStandardArgs)
 include(FindPackageMessage)
@@ -173,7 +175,8 @@ if(OPENEXR_INCLUDE_DIR)
              "\\1" XYZ ${OPENEXR_BUILD_SPECIFICATION})
       set("OPENEXR_VERSION" ${XYZ} CACHE STRING "Version of OpenEXR lib")
     else()
-      # Old versions (before 2.0?) do not have any version string, just assuming 2.0 should be fine though.
+      # Old versions (before 2.0?) do not have any version string,
+      # just assuming 2.0 should be fine though.
       message(WARNING "Could not determine ILMBase library version, assuming 2.0.")
       set("OPENEXR_VERSION" "2.0" CACHE STRING "Version of OpenEXR lib")
     endif()

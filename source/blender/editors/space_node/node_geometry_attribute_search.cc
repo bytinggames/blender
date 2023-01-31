@@ -1,22 +1,9 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include "BLI_index_range.hh"
 #include "BLI_listbase.h"
 #include "BLI_map.hh"
+#include "BLI_rect.h"
 #include "BLI_set.hh"
 #include "BLI_string_ref.hh"
 #include "BLI_string_search.h"
@@ -27,138 +14,211 @@
 #include "DNA_space_types.h"
 
 #include "BKE_context.h"
-#include "BKE_node_ui_storage.hh"
+#include "BKE_node_runtime.hh"
+#include "BKE_node_tree_update.h"
 #include "BKE_object.h"
 
 #include "RNA_access.h"
 #include "RNA_enum_types.h"
 
+#include "ED_node.h"
+#include "ED_screen.h"
+#include "ED_undo.h"
+
 #include "BLT_translation.h"
 
 #include "UI_interface.h"
+#include "UI_interface.hh"
 #include "UI_resources.h"
 
-#include "node_intern.h"
+#include "NOD_geometry_nodes_log.hh"
 
-using blender::IndexRange;
-using blender::Map;
-using blender::Set;
-using blender::StringRef;
+#include "node_intern.hh"
+
+using blender::nodes::geo_eval_log::GeometryAttributeInfo;
+
+namespace blender::ed::space_node {
 
 struct AttributeSearchData {
-  AvailableAttributeInfo &dummy_info_for_search;
-  const NodeUIStorage &ui_storage;
-  bNodeSocket &socket;
+  char node_name[MAX_NAME];
+  char socket_identifier[MAX_NAME];
 };
 
 /* This class must not have a destructor, since it is used by buttons and freed with #MEM_freeN. */
 BLI_STATIC_ASSERT(std::is_trivially_destructible_v<AttributeSearchData>, "");
 
-static StringRef attribute_data_type_string(const CustomDataType type)
+static Vector<const GeometryAttributeInfo *> get_attribute_info_from_context(
+    const bContext &C, AttributeSearchData &data)
 {
-  const char *name = nullptr;
-  RNA_enum_name_from_value(rna_enum_attribute_type_items, type, &name);
-  return StringRef(IFACE_(name));
-}
+  using namespace nodes::geo_eval_log;
 
-static StringRef attribute_domain_string(const AttributeDomain domain)
-{
-  const char *name = nullptr;
-  RNA_enum_name_from_value(rna_enum_attribute_domain_items, domain, &name);
-  return StringRef(IFACE_(name));
-}
+  SpaceNode *snode = CTX_wm_space_node(&C);
+  if (!snode) {
+    BLI_assert_unreachable();
+    return {};
+  }
+  bNodeTree *node_tree = snode->edittree;
+  if (node_tree == nullptr) {
+    BLI_assert_unreachable();
+    return {};
+  }
+  bNode *node = nodeFindNodebyName(node_tree, data.node_name);
+  if (node == nullptr) {
+    BLI_assert_unreachable();
+    return {};
+  }
+  GeoTreeLog *tree_log = GeoModifierLog::get_tree_log_for_node_editor(*snode);
+  if (tree_log == nullptr) {
+    return {};
+  }
+  tree_log->ensure_socket_values();
 
-/* Unicode arrow. */
-#define MENU_SEP "\xe2\x96\xb6"
-
-static bool attribute_search_item_add(uiSearchItems *items, const AvailableAttributeInfo &item)
-{
-  const StringRef data_type_name = attribute_data_type_string(item.data_type);
-  const StringRef domain_name = attribute_domain_string(item.domain);
-  std::string search_item_text = domain_name + " " + MENU_SEP + item.name + UI_SEP_CHAR +
-                                 data_type_name;
-
-  return UI_search_item_add(
-      items, search_item_text.c_str(), (void *)&item, ICON_NONE, UI_BUT_HAS_SEP_CHAR, 0);
-}
-
-static void attribute_search_update_fn(const bContext *UNUSED(C),
-                                       void *arg,
-                                       const char *str,
-                                       uiSearchItems *items,
-                                       const bool is_first)
-{
-  AttributeSearchData *data = static_cast<AttributeSearchData *>(arg);
-
-  const Set<AvailableAttributeInfo> &attribute_hints = data->ui_storage.attribute_hints;
-
-  /* Any string may be valid, so add the current search string along with the hints. */
-  if (str[0] != '\0') {
-    /* Note that the attribute domain and data type are dummies, since
-     * #AvailableAttributeInfo equality is only based on the string. */
-    if (!attribute_hints.contains(AvailableAttributeInfo{str, ATTR_DOMAIN_AUTO, CD_PROP_BOOL})) {
-      data->dummy_info_for_search.name = std::string(str);
-      UI_search_item_add(items, str, &data->dummy_info_for_search, ICON_ADD, 0, 0);
+  /* For the attribute input node, collect attribute information from all nodes in the group. */
+  if (node->type == GEO_NODE_INPUT_NAMED_ATTRIBUTE) {
+    tree_log->ensure_existing_attributes();
+    Vector<const GeometryAttributeInfo *> attributes;
+    for (const GeometryAttributeInfo *attribute : tree_log->existing_attributes) {
+      if (bke::allow_procedural_attribute_access(attribute->name)) {
+        attributes.append(attribute);
+      }
+    }
+    return attributes;
+  }
+  GeoNodeLog *node_log = tree_log->nodes.lookup_ptr(node->name);
+  if (node_log == nullptr) {
+    return {};
+  }
+  Set<StringRef> names;
+  Vector<const GeometryAttributeInfo *> attributes;
+  for (const bNodeSocket *input_socket : node->input_sockets()) {
+    if (input_socket->type != SOCK_GEOMETRY) {
+      continue;
+    }
+    const ValueLog *value_log = tree_log->find_socket_value_log(*input_socket);
+    if (value_log == nullptr) {
+      continue;
+    }
+    if (const GeometryInfoLog *geo_log = dynamic_cast<const GeometryInfoLog *>(value_log)) {
+      for (const GeometryAttributeInfo &attribute : geo_log->attributes) {
+        if (bke::allow_procedural_attribute_access(attribute.name)) {
+          if (names.add(attribute.name)) {
+            attributes.append(&attribute);
+          }
+        }
+      }
     }
   }
-
-  if (str[0] == '\0' && !is_first) {
-    /* Allow clearing the text field when the string is empty, but not on the first pass,
-     * or opening an attribute field for the first time would show this search item. */
-    data->dummy_info_for_search.name = std::string(str);
-    UI_search_item_add(items, str, &data->dummy_info_for_search, ICON_X, 0, 0);
-  }
-
-  /* Don't filter when the menu is first opened, but still run the search
-   * so the items are in the same order they will appear in while searching. */
-  const char *string = is_first ? "" : str;
-
-  StringSearch *search = BLI_string_search_new();
-  for (const AvailableAttributeInfo &item : attribute_hints) {
-    BLI_string_search_add(search, item.name.c_str(), (void *)&item);
-  }
-
-  AvailableAttributeInfo **filtered_items;
-  const int filtered_amount = BLI_string_search_query(search, string, (void ***)&filtered_items);
-
-  for (const int i : IndexRange(filtered_amount)) {
-    const AvailableAttributeInfo *item = filtered_items[i];
-    if (!attribute_search_item_add(items, *item)) {
-      break;
-    }
-  }
-
-  MEM_freeN(filtered_items);
-  BLI_string_search_free(search);
+  return attributes;
 }
 
-static void attribute_search_exec_fn(bContext *UNUSED(C), void *data_v, void *item_v)
+static void attribute_search_update_fn(
+    const bContext *C, void *arg, const char *str, uiSearchItems *items, const bool is_first)
 {
-  AttributeSearchData *data = static_cast<AttributeSearchData *>(data_v);
-  AvailableAttributeInfo *item = static_cast<AvailableAttributeInfo *>(item_v);
-
-  bNodeSocket &socket = data->socket;
-  bNodeSocketValueString *value = static_cast<bNodeSocketValueString *>(socket.default_value);
-  BLI_strncpy(value->value, item->name.c_str(), MAX_NAME);
-}
-
-void node_geometry_add_attribute_search_button(const bContext *C,
-                                               const bNodeTree *node_tree,
-                                               const bNode *node,
-                                               PointerRNA *socket_ptr,
-                                               uiLayout *layout)
-{
-  const NodeUIStorage *ui_storage = BKE_node_tree_ui_storage_get_from_context(
-      C, *node_tree, *node);
-
-  if (ui_storage == nullptr) {
-    uiItemR(layout, socket_ptr, "default_value", 0, "", 0);
+  if (ED_screen_animation_playing(CTX_wm_manager(C))) {
     return;
   }
 
-  const NodeTreeUIStorage *tree_ui_storage = node_tree->ui_storage;
+  AttributeSearchData *data = static_cast<AttributeSearchData *>(arg);
 
-  uiBlock *block = uiLayoutGetBlock(layout);
+  Vector<const GeometryAttributeInfo *> infos = get_attribute_info_from_context(*C, *data);
+
+  ui::attribute_search_add_items(str, true, infos, items, is_first);
+}
+
+/**
+ * Some custom data types don't correspond to node types and therefore can't be
+ * used by the named attribute input node. Find the best option or fallback to float.
+ */
+static eCustomDataType data_type_in_attribute_input_node(const eCustomDataType type)
+{
+  switch (type) {
+    case CD_PROP_FLOAT:
+    case CD_PROP_INT32:
+    case CD_PROP_FLOAT3:
+    case CD_PROP_COLOR:
+    case CD_PROP_BOOL:
+      return type;
+    case CD_PROP_BYTE_COLOR:
+      return CD_PROP_COLOR;
+    case CD_PROP_STRING:
+      /* Unsupported currently. */
+      return CD_PROP_FLOAT;
+    case CD_PROP_FLOAT2:
+      /* No 2D vector sockets currently. */
+      return CD_PROP_FLOAT3;
+    case CD_PROP_INT8:
+      return CD_PROP_INT32;
+    default:
+      return CD_PROP_FLOAT;
+  }
+}
+
+static void attribute_search_exec_fn(bContext *C, void *data_v, void *item_v)
+{
+  if (ED_screen_animation_playing(CTX_wm_manager(C))) {
+    return;
+  }
+  GeometryAttributeInfo *item = (GeometryAttributeInfo *)item_v;
+  if (item == nullptr) {
+    return;
+  }
+  SpaceNode *snode = CTX_wm_space_node(C);
+  if (!snode) {
+    BLI_assert_unreachable();
+    return;
+  }
+  bNodeTree *node_tree = snode->edittree;
+  if (node_tree == nullptr) {
+    BLI_assert_unreachable();
+    return;
+  }
+  AttributeSearchData *data = static_cast<AttributeSearchData *>(data_v);
+  bNode *node = nodeFindNodebyName(node_tree, data->node_name);
+  if (node == nullptr) {
+    BLI_assert_unreachable();
+    return;
+  }
+  bNodeSocket *socket = bke::node_find_enabled_input_socket(*node, data->socket_identifier);
+  if (socket == nullptr) {
+    BLI_assert_unreachable();
+    return;
+  }
+  BLI_assert(socket->type == SOCK_STRING);
+
+  /* For the attribute input node, also adjust the type and links connected to the output. */
+  if (node->type == GEO_NODE_INPUT_NAMED_ATTRIBUTE && item->data_type.has_value()) {
+    NodeGeometryInputNamedAttribute &storage = *(NodeGeometryInputNamedAttribute *)node->storage;
+    const eCustomDataType new_type = data_type_in_attribute_input_node(*item->data_type);
+    if (new_type != storage.data_type) {
+      storage.data_type = new_type;
+      /* Make the output socket with the new type on the attribute input node active. */
+      node->typeinfo->updatefunc(node_tree, node);
+
+      /* Relink all node links to the newly active output socket. */
+      bNodeSocket *output_socket = bke::node_find_enabled_output_socket(*node, "Attribute");
+      LISTBASE_FOREACH (bNodeLink *, link, &node_tree->links) {
+        if (link->fromnode == node) {
+          link->fromsock = output_socket;
+          BKE_ntree_update_tag_link_changed(node_tree);
+        }
+      }
+    }
+    BKE_ntree_update_tag_node_property(node_tree, node);
+    ED_node_tree_propagate_change(C, CTX_data_main(C), node_tree);
+  }
+
+  bNodeSocketValueString *value = static_cast<bNodeSocketValueString *>(socket->default_value);
+  BLI_strncpy(value->value, item->name.c_str(), MAX_NAME);
+
+  ED_undo_push(C, "Assign Attribute Name");
+}
+
+void node_geometry_add_attribute_search_button(const bContext & /*C*/,
+                                               const bNode &node,
+                                               PointerRNA &socket_ptr,
+                                               uiLayout &layout)
+{
+  uiBlock *block = uiLayoutGetBlock(&layout);
   uiBut *but = uiDefIconTextButR(block,
                                  UI_BTYPE_SEARCH_MENU,
                                  0,
@@ -168,7 +228,7 @@ void node_geometry_add_attribute_search_button(const bContext *C,
                                  0,
                                  10 * UI_UNIT_X, /* Dummy value, replaced by layout system. */
                                  UI_UNIT_Y,
-                                 socket_ptr,
+                                 &socket_ptr,
                                  "default_value",
                                  0,
                                  0.0f,
@@ -177,13 +237,13 @@ void node_geometry_add_attribute_search_button(const bContext *C,
                                  0.0f,
                                  "");
 
-  AttributeSearchData *data = OBJECT_GUARDED_NEW(AttributeSearchData,
-                                                 {tree_ui_storage->dummy_info_for_search,
-                                                  *ui_storage,
-                                                  *static_cast<bNodeSocket *>(socket_ptr->data)});
+  const bNodeSocket &socket = *static_cast<const bNodeSocket *>(socket_ptr.data);
+  AttributeSearchData *data = MEM_new<AttributeSearchData>(__func__);
+  BLI_strncpy(data->node_name, node.name, sizeof(data->node_name));
+  BLI_strncpy(data->socket_identifier, socket.identifier, sizeof(data->socket_identifier));
 
   UI_but_func_search_set_results_are_suggestions(but, true);
-  UI_but_func_search_set_sep_string(but, MENU_SEP);
+  UI_but_func_search_set_sep_string(but, UI_MENU_ARROW_SEP);
   UI_but_func_search_set(but,
                          nullptr,
                          attribute_search_update_fn,
@@ -193,3 +253,5 @@ void node_geometry_add_attribute_search_button(const bContext *C,
                          attribute_search_exec_fn,
                          nullptr);
 }
+
+}  // namespace blender::ed::space_node

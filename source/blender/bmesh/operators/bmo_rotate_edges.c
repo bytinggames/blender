@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -80,7 +66,7 @@ static float bm_edge_rotate_is_boundary(const BMEdge *e)
     do {
       BMEdge *e_iter = l_iter->e;
       const int e_iter_index = BM_elem_index_get(e_iter);
-      if ((e_iter_index != -1)) {
+      if (e_iter_index != -1) {
         if (count == 1) {
           return false;
         }
@@ -191,7 +177,7 @@ static void bm_rotate_edges_shared(
 
           edges_len_rotate += 1;
 
-          /* Note: we could validate all edges which have not been rotated
+          /* NOTE: we could validate all edges which have not been rotated
            * (not just previously degenerate edges).
            * However there is no real need -
            * they can be left until they're popped off the queue. */
@@ -234,7 +220,7 @@ void bmo_rotate_edges_exec(BMesh *bm, BMOperator *op)
 {
   BMOIter siter;
   BMEdge *e;
-  const int edges_len = BMO_slot_buffer_count(op->slots_in, "edges");
+  const int edges_len = BMO_slot_buffer_len(op->slots_in, "edges");
   const bool use_ccw = BMO_slot_bool_get(op->slots_in, "use_ccw");
   const bool is_single = (edges_len == 1);
   short check_flag = is_single ? BM_EDGEROT_CHECK_EXISTS :

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2012 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2012 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup pybmesh
@@ -23,6 +7,7 @@
 
 #include "BLI_math.h"
 #include "BLI_sort.h"
+#include "BLI_string.h"
 
 #include "DNA_material_types.h"
 #include "DNA_mesh_types.h"
@@ -553,7 +538,7 @@ static PyObject *bpy_bmloop_is_convex_get(BPy_BMLoop *self)
 /* ElemSeq
  * ^^^^^^^ */
 
-/* note: use for bmvert/edge/face/loop seq's use these, not bmelemseq directly */
+/* NOTE: use for bmvert/edge/face/loop seq's use these, not bmelemseq directly. */
 PyDoc_STRVAR(bpy_bmelemseq_layers_vert_doc,
              "custom-data layers (read-only).\n\n:type: :class:`BMLayerAccessVert`");
 PyDoc_STRVAR(bpy_bmelemseq_layers_edge_doc,
@@ -1060,34 +1045,30 @@ static PyObject *bpy_bmesh_to_mesh(BPy_BMesh *self, PyObject *args)
 
   /* we could have the user do this but if they forget blender can easy crash
    * since the references arrays for the objects derived meshes are now invalid */
-  DEG_id_tag_update(&me->id, ID_RECALC_GEOMETRY);
+  DEG_id_tag_update(&me->id, ID_RECALC_GEOMETRY_ALL_MODES);
 
   Py_RETURN_NONE;
 }
 
-PyDoc_STRVAR(
-    bpy_bmesh_from_object_doc,
-    ".. method:: from_object(object, depsgraph, deform=True, cage=False, face_normals=True)\n"
-    "\n"
-    "   Initialize this bmesh from existing object datablock (currently only meshes are "
-    "supported).\n"
-    "\n"
-    "   :arg object: The object data to load.\n"
-    "   :type object: :class:`Object`\n"
-    "   :arg deform: Apply deformation modifiers.\n"
-    "   :type deform: boolean\n"
-    "   :arg cage: Get the mesh as a deformed cage.\n"
-    "   :type cage: boolean\n"
-    "   :arg face_normals: Calculate face normals.\n"
-    "   :type face_normals: boolean\n"
-    "\n"
-    "   .. deprecated:: 2.93\n"
-    "\n"
-    "      The deform parameter is deprecated, assumed to be True, and will be removed in version "
-    "3.0.\n");
+PyDoc_STRVAR(bpy_bmesh_from_object_doc,
+             ".. method:: from_object(object, depsgraph, cage=False, face_normals=True, "
+             "vertex_normals=True)\n"
+             "\n"
+             "   Initialize this bmesh from existing object data-block (only meshes are currently "
+             "supported).\n"
+             "\n"
+             "   :arg object: The object data to load.\n"
+             "   :type object: :class:`Object`\n"
+             "   :arg cage: Get the mesh as a deformed cage.\n"
+             "   :type cage: boolean\n"
+             "   :arg face_normals: Calculate face normals.\n"
+             "   :type face_normals: boolean\n"
+             "   :arg vertex_normals: Calculate vertex normals.\n"
+             "   :type vertex_normals: boolean\n");
 static PyObject *bpy_bmesh_from_object(BPy_BMesh *self, PyObject *args, PyObject *kw)
 {
-  static const char *kwlist[] = {"object", "depsgraph", "deform", "cage", "face_normals", NULL};
+  static const char *kwlist[] = {
+      "object", "depsgraph", "cage", "face_normals", "vertex_normals", NULL};
   PyObject *py_object;
   PyObject *py_depsgraph;
   Object *ob, *ob_eval;
@@ -1095,25 +1076,25 @@ static PyObject *bpy_bmesh_from_object(BPy_BMesh *self, PyObject *args, PyObject
   struct Scene *scene_eval;
   Mesh *me_eval;
   BMesh *bm;
-  bool use_deform = true;
   bool use_cage = false;
   bool use_fnorm = true;
+  bool use_vert_normal = true;
   const CustomData_MeshMasks data_masks = CD_MASK_BMESH;
 
   BPY_BM_CHECK_OBJ(self);
 
   if (!PyArg_ParseTupleAndKeywords(args,
                                    kw,
-                                   "OO|O&O&O&:from_object",
+                                   "OO|$O&O&O&:from_object",
                                    (char **)kwlist,
                                    &py_object,
                                    &py_depsgraph,
                                    PyC_ParseBool,
-                                   &use_deform,
-                                   PyC_ParseBool,
                                    &use_cage,
                                    PyC_ParseBool,
-                                   &use_fnorm) ||
+                                   &use_fnorm,
+                                   PyC_ParseBool,
+                                   &use_vert_normal) ||
       !(ob = PyC_RNA_AsPointer(py_object, "Object")) ||
       !(depsgraph = PyC_RNA_AsPointer(py_depsgraph, "Depsgraph"))) {
     return NULL;
@@ -1123,13 +1104,6 @@ static PyObject *bpy_bmesh_from_object(BPy_BMesh *self, PyObject *args, PyObject
     PyErr_SetString(PyExc_ValueError,
                     "from_object(...): currently only mesh objects are supported");
     return NULL;
-  }
-
-  if (use_deform == false) {
-    PyErr_WarnEx(PyExc_FutureWarning,
-                 "from_object(...): the deform parameter is deprecated, assumed to be True, and "
-                 "will be removed in version 3.0",
-                 1);
   }
 
   const bool use_render = DEG_get_mode(depsgraph) == DAG_EVAL_RENDER;
@@ -1146,7 +1120,7 @@ static PyObject *bpy_bmesh_from_object(BPy_BMesh *self, PyObject *args, PyObject
       return NULL;
     }
 
-    me_eval = BKE_mesh_new_from_object(depsgraph, ob_eval, true);
+    me_eval = BKE_mesh_new_from_object(depsgraph, ob_eval, true, false);
     need_free = true;
   }
   else {
@@ -1171,6 +1145,7 @@ static PyObject *bpy_bmesh_from_object(BPy_BMesh *self, PyObject *args, PyObject
                      me_eval,
                      (&(struct BMeshFromMeshParams){
                          .calc_face_normal = use_fnorm,
+                         .calc_vert_normal = use_vert_normal,
                      }));
 
   if (need_free) {
@@ -1182,7 +1157,8 @@ static PyObject *bpy_bmesh_from_object(BPy_BMesh *self, PyObject *args, PyObject
 
 PyDoc_STRVAR(
     bpy_bmesh_from_mesh_doc,
-    ".. method:: from_mesh(mesh, face_normals=True, use_shape_key=False, shape_key_index=0)\n"
+    ".. method:: from_mesh(mesh, face_normals=True, vertex_normals=True, use_shape_key=False, "
+    "shape_key_index=0)\n"
     "\n"
     "   Initialize this bmesh from existing mesh datablock.\n"
     "\n"
@@ -1199,14 +1175,16 @@ PyDoc_STRVAR(
     "\n"
     "      Custom-data layers are only copied from ``mesh`` on initialization.\n"
     "      Further calls will copy custom-data to matching layers, layers missing on the target "
-    "mesh wont be added.\n");
+    "mesh won't be added.\n");
 static PyObject *bpy_bmesh_from_mesh(BPy_BMesh *self, PyObject *args, PyObject *kw)
 {
-  static const char *kwlist[] = {"mesh", "face_normals", "use_shape_key", "shape_key_index", NULL};
+  static const char *kwlist[] = {
+      "mesh", "face_normals", "vertex_normals", "use_shape_key", "shape_key_index", NULL};
   BMesh *bm;
   PyObject *py_mesh;
   Mesh *me;
   bool use_fnorm = true;
+  bool use_vert_normal = true;
   bool use_shape_key = false;
   int shape_key_index = 0;
 
@@ -1214,11 +1192,13 @@ static PyObject *bpy_bmesh_from_mesh(BPy_BMesh *self, PyObject *args, PyObject *
 
   if (!PyArg_ParseTupleAndKeywords(args,
                                    kw,
-                                   "O|O&O&i:from_mesh",
+                                   "O|$O&O&O&i:from_mesh",
                                    (char **)kwlist,
                                    &py_mesh,
                                    PyC_ParseBool,
                                    &use_fnorm,
+                                   PyC_ParseBool,
+                                   &use_vert_normal,
                                    PyC_ParseBool,
                                    &use_shape_key,
                                    &shape_key_index) ||
@@ -1232,6 +1212,7 @@ static PyObject *bpy_bmesh_from_mesh(BPy_BMesh *self, PyObject *args, PyObject *
                      me,
                      (&(struct BMeshFromMeshParams){
                          .calc_face_normal = use_fnorm,
+                         .calc_vert_normal = use_vert_normal,
                          .use_shapekey = use_shape_key,
                          .active_shapekey = shape_key_index + 1,
                      }));
@@ -1279,10 +1260,16 @@ static PyObject *bpy_bmesh_select_flush(BPy_BMesh *self, PyObject *value)
   Py_RETURN_NONE;
 }
 
-PyDoc_STRVAR(bpy_bmesh_normal_update_doc,
-             ".. method:: normal_update()\n"
-             "\n"
-             "   Update mesh normals.\n");
+PyDoc_STRVAR(
+    bpy_bmesh_normal_update_doc,
+    ".. method:: normal_update()\n"
+    "\n"
+    "   Update normals of mesh faces and verts.\n"
+    "\n"
+    "   .. note::\n"
+    "\n"
+    "      The normal of any vertex where :attr:`is_wire` is True will be a zero vector.\n");
+
 static PyObject *bpy_bmesh_normal_update(BPy_BMesh *self)
 {
   BPY_BM_CHECK_OBJ(self);
@@ -1314,7 +1301,7 @@ static PyObject *bpy_bmesh_transform(BPy_BMElem *self, PyObject *args, PyObject 
 
   if (!PyArg_ParseTupleAndKeywords(args,
                                    kw,
-                                   "O!|O!:transform",
+                                   "O!|$O!:transform",
                                    (char **)kwlist,
                                    &matrix_Type,
                                    &mat,
@@ -1330,7 +1317,7 @@ static PyObject *bpy_bmesh_transform(BPy_BMElem *self, PyObject *args, PyObject 
   if (BaseMath_ReadCallback(mat) == -1) {
     return NULL;
   }
-  if (mat->num_col != 4 || mat->num_row != 4) {
+  if (mat->col_num != 4 || mat->row_num != 4) {
     PyErr_SetString(PyExc_ValueError, "expected a 4x4 matrix");
     return NULL;
   }
@@ -1376,7 +1363,7 @@ static PyObject *bpy_bmesh_calc_volume(BPy_BMElem *self, PyObject *args, PyObjec
   BPY_BM_CHECK_OBJ(self);
 
   if (!PyArg_ParseTupleAndKeywords(
-          args, kw, "|O!:calc_volume", (char **)kwlist, &PyBool_Type, &is_signed)) {
+          args, kw, "|$O!:calc_volume", (char **)kwlist, &PyBool_Type, &is_signed)) {
     return NULL;
   }
 
@@ -1395,7 +1382,6 @@ static PyObject *bpy_bmesh_calc_loop_triangles(BPy_BMElem *self)
   BMesh *bm;
 
   int looptris_tot;
-  int tottri;
   BMLoop *(*looptris)[3];
 
   PyObject *ret;
@@ -1408,10 +1394,10 @@ static PyObject *bpy_bmesh_calc_loop_triangles(BPy_BMElem *self)
   looptris_tot = poly_to_tri_count(bm->totface, bm->totloop);
   looptris = PyMem_MALLOC(sizeof(*looptris) * looptris_tot);
 
-  BM_mesh_calc_tessellation(bm, looptris, &tottri);
+  BM_mesh_calc_tessellation(bm, looptris);
 
-  ret = PyList_New(tottri);
-  for (i = 0; i < tottri; i++) {
+  ret = PyList_New(looptris_tot);
+  for (i = 0; i < looptris_tot; i++) {
     PyList_SET_ITEM(ret, i, BPy_BMLoop_Array_As_Tuple(bm, looptris[i], 3));
   }
 
@@ -1632,7 +1618,12 @@ static PyObject *bpy_bmvert_calc_shell_factor(BPy_BMVert *self)
 PyDoc_STRVAR(bpy_bmvert_normal_update_doc,
              ".. method:: normal_update()\n"
              "\n"
-             "   Update vertex normal.\n");
+             "   Update vertex normal.\n"
+             "   This does not update the normals of adjoining faces.\n"
+             "\n"
+             "   .. note::\n"
+             "\n"
+             "      The vertex normal will be a zero vector if vertex :attr:`is_wire` is True.\n");
 static PyObject *bpy_bmvert_normal_update(BPy_BMVert *self)
 {
   BPY_BM_CHECK_OBJ(self);
@@ -1794,10 +1785,15 @@ static PyObject *bpy_bmedge_other_vert(BPy_BMEdge *self, BPy_BMVert *value)
   Py_RETURN_NONE;
 }
 
-PyDoc_STRVAR(bpy_bmedge_normal_update_doc,
-             ".. method:: normal_update()\n"
-             "\n"
-             "   Update edges vertex normals.\n");
+PyDoc_STRVAR(
+    bpy_bmedge_normal_update_doc,
+    ".. method:: normal_update()\n"
+    "\n"
+    "   Update normals of all connected faces and the edge verts.\n"
+    "\n"
+    "   .. note::\n"
+    "\n"
+    "      The normal of edge vertex will be a zero vector if vertex :attr:`is_wire` is True.\n");
 static PyObject *bpy_bmedge_normal_update(BPy_BMEdge *self)
 {
   BPY_BM_CHECK_OBJ(self);
@@ -1869,7 +1865,7 @@ static PyObject *bpy_bmface_copy(BPy_BMFace *self, PyObject *args, PyObject *kw)
 
   if (!PyArg_ParseTupleAndKeywords(args,
                                    kw,
-                                   "|O&O&:BMFace.copy",
+                                   "|$O&O&:BMFace.copy",
                                    (char **)kwlist,
                                    PyC_ParseBool,
                                    &do_verts,
@@ -1969,7 +1965,7 @@ static PyObject *bpy_bmface_calc_tangent_edge_diagonal(BPy_BMFace *self)
 PyDoc_STRVAR(bpy_bmface_calc_tangent_vert_diagonal_doc,
              ".. method:: calc_tangent_vert_diagonal()\n"
              "\n"
-             "   Return face tangent based on the two most distent vertices.\n"
+             "   Return face tangent based on the two most distant vertices.\n"
              "\n"
              "   :return: a normalized vector.\n"
              "   :rtype: :class:`mathutils.Vector`\n");
@@ -2033,7 +2029,8 @@ static PyObject *bpy_bmface_calc_center_bounds(BPy_BMFace *self)
 PyDoc_STRVAR(bpy_bmface_normal_update_doc,
              ".. method:: normal_update()\n"
              "\n"
-             "   Update face's normal.\n");
+             "   Update face normal based on the positions of the face verts.\n"
+             "   This does not update the normals of face verts.\n");
 static PyObject *bpy_bmface_normal_update(BPy_BMFace *self)
 {
   BPY_BM_CHECK_OBJ(self);
@@ -2519,7 +2516,7 @@ PyDoc_STRVAR(
     "\n"
     "      Running this on sequences besides :class:`BMesh.verts`, :class:`BMesh.edges`, "
     ":class:`BMesh.faces`\n"
-    "      works but wont result in each element having a valid index, instead its order in the "
+    "      works but won't result in each element having a valid index, instead its order in the "
     "sequence will be set.\n");
 static PyObject *bpy_bmelemseq_index_update(BPy_BMElemSeq *self)
 {
@@ -2607,7 +2604,7 @@ PyDoc_STRVAR(
  * If a portable alternative to qsort_r becomes available, remove this static
  * var hack!
  *
- * Note: the functions below assumes the keys array has been allocated and it
+ * NOTE: the functions below assumes the keys array has been allocated and it
  * has enough elements to complete the task.
  */
 
@@ -2665,7 +2662,7 @@ static PyObject *bpy_bmelemseq_sort(BPy_BMElemSeq *self, PyObject *args, PyObjec
   if (args != NULL) {
     if (!PyArg_ParseTupleAndKeywords(args,
                                      kw,
-                                     "|OO&:BMElemSeq.sort",
+                                     "|$OO&:BMElemSeq.sort",
                                      (char **)kwlist,
                                      &keyfunc,
                                      PyC_ParseBool,
@@ -3039,8 +3036,8 @@ static struct PyMethodDef bpy_bmfaceseq_methods[] = {
 
 static struct PyMethodDef bpy_bmloopseq_methods[] = {
     /* odd function, initializes index values */
-    /* no: index_update() function since we cant iterate over loops */
-    /* no: sort() function since we cant iterate over loops */
+    /* no: index_update() function since we can't iterate over loops */
+    /* no: sort() function since we can't iterate over loops */
     {NULL, NULL, 0, NULL},
 };
 
@@ -3122,7 +3119,7 @@ static Py_ssize_t bpy_bmelemseq_length(BPy_BMElemSeq *self)
   }
 }
 
-static PyObject *bpy_bmelemseq_subscript_int(BPy_BMElemSeq *self, int keynum)
+static PyObject *bpy_bmelemseq_subscript_int(BPy_BMElemSeq *self, Py_ssize_t keynum)
 {
   BPY_BM_CHECK_OBJ(self);
 
@@ -3260,9 +3257,11 @@ static PyObject *bpy_bmelemseq_subscript(BPy_BMElemSeq *self, PyObject *key)
       const Py_ssize_t len = bpy_bmelemseq_length(self);
       if (start < 0) {
         start += len;
+        CLAMP_MIN(start, 0);
       }
       if (stop < 0) {
         stop += len;
+        CLAMP_MIN(stop, 0);
       }
     }
 
@@ -3366,14 +3365,14 @@ static PyObject *bpy_bmiter_next(BPy_BMIter *self)
   return (PyObject *)BPy_BMElem_CreatePyObject(self->bm, ele);
 }
 
-/* Dealloc Functions
- * ================= */
+/* Deallocate Functions
+ * ==================== */
 
 static void bpy_bmesh_dealloc(BPy_BMesh *self)
 {
   BMesh *bm = self->bm;
 
-  /* have have been freed by bmesh */
+  /* The mesh has not been freed by #BMesh. */
   if (bm) {
     bm_dealloc_editmode_warn(self);
 
@@ -3481,7 +3480,7 @@ PyDoc_STRVAR(bpy_bmelemseq_doc,
              ":class:`BMVert`, :class:`BMEdge`, :class:`BMFace`, :class:`BMLoop`.\n"
              "\n"
              "When accessed via :class:`BMesh.verts`, :class:`BMesh.edges`, :class:`BMesh.faces`\n"
-             "there are also functions to create/remomove items.\n");
+             "there are also functions to create/remove items.\n");
 PyDoc_STRVAR(bpy_bmiter_doc,
              "Internal BMesh type for looping over verts/faces/edges,\n"
              "used for iterating over :class:`BMElemSeq` types.\n");
@@ -3654,8 +3653,8 @@ void BPy_BM_init_types(void)
   BPy_BMLoopSeq_Type.tp_methods = bpy_bmloopseq_methods;
   BPy_BMIter_Type.tp_methods = NULL;
 
-  /*BPy_BMElem_Check() uses bpy_bm_elem_hash() to check types.
-   * if this changes update the macro */
+  /* #BPy_BMElem_Check() uses #bpy_bm_elem_hash() to check types.
+   * if this changes update the macro. */
   BPy_BMesh_Type.tp_hash = bpy_bm_hash;
   BPy_BMVert_Type.tp_hash = bpy_bm_elem_hash;
   BPy_BMEdge_Type.tp_hash = bpy_bm_elem_hash;
@@ -3742,7 +3741,7 @@ static struct PyModuleDef BPy_BM_types_module_def = {
     NULL,          /* m_doc */
     0,             /* m_size */
     NULL,          /* m_methods */
-    NULL,          /* m_reload */
+    NULL,          /* m_slots */
     NULL,          /* m_traverse */
     NULL,          /* m_clear */
     NULL,          /* m_free */
@@ -3971,7 +3970,6 @@ PyObject *BPy_BMIter_CreatePyObject(BMesh *bm)
   return (PyObject *)self;
 }
 
-/* this is just a helper func */
 PyObject *BPy_BMElem_CreatePyObject(BMesh *bm, BMHeader *ele)
 {
   switch (ele->htype) {
@@ -4053,11 +4051,6 @@ void bpy_bm_generic_invalidate(BPy_BMGeneric *self)
   self->bm = NULL;
 }
 
-/* generic python seq as BMVert/Edge/Face array,
- * return value must be freed with PyMem_FREE(...);
- *
- * The 'bm_r' value is assigned when empty, and used when set.
- */
 void *BPy_BMElem_PySeq_As_Array_FAST(BMesh **r_bm,
                                      PyObject *seq_fast,
                                      Py_ssize_t min,
@@ -4250,26 +4243,21 @@ int BPy_BMElem_CheckHType(PyTypeObject *type, const char htype)
           ((htype & BM_LOOP) && (type == &BPy_BMLoop_Type)));
 }
 
-/**
- * Use for error strings only, not thread safe,
- *
- * \return a string like '(BMVert/BMEdge/BMFace/BMLoop)'
- */
 char *BPy_BMElem_StringFromHType_ex(const char htype, char ret[32])
 {
   /* zero to ensure string is always NULL terminated */
   char *ret_ptr = ret;
   if (htype & BM_VERT) {
-    ret_ptr += sprintf(ret_ptr, "/%s", BPy_BMVert_Type.tp_name);
+    ret_ptr += BLI_sprintf(ret_ptr, "/%s", BPy_BMVert_Type.tp_name);
   }
   if (htype & BM_EDGE) {
-    ret_ptr += sprintf(ret_ptr, "/%s", BPy_BMEdge_Type.tp_name);
+    ret_ptr += BLI_sprintf(ret_ptr, "/%s", BPy_BMEdge_Type.tp_name);
   }
   if (htype & BM_FACE) {
-    ret_ptr += sprintf(ret_ptr, "/%s", BPy_BMFace_Type.tp_name);
+    ret_ptr += BLI_sprintf(ret_ptr, "/%s", BPy_BMFace_Type.tp_name);
   }
   if (htype & BM_LOOP) {
-    ret_ptr += sprintf(ret_ptr, "/%s", BPy_BMLoop_Type.tp_name);
+    ret_ptr += BLI_sprintf(ret_ptr, "/%s", BPy_BMLoop_Type.tp_name);
   }
   ret[0] = '(';
   *ret_ptr++ = ')';
@@ -4286,10 +4274,10 @@ char *BPy_BMElem_StringFromHType(const char htype)
 /* -------------------------------------------------------------------- */
 /* keep at bottom */
 
-/* this function is called on free, it should stay quite fast */
+/* This function is called on free, it should stay quite fast */
 static void bm_dealloc_editmode_warn(BPy_BMesh *self)
 {
   if (self->flag & BPY_BMFLAG_IS_WRAPPED) {
-    /* currently nop - this works without warnings now */
+    /* Currently NOP - this works without warnings now. */
   }
 }

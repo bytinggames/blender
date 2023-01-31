@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -285,7 +271,7 @@ static void bm_decim_build_edge_cost_single(BMEdge *e,
     cost = (BLI_quadric_evaluate(q1, optimize_co) + BLI_quadric_evaluate(q2, optimize_co));
   }
 
-  /* note, 'cost' shouldn't be negative but happens sometimes with small values.
+  /* NOTE: 'cost' shouldn't be negative but happens sometimes with small values.
    * this can cause faces that make up a flat surface to over-collapse, see T37121. */
   cost = fabsf(cost);
 
@@ -303,7 +289,7 @@ static void bm_decim_build_edge_cost_single(BMEdge *e,
       const float e_weight = (vweights[BM_elem_index_get(e->v1)] +
                               vweights[BM_elem_index_get(e->v2)]);
       cost = bm_decim_build_edge_cost_single__topology(e) - cost;
-      /* note, this is rather arbitrary max weight is 2 here,
+      /* NOTE: this is rather arbitrary max weight is 2 here,
        * allow for skipping edges 4x the length, based on weights */
       if (e_weight) {
         cost *= 1.0f + (e_weight * vweight_factor);
@@ -318,7 +304,7 @@ static void bm_decim_build_edge_cost_single(BMEdge *e,
     const float e_weight = 2.0f - (vweights[BM_elem_index_get(e->v1)] +
                                    vweights[BM_elem_index_get(e->v2)]);
     if (e_weight) {
-      cost += (BM_edge_calc_length(e) * ((e_weight * vweight_factor)));
+      cost += (BM_edge_calc_length(e) * (e_weight * vweight_factor));
     }
   }
 
@@ -531,7 +517,6 @@ static bool bm_decim_triangulate_begin(BMesh *bm, int *r_edges_tri_tot)
 {
   BMIter iter;
   BMFace *f;
-  bool has_quad = false;
   bool has_ngon = false;
   bool has_cut = false;
 
@@ -547,7 +532,6 @@ static bool bm_decim_triangulate_begin(BMesh *bm, int *r_edges_tri_tot)
       BM_elem_index_set(l_iter, -1); /* set_dirty */
     } while ((l_iter = l_iter->next) != l_first);
 
-    has_quad |= (f->len > 3);
     has_ngon |= (f->len > 4);
   }
 
@@ -568,9 +552,9 @@ static bool bm_decim_triangulate_begin(BMesh *bm, int *r_edges_tri_tot)
       pf_heap = NULL;
     }
 
-    /* adding new faces as we loop over faces
+    /* Adding new faces as we loop over faces
      * is normally best avoided, however in this case its not so bad because any face touched twice
-     * will already be triangulated*/
+     * will already be triangulated. */
     BM_ITER_MESH (f, &iter, bm, BM_FACES_OF_MESH) {
       if (f->len > 3) {
         has_cut |= bm_face_triangulate(bm,
@@ -634,9 +618,9 @@ static void bm_decim_triangulate_end(BMesh *bm, const int edges_tri_tot)
     (BM_loop_is_manifold(l) && ((l)->v != (l)->radial_next->v) && \
      (l_a_index == BM_elem_index_get(l)) && (l_a_index == BM_elem_index_get((l)->radial_next)))
 
-            if ((l_a->f->len == 3 && l_b->f->len == 3) && (!CAN_LOOP_MERGE(l_a->next)) &&
-                (!CAN_LOOP_MERGE(l_a->prev)) && (!CAN_LOOP_MERGE(l_b->next)) &&
-                (!CAN_LOOP_MERGE(l_b->prev))) {
+            if ((l_a->f->len == 3 && l_b->f->len == 3) && !CAN_LOOP_MERGE(l_a->next) &&
+                !CAN_LOOP_MERGE(l_a->prev) && !CAN_LOOP_MERGE(l_b->next) &&
+                !CAN_LOOP_MERGE(l_b->prev)) {
               BMVert *vquad[4] = {
                   e->v1,
                   BM_vert_in_edge(e, l_a->next->v) ? l_a->prev->v : l_a->next->v,
@@ -847,7 +831,7 @@ BLI_INLINE int bm_edge_is_manifold_or_boundary(BMLoop *l)
   /* less optimized version of check below */
   return (BM_edge_is_manifold(l->e) || BM_edge_is_boundary(l->e);
 #else
-  /* if the edge is a boundary it points to its self, else this must be a manifold */
+  /* if the edge is a boundary it points to itself, else this must be a manifold */
   return LIKELY(l) && LIKELY(l->radial_next->radial_next == l);
 #endif
 }
@@ -855,7 +839,7 @@ BLI_INLINE int bm_edge_is_manifold_or_boundary(BMLoop *l)
 static bool bm_edge_collapse_is_degenerate_topology(BMEdge *e_first)
 {
   /* simply check that there is no overlap between faces and edges of each vert,
-   * (excluding the 2 faces attached to 'e' and 'e' its self) */
+   * (excluding the 2 faces attached to 'e' and 'e' itself) */
 
   BMEdge *e_iter;
 
@@ -935,9 +919,9 @@ static bool bm_edge_collapse_is_degenerate_topology(BMEdge *e_first)
 }
 
 /**
- * special, highly limited edge collapse function
+ * Special, highly limited edge collapse function
  * intended for speed over flexibility.
- * can only collapse edges connected to (1, 2) tris.
+ * can only collapse edges connected to (1, 2) triangles.
  *
  * Important - don't add vert/edge/face data on collapsing!
  *
@@ -1277,15 +1261,6 @@ static bool bm_decim_edge_collapse(BMesh *bm,
 /* Main Decimate Function
  * ********************** */
 
-/**
- * \brief BM_mesh_decimate
- * \param bm: The mesh
- * \param factor: face count multiplier [0 - 1]
- * \param vweights: Optional array of vertex  aligned weights [0 - 1],
- *        a vertex group is the usual source for this.
- * \param symmetry_axis: Axis of symmetry, -1 to disable mirror decimate.
- * \param symmetry_eps: Threshold when matching mirror verts.
- */
 void BM_mesh_decimate_collapse(BMesh *bm,
                                const float factor,
                                float *vweights,
@@ -1367,7 +1342,7 @@ void BM_mesh_decimate_collapse(BMesh *bm,
       /* handy to detect corruptions elsewhere */
       BLI_assert(BM_elem_index_get(e) < tot_edge_orig);
 
-      /* Under normal conditions wont be accessed again,
+      /* Under normal conditions won't be accessed again,
        * but NULL just in case so we don't use freed node. */
       eheap_table[BM_elem_index_get(e)] = NULL;
 

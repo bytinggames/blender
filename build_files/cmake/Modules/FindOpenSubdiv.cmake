@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2013 Blender Foundation.
+
 # - Find OpenSubdiv library
 # Find the native OpenSubdiv includes and library
 # This module defines
@@ -7,13 +10,6 @@
 #  OPENSUBDIV_ROOT_DIR, the base directory to search for OpenSubdiv.
 #                        This can also be an environment variable.
 #  OPENSUBDIV_FOUND, if false, do not try to use OpenSubdiv.
-
-#=============================================================================
-# Copyright 2013 Blender Foundation.
-#
-# Distributed under the OSI-approved BSD 3-Clause License,
-# see accompanying file BSD-3-Clause-license.txt for details.
-#=============================================================================
 
 # If OPENSUBDIV_ROOT_DIR was defined in the environment, use it.
 IF(NOT OPENSUBDIV_ROOT_DIR AND NOT $ENV{OPENSUBDIV_ROOT_DIR} STREQUAL "")
@@ -75,21 +71,6 @@ FIND_PACKAGE_HANDLE_STANDARD_ARGS(OpenSubdiv DEFAULT_MSG
 IF(OPENSUBDIV_FOUND)
   SET(OPENSUBDIV_LIBRARIES ${_opensubdiv_LIBRARIES})
   SET(OPENSUBDIV_INCLUDE_DIRS ${OPENSUBDIV_INCLUDE_DIR})
-
-  # Find available compute controllers.
-
-  FIND_PACKAGE(OpenMP)
-  IF(OPENMP_FOUND)
-    SET(OPENSUBDIV_HAS_OPENMP TRUE)
-  ELSE()
-    SET(OPENSUBDIV_HAS_OPENMP FALSE)
-  ENDIF()
-
-  OPENSUBDIV_CHECK_CONTROLLER("tbbEvaluator.h" OPENSUBDIV_HAS_TBB)
-  OPENSUBDIV_CHECK_CONTROLLER("clEvaluator.h" OPENSUBDIV_HAS_OPENCL)
-  OPENSUBDIV_CHECK_CONTROLLER("cudaEvaluator.h" OPENSUBDIV_HAS_CUDA)
-  OPENSUBDIV_CHECK_CONTROLLER("glXFBEvaluator.h" OPENSUBDIV_HAS_GLSL_TRANSFORM_FEEDBACK)
-  OPENSUBDIV_CHECK_CONTROLLER("glComputeEvaluator.h" OPENSUBDIV_HAS_GLSL_COMPUTE)
 ENDIF()
 
 MARK_AS_ADVANCED(

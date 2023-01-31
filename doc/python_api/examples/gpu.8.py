@@ -34,14 +34,16 @@ with offscreen.bind():
         for i in range(RING_AMOUNT):
             draw_circle_2d(
                 (random.uniform(-1, 1), random.uniform(-1, 1)),
-                (1, 1, 1, 1), random.uniform(0.1, 1), 20)
+                (1, 1, 1, 1), random.uniform(0.1, 1),
+                segments=20,
+            )
 
     buffer = fb.read_color(0, 0, WIDTH, HEIGHT, 4, 0, 'UBYTE')
 
 offscreen.free()
 
 
-if not IMAGE_NAME in bpy.data.images:
+if IMAGE_NAME not in bpy.data.images:
     bpy.data.images.new(IMAGE_NAME, WIDTH, HEIGHT)
 image = bpy.data.images[IMAGE_NAME]
 image.scale(WIDTH, HEIGHT)

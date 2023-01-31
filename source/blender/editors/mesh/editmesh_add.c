@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2004 by Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2004 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edmesh
@@ -73,11 +57,7 @@ static Object *make_prim_init(bContext *C,
     r_creation_data->was_editmode = true;
   }
 
-  ED_object_new_primitive_matrix(C, obedit, loc, rot, r_creation_data->mat);
-
-  if (scale) {
-    rescale_m4(r_creation_data->mat, scale);
-  }
+  ED_object_new_primitive_matrix(C, obedit, loc, rot, scale, r_creation_data->mat);
 
   return obedit;
 }
@@ -95,7 +75,12 @@ static void make_prim_finish(bContext *C,
   EDBM_selectmode_flush_ex(em, SCE_SELECT_VERTEX);
 
   /* only recalc editmode tessface if we are staying in editmode */
-  EDBM_update_generic(obedit->data, !exit_editmode, true);
+  EDBM_update(obedit->data,
+              &(const struct EDBMUpdate_Params){
+                  .calc_looptri = !exit_editmode,
+                  .calc_normals = false,
+                  .is_destructive = true,
+              });
 
   /* userdef */
   if (exit_editmode) {
@@ -128,7 +113,7 @@ static int add_primitive_plane_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(
@@ -193,7 +178,7 @@ static int add_primitive_cube_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(em,
@@ -267,7 +252,7 @@ static int add_primitive_circle_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(
@@ -339,14 +324,14 @@ static int add_primitive_cylinder_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(em,
                                 op,
                                 "verts.out",
                                 false,
-                                "create_cone segments=%i diameter1=%f diameter2=%f cap_ends=%b "
+                                "create_cone segments=%i radius1=%f radius2=%f cap_ends=%b "
                                 "cap_tris=%b depth=%f matrix=%m4 calc_uvs=%b",
                                 RNA_int_get(op->ptr, "vertices"),
                                 RNA_float_get(op->ptr, "radius"),
@@ -415,14 +400,14 @@ static int add_primitive_cone_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(em,
                                 op,
                                 "verts.out",
                                 false,
-                                "create_cone segments=%i diameter1=%f diameter2=%f cap_ends=%b "
+                                "create_cone segments=%i radius1=%f radius2=%f cap_ends=%b "
                                 "cap_tris=%b depth=%f matrix=%m4 calc_uvs=%b",
                                 RNA_int_get(op->ptr, "vertices"),
                                 RNA_float_get(op->ptr, "radius1"),
@@ -491,7 +476,7 @@ static int add_primitive_grid_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(
@@ -568,7 +553,7 @@ static int add_primitive_monkey_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(em,
@@ -629,7 +614,7 @@ static int add_primitive_uvsphere_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(
@@ -637,7 +622,7 @@ static int add_primitive_uvsphere_exec(bContext *C, wmOperator *op)
           op,
           "verts.out",
           false,
-          "create_uvsphere u_segments=%i v_segments=%i diameter=%f matrix=%m4 calc_uvs=%b",
+          "create_uvsphere u_segments=%i v_segments=%i radius=%f matrix=%m4 calc_uvs=%b",
           RNA_int_get(op->ptr, "segments"),
           RNA_int_get(op->ptr, "ring_count"),
           RNA_float_get(op->ptr, "radius"),
@@ -697,7 +682,7 @@ static int add_primitive_icosphere_exec(bContext *C, wmOperator *op)
   em = BKE_editmesh_from_object(obedit);
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(
@@ -705,7 +690,7 @@ static int add_primitive_icosphere_exec(bContext *C, wmOperator *op)
           op,
           "verts.out",
           false,
-          "create_icosphere subdivisions=%i diameter=%f matrix=%m4 calc_uvs=%b",
+          "create_icosphere subdivisions=%i radius=%f matrix=%m4 calc_uvs=%b",
           RNA_int_get(op->ptr, "subdivisions"),
           RNA_float_get(op->ptr, "radius"),
           creation_data.mat,

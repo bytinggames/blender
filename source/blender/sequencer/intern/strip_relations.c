@@ -1,24 +1,7 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- *
- * - Blender Foundation, 2003-2009
- * - Peter Schlaile <peter [at] schlaile [dot] de> 2005/2006
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved.
+ *           2003-2009 Blender Foundation.
+ *           2005-2006 Peter Schlaile <peter [at] schlaile [dot] de> */
 
 /** \file
  * \ingroup bke
@@ -29,6 +12,7 @@
 
 #include "BLI_ghash.h"
 #include "BLI_listbase.h"
+#include "BLI_math.h"
 #include "BLI_session_uuid.h"
 
 #include "BKE_main.h"
@@ -45,20 +29,27 @@
 #include "SEQ_relations.h"
 #include "SEQ_sequencer.h"
 #include "SEQ_time.h"
+#include "SEQ_transform.h"
 
 #include "effects.h"
 #include "image_cache.h"
 #include "utils.h"
 
-/* check whether sequence cur depends on seq */
-static bool seq_relations_check_depend(Sequence *seq, Sequence *cur)
+bool SEQ_relation_is_effect_of_strip(const Sequence *effect, const Sequence *input)
 {
-  if (cur->seq1 == seq || cur->seq2 == seq || cur->seq3 == seq) {
+  return ELEM(input, effect->seq1, effect->seq2);
+}
+
+/* check whether sequence cur depends on seq */
+static bool seq_relations_check_depend(const Scene *scene, Sequence *seq, Sequence *cur)
+{
+  if (SEQ_relation_is_effect_of_strip(cur, seq)) {
     return true;
   }
 
   /* sequences are not intersecting in time, assume no dependency exists between them */
-  if (cur->enddisp < seq->startdisp || cur->startdisp > seq->enddisp) {
+  if (SEQ_time_right_handle_frame_get(scene, cur) < SEQ_time_left_handle_frame_get(scene, seq) ||
+      SEQ_time_left_handle_frame_get(scene, cur) > SEQ_time_right_handle_frame_get(scene, seq)) {
     return false;
   }
 
@@ -88,7 +79,7 @@ static void sequence_do_invalidate_dependent(Scene *scene, Sequence *seq, ListBa
       continue;
     }
 
-    if (seq_relations_check_depend(seq, cur)) {
+    if (seq_relations_check_depend(scene, seq, cur)) {
       /* Effect must be invalidated completely if they depend on invalidated seq. */
       if ((cur->type & SEQ_TYPE_EFFECT) != 0) {
         seq_cache_cleanup_sequence(scene, cur, seq, SEQ_CACHE_ALL_TYPES, false);
@@ -118,7 +109,7 @@ static void sequence_invalidate_cache(Scene *scene,
   }
 
   if (seq->effectdata && seq->type == SEQ_TYPE_SPEED) {
-    seq_effect_speed_rebuild_map(scene, seq, true);
+    seq_effect_speed_rebuild_map(scene, seq);
   }
 
   sequence_do_invalidate_dependent(scene, seq, &ed->seqbase);
@@ -134,7 +125,7 @@ static bool seq_relations_find_and_invalidate_metas(Scene *scene,
   ListBase *seqbase;
 
   if (meta_seq == NULL) {
-    Editing *ed = SEQ_editing_get(scene, false);
+    Editing *ed = SEQ_editing_get(scene);
     seqbase = &ed->seqbase;
   }
   else {
@@ -259,7 +250,7 @@ void SEQ_relations_free_imbuf(Scene *scene, ListBase *seqbase, bool for_render)
   SEQ_prefetch_stop(scene);
 
   for (seq = seqbase->first; seq; seq = seq->next) {
-    if (for_render && CFRA >= seq->startdisp && CFRA <= seq->enddisp) {
+    if (for_render && SEQ_time_strip_intersects_frame(scene, seq, scene->r.cfra)) {
       continue;
     }
 
@@ -268,7 +259,7 @@ void SEQ_relations_free_imbuf(Scene *scene, ListBase *seqbase, bool for_render)
         SEQ_relations_sequence_free_anim(seq);
       }
       if (seq->type == SEQ_TYPE_SPEED) {
-        seq_effect_speed_rebuild_map(scene, seq, true);
+        seq_effect_speed_rebuild_map(scene, seq);
       }
     }
     if (seq->type == SEQ_TYPE_META) {
@@ -281,101 +272,45 @@ void SEQ_relations_free_imbuf(Scene *scene, ListBase *seqbase, bool for_render)
   }
 }
 
-static bool update_changed_seq_recurs(
-    Scene *scene, Sequence *seq, Sequence *changed_seq, int len_change, int ibuf_change)
+static void sequencer_all_free_anim_ibufs(const Scene *scene,
+                                          ListBase *seqbase,
+                                          int timeline_frame,
+                                          const int frame_range[2])
 {
-  Sequence *subseq;
-  bool free_imbuf = false;
-
-  /* recurse downwards to see if this seq depends on the changed seq */
-
-  if (seq == NULL) {
-    return false;
-  }
-
-  if (seq == changed_seq) {
-    free_imbuf = true;
-  }
-
-  for (subseq = seq->seqbase.first; subseq; subseq = subseq->next) {
-    if (update_changed_seq_recurs(scene, subseq, changed_seq, len_change, ibuf_change)) {
-      free_imbuf = true;
-    }
-  }
-
-  if (seq->seq1) {
-    if (update_changed_seq_recurs(scene, seq->seq1, changed_seq, len_change, ibuf_change)) {
-      free_imbuf = true;
-    }
-  }
-  if (seq->seq2 && (seq->seq2 != seq->seq1)) {
-    if (update_changed_seq_recurs(scene, seq->seq2, changed_seq, len_change, ibuf_change)) {
-      free_imbuf = true;
-    }
-  }
-  if (seq->seq3 && (seq->seq3 != seq->seq1) && (seq->seq3 != seq->seq2)) {
-    if (update_changed_seq_recurs(scene, seq->seq3, changed_seq, len_change, ibuf_change)) {
-      free_imbuf = true;
-    }
-  }
-
-  if (free_imbuf) {
-    if (ibuf_change) {
-      if (seq->type == SEQ_TYPE_MOVIE) {
-        SEQ_relations_sequence_free_anim(seq);
-      }
-      else if (seq->type == SEQ_TYPE_SPEED) {
-        seq_effect_speed_rebuild_map(scene, seq, true);
-      }
-    }
-
-    if (len_change) {
-      SEQ_time_update_sequence(scene, seq);
-    }
-  }
-
-  return free_imbuf;
-}
-
-void SEQ_relations_update_changed_seq_and_deps(Scene *scene,
-                                               Sequence *changed_seq,
-                                               int len_change,
-                                               int ibuf_change)
-{
-  Editing *ed = SEQ_editing_get(scene, false);
-  Sequence *seq;
-
-  if (ed == NULL) {
-    return;
-  }
-
-  for (seq = ed->seqbase.first; seq; seq = seq->next) {
-    update_changed_seq_recurs(scene, seq, changed_seq, len_change, ibuf_change);
-  }
-}
-
-/* Unused */
-static void sequencer_all_free_anim_ibufs(ListBase *seqbase, int timeline_frame)
-{
+  Editing *ed = SEQ_editing_get(scene);
   for (Sequence *seq = seqbase->first; seq != NULL; seq = seq->next) {
-    if (seq->enddisp < timeline_frame || seq->startdisp > timeline_frame) {
+    if (!SEQ_time_strip_intersects_frame(scene, seq, timeline_frame) ||
+        !((frame_range[0] <= timeline_frame) && (frame_range[1] > timeline_frame))) {
       SEQ_relations_sequence_free_anim(seq);
     }
     if (seq->type == SEQ_TYPE_META) {
-      sequencer_all_free_anim_ibufs(&seq->seqbase, timeline_frame);
+      int meta_range[2];
+
+      MetaStack *ms = SEQ_meta_stack_active_get(ed);
+      if (ms != NULL && ms->parseq == seq) {
+        meta_range[0] = -MAXFRAME;
+        meta_range[1] = MAXFRAME;
+      }
+      else {
+        /* Limit frame range to meta strip. */
+        meta_range[0] = max_ii(frame_range[0], SEQ_time_left_handle_frame_get(scene, seq));
+        meta_range[1] = min_ii(frame_range[1], SEQ_time_right_handle_frame_get(scene, seq));
+      }
+
+      sequencer_all_free_anim_ibufs(scene, &seq->seqbase, timeline_frame, meta_range);
     }
   }
 }
 
-/* Unused */
 void SEQ_relations_free_all_anim_ibufs(Scene *scene, int timeline_frame)
 {
-  Editing *ed = SEQ_editing_get(scene, false);
+  Editing *ed = SEQ_editing_get(scene);
   if (ed == NULL) {
     return;
   }
-  sequencer_all_free_anim_ibufs(&ed->seqbase, timeline_frame);
-  SEQ_cache_cleanup(scene);
+
+  const int frame_range[2] = {-MAXFRAME, MAXFRAME};
+  sequencer_all_free_anim_ibufs(scene, &ed->seqbase, timeline_frame, frame_range);
 }
 
 static Sequence *sequencer_check_scene_recursion(Scene *scene, ListBase *seqbase)
@@ -401,7 +336,7 @@ static Sequence *sequencer_check_scene_recursion(Scene *scene, ListBase *seqbase
 
 bool SEQ_relations_check_scene_recursion(Scene *scene, ReportList *reports)
 {
-  Editing *ed = SEQ_editing_get(scene, false);
+  Editing *ed = SEQ_editing_get(scene);
   if (ed == NULL) {
     return false;
   }
@@ -413,7 +348,7 @@ bool SEQ_relations_check_scene_recursion(Scene *scene, ReportList *reports)
                 RPT_WARNING,
                 "Recursion detected in video sequencer. Strip %s at frame %d will not be rendered",
                 recursive_seq->name + 2,
-                recursive_seq->startdisp);
+                SEQ_time_left_handle_frame_get(scene, recursive_seq));
 
     LISTBASE_FOREACH (Sequence *, seq, &ed->seqbase) {
       if (seq->type != SEQ_TYPE_SCENE && sequencer_seq_generates_image(seq)) {
@@ -428,7 +363,6 @@ bool SEQ_relations_check_scene_recursion(Scene *scene, ReportList *reports)
   return false;
 }
 
-/* Check if "seq_main" (indirectly) uses strip "seq". */
 bool SEQ_relations_render_loop_check(Sequence *seq_main, Sequence *seq)
 {
   if (seq_main == NULL || seq == NULL) {
@@ -455,7 +389,6 @@ bool SEQ_relations_render_loop_check(Sequence *seq_main, Sequence *seq)
   return false;
 }
 
-/* Function to free imbuf and anim data on changes */
 void SEQ_relations_sequence_free_anim(Sequence *seq)
 {
   while (seq->anims.last) {
@@ -476,6 +409,24 @@ void SEQ_relations_session_uuid_generate(struct Sequence *sequence)
   sequence->runtime.session_uuid = BLI_session_uuid_generate();
 }
 
+static bool get_uuids_cb(Sequence *seq, void *user_data)
+{
+  struct GSet *used_uuids = (struct GSet *)user_data;
+  const SessionUUID *session_uuid = &seq->runtime.session_uuid;
+  if (!BLI_session_uuid_is_generated(session_uuid)) {
+    printf("Sequence %s does not have UUID generated.\n", seq->name);
+    return true;
+  }
+
+  if (BLI_gset_lookup(used_uuids, session_uuid) != NULL) {
+    printf("Sequence %s has duplicate UUID generated.\n", seq->name);
+    return true;
+  }
+
+  BLI_gset_insert(used_uuids, (void *)session_uuid);
+  return true;
+}
+
 void SEQ_relations_check_uuids_unique_and_report(const Scene *scene)
 {
   if (scene->ed == NULL) {
@@ -485,22 +436,39 @@ void SEQ_relations_check_uuids_unique_and_report(const Scene *scene)
   struct GSet *used_uuids = BLI_gset_new(
       BLI_session_uuid_ghash_hash, BLI_session_uuid_ghash_compare, "sequencer used uuids");
 
-  const Sequence *sequence;
-  SEQ_ALL_BEGIN (scene->ed, sequence) {
-    const SessionUUID *session_uuid = &sequence->runtime.session_uuid;
-    if (!BLI_session_uuid_is_generated(session_uuid)) {
-      printf("Sequence %s does not have UUID generated.\n", sequence->name);
-      continue;
-    }
-
-    if (BLI_gset_lookup(used_uuids, session_uuid) != NULL) {
-      printf("Sequence %s has duplicate UUID generated.\n", sequence->name);
-      continue;
-    }
-
-    BLI_gset_insert(used_uuids, (void *)session_uuid);
-  }
-  SEQ_ALL_END;
+  SEQ_for_each_callback(&scene->ed->seqbase, get_uuids_cb, used_uuids);
 
   BLI_gset_free(used_uuids, NULL);
+}
+
+struct Sequence *SEQ_find_metastrip_by_sequence(ListBase *seqbase, Sequence *meta, Sequence *seq)
+{
+  Sequence *iseq;
+
+  for (iseq = seqbase->first; iseq; iseq = iseq->next) {
+    Sequence *rval;
+
+    if (seq == iseq) {
+      return meta;
+    }
+    if (iseq->seqbase.first &&
+        (rval = SEQ_find_metastrip_by_sequence(&iseq->seqbase, iseq, seq))) {
+      return rval;
+    }
+  }
+
+  return NULL;
+}
+
+bool SEQ_exists_in_seqbase(const Sequence *seq, const ListBase *seqbase)
+{
+  LISTBASE_FOREACH (Sequence *, seq_test, seqbase) {
+    if (seq_test->type == SEQ_TYPE_META && SEQ_exists_in_seqbase(seq, &seq_test->seqbase)) {
+      return true;
+    }
+    if (seq_test == seq) {
+      return true;
+    }
+  }
+  return false;
 }

@@ -1,29 +1,11 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2020 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2020 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup gpu
  */
 
 #include "BKE_global.h"
-
-#include "GPU_capabilities.h"
 
 #include "gl_backend.hh"
 #include "gl_debug.hh"
@@ -86,7 +68,7 @@ GLFrameBuffer::~GLFrameBuffer()
   /* Restore default frame-buffer if this frame-buffer was bound. */
   if (context_->active_fb == this && context_->back_left != this) {
     /* If this assert triggers it means the frame-buffer is being freed while in use by another
-     * context which, by the way, is TOTALLY UNSAFE!!!  */
+     * context which, by the way, is TOTALLY UNSAFE! */
     BLI_assert(context_ == Context::get());
     GPU_framebuffer_restore();
   }
@@ -110,7 +92,6 @@ void GLFrameBuffer::init()
 /** \name Config
  * \{ */
 
-/* This is a rather slow operation. Don't check in normal cases. */
 bool GLFrameBuffer::check(char err_out[256])
 {
   this->bind(true);
@@ -226,6 +207,11 @@ void GLFrameBuffer::update_attachments()
     this->size_set(size[0], size[1]);
     srgb_ = (GPU_texture_format(attach.tex) == GPU_SRGB8_A8);
   }
+  else {
+    /* Empty frame-buffer. */
+    glFramebufferParameteri(GL_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_WIDTH, width_);
+    glFramebufferParameteri(GL_FRAMEBUFFER, GL_FRAMEBUFFER_DEFAULT_HEIGHT, height_);
+  }
 
   dirty_attachments_ = false;
 
@@ -268,7 +254,7 @@ void GLFrameBuffer::bind(bool enabled_srgb)
   }
 
   if (context_ != GLContext::get()) {
-    BLI_assert(!"Trying to use the same frame-buffer in multiple context");
+    BLI_assert_msg(0, "Trying to use the same frame-buffer in multiple context");
     return;
   }
 
@@ -366,7 +352,7 @@ void GLFrameBuffer::clear_attachment(GPUAttachmentType type,
 
   if (type == GPU_FB_DEPTH_STENCIL_ATTACHMENT) {
     BLI_assert(data_format == GPU_DATA_UINT_24_8);
-    float depth = ((*(uint32_t *)clear_value) & 0x00FFFFFFu) / (float)0x00FFFFFFu;
+    float depth = ((*(uint32_t *)clear_value) & 0x00FFFFFFu) / float(0x00FFFFFFu);
     int stencil = ((*(uint32_t *)clear_value) >> 24);
     glClearBufferfi(GL_DEPTH_STENCIL, 0, depth, stencil);
   }
@@ -375,11 +361,11 @@ void GLFrameBuffer::clear_attachment(GPUAttachmentType type,
       glClearBufferfv(GL_DEPTH, 0, (GLfloat *)clear_value);
     }
     else if (data_format == GPU_DATA_UINT) {
-      float depth = *(uint32_t *)clear_value / (float)0xFFFFFFFFu;
+      float depth = *(uint32_t *)clear_value / float(0xFFFFFFFFu);
       glClearBufferfv(GL_DEPTH, 0, &depth);
     }
     else {
-      BLI_assert(!"Unhandled data format");
+      BLI_assert_msg(0, "Unhandled data format");
     }
   }
   else {
@@ -395,7 +381,7 @@ void GLFrameBuffer::clear_attachment(GPUAttachmentType type,
         glClearBufferiv(GL_COLOR, slot, (GLint *)clear_value);
         break;
       default:
-        BLI_assert(!"Unhandled data format");
+        BLI_assert_msg(0, "Unhandled data format");
         break;
     }
   }
@@ -430,8 +416,15 @@ void GLFrameBuffer::read(eGPUFrameBufferBits plane,
   switch (plane) {
     case GPU_DEPTH_BIT:
       format = GL_DEPTH_COMPONENT;
+      BLI_assert_msg(
+          this->attachments_[GPU_FB_DEPTH_ATTACHMENT].tex != nullptr ||
+              this->attachments_[GPU_FB_DEPTH_STENCIL_ATTACHMENT].tex != nullptr,
+          "GPUFramebuffer: Error: Trying to read depth without a depth buffer attached.");
       break;
     case GPU_COLOR_BIT:
+      BLI_assert_msg(
+          mode != GL_NONE,
+          "GPUFramebuffer: Error: Trying to read a color slot without valid attachment.");
       format = channel_len_to_gl(channel_len);
       /* TODO: needed for selection buffers to work properly, this should be handled better. */
       if (format == GL_RED && type == GL_UNSIGNED_INT) {
@@ -451,9 +444,6 @@ void GLFrameBuffer::read(eGPUFrameBufferBits plane,
   glReadPixels(UNPACK4(area), format, type, r_data);
 }
 
-/**
- * Copy \a src at the give offset inside \a dst.
- */
 void GLFrameBuffer::blit_to(
     eGPUFrameBufferBits planes, int src_slot, FrameBuffer *dst_, int dst_slot, int x, int y)
 {

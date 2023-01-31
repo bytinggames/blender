@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -20,7 +6,7 @@
  * \ingroup pymathutils
  */
 
-/* Can cast different mathutils types to this, use for generic funcs */
+/* Can cast different mathutils types to this, use for generic functions. */
 
 #include "BLI_compiler_attrs.h"
 
@@ -28,13 +14,15 @@ struct DynStr;
 
 extern char BaseMathObject_is_wrapped_doc[];
 extern char BaseMathObject_is_frozen_doc[];
+extern char BaseMathObject_is_valid_doc[];
 extern char BaseMathObject_owner_doc[];
 
-#define BASE_MATH_NEW(struct_name, root_type, base_type) \
-  ((struct_name *)((base_type ? (base_type)->tp_alloc(base_type, 0) : \
-                                _PyObject_GC_New(&(root_type)))))
+PyObject *_BaseMathObject_new_impl(PyTypeObject *root_type, PyTypeObject *base_type);
 
-/** BaseMathObject.flag */
+#define BASE_MATH_NEW(struct_name, root_type, base_type) \
+  ((struct_name *)_BaseMathObject_new_impl(&root_type, base_type))
+
+/** #BaseMathObject.flag */
 enum {
   /**
    * Do not own the memory used in this vector,
@@ -56,9 +44,9 @@ enum {
   float *_data; \
   /** If this vector references another object, otherwise NULL, *Note* this owns its reference */ \
   PyObject *cb_user; \
-  /** Which user funcs do we adhere to, RNA, etc */ \
+  /** Which user functions do we adhere to, RNA, etc */ \
   unsigned char cb_type; \
-  /** Subtype: location, rotation... \
+  /** Sub-type: location, rotation... \
    * to avoid defining many new functions for every attribute of the same type */ \
   unsigned char cb_subtype; \
   /** Wrapped data type. */ \
@@ -81,6 +69,7 @@ typedef struct {
 PyObject *BaseMathObject_owner_get(BaseMathObject *self, void *);
 PyObject *BaseMathObject_is_wrapped_get(BaseMathObject *self, void *);
 PyObject *BaseMathObject_is_frozen_get(BaseMathObject *self, void *);
+PyObject *BaseMathObject_is_valid_get(BaseMathObject *self, void *);
 
 extern char BaseMathObject_freeze_doc[];
 PyObject *BaseMathObject_freeze(BaseMathObject *self);
@@ -88,6 +77,7 @@ PyObject *BaseMathObject_freeze(BaseMathObject *self);
 int BaseMathObject_traverse(BaseMathObject *self, visitproc visit, void *arg);
 int BaseMathObject_clear(BaseMathObject *self);
 void BaseMathObject_dealloc(BaseMathObject *self);
+int BaseMathObject_is_gc(BaseMathObject *self);
 
 PyMODINIT_FUNC PyInit_mathutils(void);
 
@@ -117,6 +107,7 @@ struct Mathutils_Callback {
 
 unsigned char Mathutils_RegisterCallback(Mathutils_Callback *cb);
 
+int _BaseMathObject_CheckCallback(BaseMathObject *self);
 int _BaseMathObject_ReadCallback(BaseMathObject *self);
 int _BaseMathObject_WriteCallback(BaseMathObject *self);
 int _BaseMathObject_ReadIndexCallback(BaseMathObject *self, int index);
@@ -126,6 +117,8 @@ void _BaseMathObject_RaiseFrozenExc(const BaseMathObject *self);
 void _BaseMathObject_RaiseNotFrozenExc(const BaseMathObject *self);
 
 /* since this is called so often avoid where possible */
+#define BaseMath_CheckCallback(_self) \
+  (((_self)->cb_user ? _BaseMathObject_CheckCallback((BaseMathObject *)_self) : 0))
 #define BaseMath_ReadCallback(_self) \
   (((_self)->cb_user ? _BaseMathObject_ReadCallback((BaseMathObject *)_self) : 0))
 #define BaseMath_WriteCallback(_self) \
@@ -157,28 +150,56 @@ void _BaseMathObject_RaiseNotFrozenExc(const BaseMathObject *self);
        0)
 
 /* utility func */
+/**
+ * Helper function.
+ * \return length of `value`, -1 on error.
+ */
 int mathutils_array_parse(
-    float *array, int array_min, int array_max, PyObject *value, const char *error_prefix);
+    float *array, int array_num_min, int array_num_max, PyObject *value, const char *error_prefix);
+/**
+ * \return -1 is returned on error and no allocation is made.
+ */
 int mathutils_array_parse_alloc(float **array,
-                                int array_min,
+                                int array_num_min,
                                 PyObject *value,
                                 const char *error_prefix);
+/**
+ * Parse an array of vectors.
+ */
 int mathutils_array_parse_alloc_v(float **array,
                                   int array_dim,
                                   PyObject *value,
                                   const char *error_prefix);
+/**
+ * Parse an sequence array_dim integers into array.
+ */
 int mathutils_int_array_parse(int *array,
                               int array_dim,
                               PyObject *value,
                               const char *error_prefix);
+/**
+ * Parse sequence of array_dim sequences of integers and return allocated result.
+ */
 int mathutils_array_parse_alloc_vi(int **array,
                                    int array_dim,
                                    PyObject *value,
                                    const char *error_prefix);
+/**
+ * Parse sequence of variable-length sequences of int and return allocated
+ * triple of arrays to represent the result:
+ * The flattened sequences are put into *array.
+ * The start index of each sequence goes into start_table.
+ * The length of each index goes into len_table.
+ */
 int mathutils_array_parse_alloc_viseq(
     int **array, int **start_table, int **len_table, PyObject *value, const char *error_prefix);
 int mathutils_any_to_rotmat(float rmat[3][3], PyObject *value, const char *error_prefix);
 
+/**
+ * helper function that returns a Python `__hash__`.
+ *
+ * \note consistent with the equivalent tuple of floats (CPython's 'tuplehash')
+ */
 Py_hash_t mathutils_array_hash(const float *float_array, size_t array_len);
 
 /* zero remaining unused elements of the array */
@@ -189,9 +210,21 @@ Py_hash_t mathutils_array_hash(const float *float_array, size_t array_len);
 
 #define MU_ARRAY_FLAGS (MU_ARRAY_ZERO | MU_ARRAY_SPILL)
 
+/**
+ * Column vector multiplication (Matrix * Vector).
+ * <pre>
+ * [1][4][7]   [a]
+ * [2][5][8] * [b]
+ * [3][6][9]   [c]
+ * </pre>
+ *
+ * \note Vector/Matrix multiplication is not commutative.
+ * \note Assume read callbacks have been done first.
+ */
 int column_vector_multiplication(float r_vec[4], VectorObject *vec, MatrixObject *mat);
 
 #ifndef MATH_STANDALONE
 /* dynstr as python string utility functions */
+/* dynstr as python string utility functions, frees 'ds'! */
 PyObject *mathutils_dynstr_to_py(struct DynStr *ds);
 #endif

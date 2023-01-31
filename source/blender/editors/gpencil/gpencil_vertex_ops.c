@@ -1,25 +1,9 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2015, Blender Foundation
- * This is a new part of Blender
- * Brush based operators for editing Grease Pencil strokes
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2015 Blender Foundation. */
 
 /** \file
  * \ingroup edgpencil
+ * Brush based operators for editing Grease Pencil strokes.
  */
 
 #include "MEM_guardedalloc.h"
@@ -54,7 +38,7 @@
 static const EnumPropertyItem gpencil_modesEnumPropertyItem_mode[] = {
     {GPPAINT_MODE_STROKE, "STROKE", 0, "Stroke", ""},
     {GPPAINT_MODE_FILL, "FILL", 0, "Fill", ""},
-    {GPPAINT_MODE_BOTH, "BOTH", 0, "Stroke and Fill", ""},
+    {GPPAINT_MODE_BOTH, "BOTH", 0, "Stroke & Fill", ""},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -99,7 +83,7 @@ static bool is_any_stroke_selected(bContext *C, const bool is_multiedit, const b
             }
           }
         }
-        /* if not multiedit, exit loop*/
+        /* If not multi-edit, exit loop. */
         if (!is_multiedit) {
           break;
         }
@@ -147,7 +131,7 @@ static int gpencil_vertexpaint_brightness_contrast_exec(bContext *C, wmOperator 
     /*
      * The algorithm is by Werner D. Streidt
      * (http://visca.com/ffactory/archives/5-99/msg00021.html)
-     * Extracted of OpenCV demhist.c
+     * Extracted of OpenCV `demhist.c`.
      */
     if (contrast > 0) {
       gain = 1.0f - delta * 2.0f;
@@ -204,7 +188,7 @@ static int gpencil_vertexpaint_brightness_contrast_exec(bContext *C, wmOperator 
             }
           }
         }
-        /* if not multiedit, exit loop*/
+        /* If not multi-edit, exit loop. */
         if (!is_multiedit) {
           break;
         }
@@ -325,7 +309,7 @@ static int gpencil_vertexpaint_hsv_exec(bContext *C, wmOperator *op)
             }
           }
         }
-        /* if not multiedit, exit loop*/
+        /* If not multi-edit, exit loop. */
         if (!is_multiedit) {
           break;
         }
@@ -419,7 +403,7 @@ static int gpencil_vertexpaint_invert_exec(bContext *C, wmOperator *op)
             }
           }
         }
-        /* if not multiedit, exit loop*/
+        /* If not multi-edit, exit loop. */
         if (!is_multiedit) {
           break;
         }
@@ -510,7 +494,7 @@ static int gpencil_vertexpaint_levels_exec(bContext *C, wmOperator *op)
             }
           }
         }
-        /* if not multiedit, exit loop*/
+        /* If not multi-edit, exit loop. */
         if (!is_multiedit) {
           break;
         }
@@ -588,6 +572,7 @@ static int gpencil_vertexpaint_set_exec(bContext *C, wmOperator *op)
               changed = true;
               copy_v3_v3(gps->vert_color_fill, brush->rgb);
               gps->vert_color_fill[3] = factor;
+              srgb_to_linearrgb_v4(gps->vert_color_fill, gps->vert_color_fill);
             }
 
             /* Stroke points. */
@@ -596,16 +581,19 @@ static int gpencil_vertexpaint_set_exec(bContext *C, wmOperator *op)
               int i;
               bGPDspoint *pt;
 
+              float color[4];
+              copy_v3_v3(color, brush->rgb);
+              color[3] = factor;
+              srgb_to_linearrgb_v4(color, color);
               for (i = 0, pt = gps->points; i < gps->totpoints; i++, pt++) {
                 if ((!any_selected) || (pt->flag & GP_SPOINT_SELECT)) {
-                  copy_v3_v3(pt->vert_color, brush->rgb);
-                  pt->vert_color[3] = factor;
+                  copy_v4_v4(pt->vert_color, color);
                 }
               }
             }
           }
         }
-        /* if not multiedit, exit loop*/
+        /* If not multi-edit, exit loop. */
         if (!is_multiedit) {
           break;
         }
@@ -971,7 +959,7 @@ static int gpencil_material_to_vertex_exec(bContext *C, wmOperator *op)
   /* Clean unused materials. */
   if (remove) {
     WM_operator_name_call(
-        C, "OBJECT_OT_material_slot_remove_unused", WM_OP_INVOKE_REGION_WIN, NULL);
+        C, "OBJECT_OT_material_slot_remove_unused", WM_OP_INVOKE_REGION_WIN, NULL, NULL);
   }
 
   return OPERATOR_FINISHED;
@@ -1113,7 +1101,7 @@ static int gpencil_stroke_reset_vertex_color_exec(bContext *C, wmOperator *op)
 
           changed = true;
         }
-        /* if not multiedit, exit loop*/
+        /* If not multi-edit, exit loop. */
         if (!is_multiedit) {
           break;
         }
@@ -1138,7 +1126,7 @@ void GPENCIL_OT_stroke_reset_vertex_color(wmOperatorType *ot)
   static EnumPropertyItem mode_types_items[] = {
       {GPPAINT_MODE_STROKE, "STROKE", 0, "Stroke", "Reset Vertex Color to Stroke only"},
       {GPPAINT_MODE_FILL, "FILL", 0, "Fill", "Reset Vertex Color to Fill only"},
-      {GPPAINT_MODE_BOTH, "BOTH", 0, "Stroke and Fill", "Reset Vertex Color to Stroke and Fill"},
+      {GPPAINT_MODE_BOTH, "BOTH", 0, "Stroke & Fill", "Reset Vertex Color to Stroke and Fill"},
       {0, NULL, 0, NULL, NULL},
   };
 

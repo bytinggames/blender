@@ -1,20 +1,8 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include "Materials.h"
+
+#include "BKE_node_tree_update.h"
 
 MaterialNode::MaterialNode(bContext *C, Material *ma, KeyImageMap &key_image_map)
     : mContext(C), material(ma), effect(nullptr), key_image_map(&key_image_map)
@@ -25,8 +13,6 @@ MaterialNode::MaterialNode(bContext *C, Material *ma, KeyImageMap &key_image_map
     shader_node = add_node(SH_NODE_BSDF_PRINCIPLED, 0, 300, "");
     output_node = add_node(SH_NODE_OUTPUT_MATERIAL, 300, 300, "");
     add_link(shader_node, 0, output_node, 0);
-
-    ntreeUpdateTree(CTX_data_main(C), ntree);
   }
 }
 
@@ -61,8 +47,6 @@ MaterialNode::MaterialNode(bContext *C,
   shader_node = add_node(SH_NODE_BSDF_PRINCIPLED, 0, 300, "");
   output_node = add_node(SH_NODE_OUTPUT_MATERIAL, 300, 300, "");
   add_link(shader_node, 0, output_node, 0);
-
-  ntreeUpdateTree(CTX_data_main(C), ntree);
 #endif
 }
 
@@ -95,7 +79,6 @@ void MaterialNode::setShaderType()
 #endif
 }
 
-/* returns null if material already has a node tree */
 bNodeTree *MaterialNode::prepare_material_nodetree()
 {
   if (material->nodetree) {
@@ -103,10 +86,15 @@ bNodeTree *MaterialNode::prepare_material_nodetree()
     return nullptr;
   }
 
-  material->nodetree = ntreeAddTree(nullptr, "Shader Nodetree", "ShaderNodeTree");
+  ntreeAddTreeEmbedded(nullptr, &material->id, "Shader Nodetree", "ShaderNodeTree");
   material->use_nodes = true;
   ntree = material->nodetree;
   return ntree;
+}
+
+void MaterialNode::update_material_nodetree()
+{
+  BKE_ntree_update_main_tree(CTX_data_main(mContext), ntree, nullptr);
 }
 
 bNode *MaterialNode::add_node(int node_type, int locx, int locy, std::string label)
@@ -130,6 +118,19 @@ void MaterialNode::add_link(bNode *from_node, int from_index, bNode *to_node, in
   bNodeSocket *to_socket = (bNodeSocket *)BLI_findlink(&to_node->inputs, to_index);
 
   nodeAddLink(ntree, from_node, from_socket, to_node, to_socket);
+}
+
+void MaterialNode::add_link(bNode *from_node,
+                            const char *from_label,
+                            bNode *to_node,
+                            const char *to_label)
+{
+  bNodeSocket *from_socket = nodeFindSocket(from_node, SOCK_OUT, from_label);
+  bNodeSocket *to_socket = nodeFindSocket(to_node, SOCK_IN, to_label);
+
+  if (from_socket && to_socket) {
+    nodeAddLink(ntree, from_node, from_socket, to_node, to_socket);
+  }
 }
 
 void MaterialNode::set_reflectivity(COLLADAFW::FloatOrParam &val)
@@ -217,20 +218,30 @@ void MaterialNode::set_alpha(COLLADAFW::EffectCommon::OpaqueMode mode,
 void MaterialNode::set_diffuse(COLLADAFW::ColorOrTexture &cot)
 {
   int locy = -300 * (node_map.size() - 2);
-  if (cot.isColor()) {
-    COLLADAFW::Color col = cot.getColor();
-    bNodeSocket *socket = nodeFindSocket(shader_node, SOCK_IN, "Base Color");
-    float *fcol = (float *)socket->default_value;
 
-    fcol[0] = material->r = col.getRed();
-    fcol[1] = material->g = col.getGreen();
-    fcol[2] = material->b = col.getBlue();
-    fcol[3] = material->a = col.getAlpha();
-  }
-  else if (cot.isTexture()) {
+  if (cot.isTexture()) {
     bNode *texture_node = add_texture_node(cot, -300, locy, "Base Color");
     if (texture_node != nullptr) {
       add_link(texture_node, 0, shader_node, 0);
+    }
+  }
+  else {
+    bNodeSocket *socket = nodeFindSocket(shader_node, SOCK_IN, "Base Color");
+    float *fcol = (float *)socket->default_value;
+
+    if (cot.isColor()) {
+      COLLADAFW::Color col = cot.getColor();
+      fcol[0] = material->r = col.getRed();
+      fcol[1] = material->g = col.getGreen();
+      fcol[2] = material->b = col.getBlue();
+      fcol[3] = material->a = col.getAlpha();
+    }
+    else {
+      /* no diffuse term = same as black */
+      fcol[0] = material->r = 0.0f;
+      fcol[1] = material->g = 0.0f;
+      fcol[2] = material->b = 0.0f;
+      fcol[3] = material->a = 1.0f;
     }
   }
 }
@@ -325,7 +336,7 @@ void MaterialNode::set_emission(COLLADAFW::ColorOrTexture &cot)
   else if (cot.isTexture()) {
     bNode *texture_node = add_texture_node(cot, -300, locy, "Emission");
     if (texture_node != nullptr) {
-      add_link(texture_node, 0, shader_node, 0);
+      add_link(texture_node, "Color", shader_node, "Emission");
     }
   }
 
@@ -362,17 +373,36 @@ void MaterialNode::set_opacity(COLLADAFW::ColorOrTexture &cot)
 
 void MaterialNode::set_specular(COLLADAFW::ColorOrTexture &cot)
 {
+  bool has_specularity = true;
   int locy = -300 * (node_map.size() - 2);
   if (cot.isColor()) {
     COLLADAFW::Color col = cot.getColor();
-    bNode *node = add_node(SH_NODE_RGB, -300, locy, "Specular");
-    set_color(node, col);
-    /* TODO: Connect node */
+
+    if (col.getRed() == 0 && col.getGreen() == 0 && col.getBlue() == 0) {
+      has_specularity = false;
+    }
+    else {
+      bNode *node = add_node(SH_NODE_RGB, -300, locy, "Specular");
+      set_color(node, col);
+      /* TODO: Connect node */
+    }
   }
-  /* texture */
   else if (cot.isTexture()) {
     add_texture_node(cot, -300, locy, "Specular");
     /* TODO: Connect node */
+  }
+  else {
+    /* no specular term) */
+    has_specularity = false;
+  }
+
+  if (!has_specularity) {
+    /* If specularity is black or not defined reset the Specular value to 0
+     * TODO: This is a solution only for a corner case. We must find a better
+     * way to handle specularity in general. Also note that currently we
+     * do not export specularity values, see EffectExporter::operator() */
+    bNodeSocket *socket = nodeFindSocket(shader_node, SOCK_IN, "Specular");
+    ((bNodeSocketValueFloat *)socket->default_value)->value = 0.0f;
   }
 }
 

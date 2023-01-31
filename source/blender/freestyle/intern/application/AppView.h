@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -83,7 +69,7 @@ class AppView {
   float _thickness;
 
  public:
-  /*! Sets the model to draw in the viewer
+  /** Sets the model to draw in the viewer
    *  iModel
    *    The Root Node of the model
    */
@@ -97,7 +83,7 @@ class AppView {
     AddModel(iModel);
   }
 
-  /*! Adds a model for displaying in the viewer */
+  /** Adds a model for displaying in the viewer */
   inline void AddModel(NodeGroup *iModel)
   {
     _ModelRootNode->AddChild(iModel);
@@ -214,7 +200,7 @@ class AppView {
 
   inline real GetFovyDegrees() const
   {
-    return _Fovy * 180.0 / M_PI;  // TODO Use RAD2DEG here too?
+    return _Fovy * 180.0 / M_PI;  // TODO: Use RAD2DEG here too?
   }
 
   BBox<Vec3r> scene3DBBox() const
@@ -226,14 +212,14 @@ class AppView {
   real zfar();
 
  public:
-  /*! Core scene drawing */
+  /** Core scene drawing */
   void DrawScene(SceneVisitor *iRenderer);
 
-  /*! 2D Scene Drawing */
+  /** 2D Scene Drawing */
   void Draw2DScene(SceneVisitor *iRenderer);
 
  protected:
-  /*! fabs or abs */
+  /** fabs or abs */
   inline int rabs(int x)
   {
     return abs(x);

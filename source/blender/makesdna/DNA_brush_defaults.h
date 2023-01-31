@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup DNA
@@ -88,7 +74,7 @@
     .cursor_overlay_alpha = 33, \
     .overlay_flags = 0, \
  \
-    /* brush appearance  */ \
+    /* Brush appearance. */ \
  \
     /* add mode color is light red */ \
     .add_col = {1.0, 0.39, 0.39, 0.9}, \
@@ -105,6 +91,8 @@
     .pose_ik_segments = 1, \
     .hardness = 0.0f, \
     .automasking_boundary_edges_propagation_steps = 1, \
+    .automasking_cavity_blur_steps = 0,\
+    .automasking_cavity_factor = 1.0f,\
  \
     /* A kernel radius of 1 has almost no effect (T63233). */ \
     .blur_kernel_radius = 2, \

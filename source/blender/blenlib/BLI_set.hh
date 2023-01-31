@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -150,10 +136,10 @@ class Set {
   uint64_t slot_mask_;
 
   /** This is called to hash incoming keys. */
-  Hash hash_;
+  BLI_NO_UNIQUE_ADDRESS Hash hash_;
 
   /** This is called to check equality of two keys. */
-  IsEqual is_equal_;
+  BLI_NO_UNIQUE_ADDRESS IsEqual is_equal_;
 
   /** The max load factor is 1/2 = 50% by default. */
 #define LOAD_FACTOR 1, 2
@@ -423,6 +409,8 @@ class Set {
     int64_t total_slots_;
     int64_t current_slot_;
 
+    friend Set;
+
    public:
     Iterator(const Slot *slots, int64_t total_slots, int64_t current_slot)
         : slots_(slots), total_slots_(total_slots), current_slot_(current_slot)
@@ -439,10 +427,10 @@ class Set {
       return *this;
     }
 
-    Iterator operator++(int) const
+    Iterator operator++(int)
     {
       Iterator copied_iterator = *this;
-      ++copied_iterator;
+      ++(*this);
       return copied_iterator;
     }
 
@@ -467,6 +455,12 @@ class Set {
     {
       return !(a != b);
     }
+
+   protected:
+    const Slot &current_slot() const
+    {
+      return slots_[current_slot_];
+    }
   };
 
   Iterator begin() const
@@ -482,6 +476,38 @@ class Set {
   Iterator end() const
   {
     return Iterator(slots_.data(), slots_.size(), slots_.size());
+  }
+
+  /**
+   * Remove the key that the iterator is currently pointing at. It is valid to call this method
+   * while iterating over the set. However, after this method has been called, the removed element
+   * must not be accessed anymore.
+   */
+  void remove(const Iterator &it)
+  {
+    /* The const cast is valid because this method itself is not const. */
+    Slot &slot = const_cast<Slot &>(it.current_slot());
+    BLI_assert(slot.is_occupied());
+    slot.remove();
+    removed_slots_++;
+  }
+
+  /**
+   * Remove all values for which the given predicate is true.
+   *
+   * This is similar to std::erase_if.
+   */
+  template<typename Predicate> void remove_if(Predicate &&predicate)
+  {
+    for (Slot &slot : slots_) {
+      if (slot.is_occupied()) {
+        const Key &key = *slot.key();
+        if (predicate(key)) {
+          slot.remove();
+          removed_slots_++;
+        }
+      }
+    }
   }
 
   /**
@@ -507,8 +533,13 @@ class Set {
    */
   void clear()
   {
-    this->~Set();
-    new (this) Set();
+    for (Slot &slot : slots_) {
+      slot.~Slot();
+      new (&slot) Slot();
+    }
+
+    removed_slots_ = 0;
+    occupied_and_removed_slots_ = 0;
   }
 
   /**
@@ -613,7 +644,7 @@ class Set {
     max_load_factor_.compute_total_and_usable_slots(
         SlotArray::inline_buffer_capacity(), min_usable_slots, &total_slots, &usable_slots);
     BLI_assert(total_slots >= 1);
-    const uint64_t new_slot_mask = static_cast<uint64_t>(total_slots) - 1;
+    const uint64_t new_slot_mask = uint64_t(total_slots) - 1;
 
     /**
      * Optimize the case when the set was empty beforehand. We can avoid some copies here.
@@ -841,7 +872,7 @@ template<typename Key> class StdUnorderedSetWrapper {
  public:
   int64_t size() const
   {
-    return static_cast<int64_t>(set_.size());
+    return int64_t(set_.size());
   }
 
   bool is_empty() const
@@ -886,7 +917,7 @@ template<typename Key> class StdUnorderedSetWrapper {
 
   bool remove(const Key &key)
   {
-    return (bool)set_.erase(key);
+    return bool(set_.erase(key));
   }
 
   void remove_contained(const Key &key)

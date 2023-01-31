@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -30,6 +14,7 @@
 
 #include "BKE_context.h"
 #include "BKE_fcurve.h"
+#include "BKE_layer.h"
 #include "BKE_nla.h"
 #include "BKE_report.h"
 
@@ -41,6 +26,8 @@
 
 #include "transform.h"
 #include "transform_convert.h"
+#include "transform_mode.h"
+#include "transform_snap.h"
 
 typedef struct TransDataGraph {
   float unit_scale;
@@ -172,7 +159,7 @@ static void graph_bezt_get_transform_selection(const TransInfo *t,
   bool left = use_handle ? ((bezt->f1 & SELECT) != 0) : key;
   bool right = use_handle ? ((bezt->f3 & SELECT) != 0) : key;
 
-  if (use_handle && t->is_launch_event_tweak) {
+  if (use_handle && t->is_launch_event_drag) {
     if (sipo->runtime.flag & SIPO_RUNTIME_FLAG_TWEAK_HANDLES_LEFT) {
       key = right = false;
     }
@@ -222,7 +209,7 @@ static void graph_key_shortest_dist(
  * functions may need to be made aware of this. It's ugly that these act based on selection state
  * anyway.
  */
-void createTransGraphEditData(bContext *C, TransInfo *t)
+static void createTransGraphEditData(bContext *C, TransInfo *t)
 {
   SpaceGraph *sipo = (SpaceGraph *)t->area->spacedata.first;
   Scene *scene = t->scene;
@@ -255,13 +242,14 @@ void createTransGraphEditData(bContext *C, TransInfo *t)
   anim_map_flag |= ANIM_get_normalization_flags(&ac);
 
   /* filter data */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_FOREDIT | ANIMFILTER_CURVE_VISIBLE);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_FOREDIT | ANIMFILTER_CURVE_VISIBLE |
+            ANIMFILTER_FCURVESONLY);
   ANIM_animdata_filter(&ac, &anim_data, filter, ac.data, ac.datatype);
 
   /* which side of the current frame should be allowed */
   /* XXX we still want this mode, but how to get this using standard transform too? */
   if (t->mode == TFM_TIME_EXTEND) {
-    t->frame_side = transform_convert_frame_side_dir_get(t, (float)CFRA);
+    t->frame_side = transform_convert_frame_side_dir_get(t, (float)scene->r.cfra);
   }
   else {
     /* normal transform - both sides of current frame are considered */
@@ -286,10 +274,10 @@ void createTransGraphEditData(bContext *C, TransInfo *t)
      * higher scaling ratios, but is faster than converting all points)
      */
     if (adt) {
-      cfra = BKE_nla_tweakedit_remap(adt, (float)CFRA, NLATIME_CONVERT_UNMAP);
+      cfra = BKE_nla_tweakedit_remap(adt, (float)scene->r.cfra, NLATIME_CONVERT_UNMAP);
     }
     else {
-      cfra = (float)CFRA;
+      cfra = (float)scene->r.cfra;
     }
 
     for (i = 0, bezt = fcu->bezt; i < fcu->totvert; i++, bezt++) {
@@ -392,10 +380,10 @@ void createTransGraphEditData(bContext *C, TransInfo *t)
      * higher scaling ratios, but is faster than converting all points)
      */
     if (adt) {
-      cfra = BKE_nla_tweakedit_remap(adt, (float)CFRA, NLATIME_CONVERT_UNMAP);
+      cfra = BKE_nla_tweakedit_remap(adt, (float)scene->r.cfra, NLATIME_CONVERT_UNMAP);
     }
     else {
-      cfra = (float)CFRA;
+      cfra = (float)scene->r.cfra;
     }
 
     unit_scale = ANIM_unit_mapping_get_factor(
@@ -583,10 +571,10 @@ void createTransGraphEditData(bContext *C, TransInfo *t)
        * higher scaling ratios, but is faster than converting all points)
        */
       if (adt) {
-        cfra = BKE_nla_tweakedit_remap(adt, (float)CFRA, NLATIME_CONVERT_UNMAP);
+        cfra = BKE_nla_tweakedit_remap(adt, (float)scene->r.cfra, NLATIME_CONVERT_UNMAP);
       }
       else {
-        cfra = (float)CFRA;
+        cfra = (float)scene->r.cfra;
       }
 
       for (i = 0, bezt = fcu->bezt; i < fcu->totvert; i++, bezt++) {
@@ -651,19 +639,17 @@ static bool fcu_test_selected(FCurve *fcu)
   return 0;
 }
 
-/* this function is called on recalcData to apply the transforms applied
+/* This function is called on recalcData to apply the transforms applied
  * to the transdata on to the actual keyframe data
  */
 static void flushTransGraphData(TransInfo *t)
 {
-  SpaceGraph *sipo = (SpaceGraph *)t->area->spacedata.first;
   TransData *td;
   TransData2D *td2d;
   TransDataGraph *tdg;
-  Scene *scene = t->scene;
-  double secf = FPS;
   int a;
 
+  const short autosnap = getAnimEdit_SnapMode(t);
   TransDataContainer *tc = TRANS_DATA_CONTAINER_FIRST_SINGLE(t);
 
   /* flush to 2d vector from internally used 3d vector */
@@ -679,21 +665,8 @@ static void flushTransGraphData(TransInfo *t)
      * - Only apply to keyframes (but never to handles).
      * - Don't do this when canceling, or else these changes won't go away.
      */
-    if ((t->state != TRANS_CANCEL) && (td->flag & TD_NOTIMESNAP) == 0) {
-      switch (sipo->autosnap) {
-        case SACTSNAP_FRAME: /* snap to nearest frame */
-          td2d->loc[0] = floor((double)td2d->loc[0] + 0.5);
-          break;
-
-        case SACTSNAP_SECOND: /* snap to nearest second */
-          td2d->loc[0] = floor(((double)td2d->loc[0] / secf) + 0.5) * secf;
-          break;
-
-        case SACTSNAP_MARKER: /* snap to nearest marker */
-          td2d->loc[0] = (float)ED_markers_find_nearest_marker_time(&t->scene->markers,
-                                                                    td2d->loc[0]);
-          break;
-      }
+    if ((autosnap != SACTSNAP_OFF) && (t->state != TRANS_CANCEL) && !(td->flag & TD_NOTIMESNAP)) {
+      transform_snap_anim_flush_data(t, td, autosnap, td->loc);
     }
 
     /* we need to unapply the nla-mapping from the time in some situations */
@@ -704,32 +677,6 @@ static void flushTransGraphData(TransInfo *t)
       td2d->loc2d[0] = td2d->loc[0];
     }
 
-    /** Time-stepping auto-snapping modes don't get applied for Graph Editor transforms,
-     * as these use the generic transform modes which don't account for this sort of thing.
-     * These ones aren't affected by NLA mapping, so we do this after the conversion...
-     *
-     * \note We also have to apply to td->loc,
-     * as that's what the handle-adjustment step below looks to,
-     * otherwise we get "swimming handles".
-     *
-     * \note We don't do this when canceling transforms, or else these changes don't go away.
-     */
-    if ((t->state != TRANS_CANCEL) && (td->flag & TD_NOTIMESNAP) == 0 &&
-        ELEM(sipo->autosnap, SACTSNAP_STEP, SACTSNAP_TSTEP)) {
-      switch (sipo->autosnap) {
-        case SACTSNAP_STEP: /* frame step */
-          td2d->loc2d[0] = floor((double)td2d->loc[0] + 0.5);
-          td->loc[0] = floor((double)td->loc[0] + 0.5);
-          break;
-
-        case SACTSNAP_TSTEP: /* second step */
-          /* XXX: the handle behavior in this case is still not quite right... */
-          td2d->loc[0] = floor(((double)td2d->loc[0] / secf) + 0.5) * secf;
-          td->loc[0] = floor(((double)td->loc[0] / secf) + 0.5) * secf;
-          break;
-      }
-    }
-
     /* if int-values only, truncate to integers */
     if (td->flag & TD_INTVALUES) {
       td2d->loc2d[1] = floorf(td2d->loc[1] * inv_unit_scale - tdg->offset + 0.5f);
@@ -738,15 +685,7 @@ static void flushTransGraphData(TransInfo *t)
       td2d->loc2d[1] = td2d->loc[1] * inv_unit_scale - tdg->offset;
     }
 
-    if ((td->flag & TD_MOVEHANDLE1) && td2d->h1) {
-      td2d->h1[0] = td2d->ih1[0] + td->loc[0] - td->iloc[0];
-      td2d->h1[1] = td2d->ih1[1] + (td->loc[1] - td->iloc[1]) * inv_unit_scale;
-    }
-
-    if ((td->flag & TD_MOVEHANDLE2) && td2d->h2) {
-      td2d->h2[0] = td2d->ih2[0] + td->loc[0] - td->iloc[0];
-      td2d->h2[1] = td2d->ih2[1] + (td->loc[1] - td->iloc[1]) * inv_unit_scale;
-    }
+    transform_convert_flush_handle2D(td, td2d, inv_unit_scale);
   }
 }
 
@@ -939,8 +878,8 @@ static void remake_graph_transdata(TransInfo *t, ListBase *anim_data)
     if (fcu->bezt) {
       BeztMap *bezm;
 
-      /* adjust transform-data pointers */
-      /* note, none of these functions use 'use_handle', it could be removed */
+      /* Adjust transform-data pointers. */
+      /* NOTE: none of these functions use 'use_handle', it could be removed. */
       bezm = bezt_to_beztmaps(fcu->bezt, fcu->totvert);
       sort_time_beztmaps(bezm, fcu->totvert);
       beztmap_to_data(t, fcu, bezm, fcu->totvert);
@@ -957,8 +896,7 @@ static void remake_graph_transdata(TransInfo *t, ListBase *anim_data)
   }
 }
 
-/* helper for recalcData() - for Graph Editor transforms */
-void recalcData_graphedit(TransInfo *t)
+static void recalcData_graphedit(TransInfo *t)
 {
   SpaceGraph *sipo = (SpaceGraph *)t->area->spacedata.first;
   ViewLayer *view_layer = t->view_layer;
@@ -970,12 +908,14 @@ void recalcData_graphedit(TransInfo *t)
   bAnimListElem *ale;
   int dosort = 0;
 
+  BKE_view_layer_synced_ensure(t->scene, t->view_layer);
+
   /* initialize relevant anim-context 'context' data from TransInfo data */
   /* NOTE: sync this with the code in ANIM_animdata_get_context() */
   ac.bmain = CTX_data_main(t->context);
   ac.scene = t->scene;
   ac.view_layer = t->view_layer;
-  ac.obact = OBACT(view_layer);
+  ac.obact = BKE_view_layer_active_object_get(view_layer);
   ac.area = t->area;
   ac.region = t->region;
   ac.sl = (t->area) ? t->area->spacedata.first : NULL;
@@ -988,7 +928,8 @@ void recalcData_graphedit(TransInfo *t)
   flushTransGraphData(t);
 
   /* get curves to check if a re-sort is needed */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_FOREDIT | ANIMFILTER_CURVE_VISIBLE);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_FOREDIT | ANIMFILTER_CURVE_VISIBLE |
+            ANIMFILTER_FCURVESONLY);
   ANIM_animdata_filter(&ac, &anim_data, filter, ac.data, ac.datatype);
 
   /* now test if there is a need to re-sort */
@@ -1005,7 +946,7 @@ void recalcData_graphedit(TransInfo *t)
       dosort++;
     }
     else {
-      calchandles_fcurve_ex(fcu, BEZT_FLAG_TEMP_TAG);
+      BKE_fcurve_handles_recalc_ex(fcu, BEZT_FLAG_TEMP_TAG);
     }
 
     /* set refresh tags for objects using this animation,
@@ -1031,7 +972,7 @@ void recalcData_graphedit(TransInfo *t)
 /** \name Special After Transform Graph
  * \{ */
 
-void special_aftertrans_update__graph(bContext *C, TransInfo *t)
+static void special_aftertrans_update__graph(bContext *C, TransInfo *t)
 {
   SpaceGraph *sipo = (SpaceGraph *)t->area->spacedata.first;
   bAnimContext ac;
@@ -1048,7 +989,8 @@ void special_aftertrans_update__graph(bContext *C, TransInfo *t)
   if (ac.datatype) {
     ListBase anim_data = {NULL, NULL};
     bAnimListElem *ale;
-    short filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_FOREDIT | ANIMFILTER_CURVE_VISIBLE);
+    short filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_FOREDIT | ANIMFILTER_CURVE_VISIBLE |
+                    ANIMFILTER_FCURVESONLY);
 
     /* get channels to work on */
     ANIM_animdata_filter(&ac, &anim_data, filter, ac.data, ac.datatype);
@@ -1082,7 +1024,7 @@ void special_aftertrans_update__graph(bContext *C, TransInfo *t)
 
   /* Make sure all F-Curves are set correctly, but not if transform was
    * canceled, since then curves were already restored to initial state.
-   * Note: if the refresh is really needed after cancel then some way
+   * NOTE: if the refresh is really needed after cancel then some way
    *       has to be added to not update handle types (see bug 22289).
    */
   if (!canceled) {
@@ -1091,3 +1033,10 @@ void special_aftertrans_update__graph(bContext *C, TransInfo *t)
 }
 
 /** \} */
+
+TransConvertTypeInfo TransConvertType_Graph = {
+    /* flags */ (T_POINTS | T_2D_EDIT),
+    /* createTransData */ createTransGraphEditData,
+    /* recalcData */ recalcData_graphedit,
+    /* special_aftertrans_update */ special_aftertrans_update__graph,
+};

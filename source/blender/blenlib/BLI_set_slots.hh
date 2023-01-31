@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -143,7 +129,7 @@ template<typename Key> class SimpleSetSlot {
    * key. The hash is used by other slot implementations to determine inequality faster.
    */
   template<typename ForwardKey, typename IsEqual>
-  bool contains(const ForwardKey &key, const IsEqual &is_equal, uint64_t UNUSED(hash)) const
+  bool contains(const ForwardKey &key, const IsEqual &is_equal, uint64_t /*hash*/) const
   {
     if (state_ == Occupied) {
       return is_equal(key, *key_buffer_);
@@ -155,7 +141,7 @@ template<typename Key> class SimpleSetSlot {
    * Change the state of this slot from empty/removed to occupied. The key has to be constructed
    * by calling the constructor with the given key as parameter.
    */
-  template<typename ForwardKey> void occupy(ForwardKey &&key, uint64_t UNUSED(hash))
+  template<typename ForwardKey> void occupy(ForwardKey &&key, uint64_t /*hash*/)
   {
     BLI_assert(!this->is_occupied());
     new (&key_buffer_) Key(std::forward<ForwardKey>(key));
@@ -240,7 +226,7 @@ template<typename Key> class HashedSetSlot {
     return state_ == Empty;
   }
 
-  template<typename Hash> uint64_t get_hash(const Hash &UNUSED(hash)) const
+  template<typename Hash> uint64_t get_hash(const Hash & /*hash*/) const
   {
     BLI_assert(this->is_occupied());
     return hash_;
@@ -249,7 +235,7 @@ template<typename Key> class HashedSetSlot {
   template<typename ForwardKey, typename IsEqual>
   bool contains(const ForwardKey &key, const IsEqual &is_equal, const uint64_t hash) const
   {
-    /* hash_ might be uninitialized here, but that is ok. */
+    /* `hash_` might be uninitialized here, but that is ok. */
     if (hash_ == hash) {
       if (state_ == Occupied) {
         return is_equal(key, *key_buffer_);
@@ -320,13 +306,13 @@ template<typename Key, typename KeyInfo> class IntrusiveSetSlot {
   }
 
   template<typename ForwardKey, typename IsEqual>
-  bool contains(const ForwardKey &key, const IsEqual &is_equal, const uint64_t UNUSED(hash)) const
+  bool contains(const ForwardKey &key, const IsEqual &is_equal, const uint64_t /*hash*/) const
   {
     BLI_assert(KeyInfo::is_not_empty_or_removed(key));
     return is_equal(key_, key);
   }
 
-  template<typename ForwardKey> void occupy(ForwardKey &&key, const uint64_t UNUSED(hash))
+  template<typename ForwardKey> void occupy(ForwardKey &&key, const uint64_t /*hash*/)
   {
     BLI_assert(!this->is_occupied());
     BLI_assert(KeyInfo::is_not_empty_or_removed(key));

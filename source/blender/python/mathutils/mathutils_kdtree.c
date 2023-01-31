@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup mathutils
@@ -37,7 +23,8 @@
 #include "BLI_strict_flags.h"
 
 typedef struct {
-  PyObject_HEAD KDTree_3d *obj;
+  PyObject_HEAD
+  KDTree_3d *obj;
   uint maxsize;
   uint count;
   uint count_balance; /* size when we last balanced */
@@ -52,7 +39,7 @@ static void kdtree_nearest_to_py_tuple(const KDTreeNearest_3d *nearest, PyObject
   BLI_assert(PyTuple_GET_SIZE(py_retval) == 3);
 
   PyTuple_SET_ITEMS(py_retval,
-                    Vector_CreatePyObject((float *)nearest->co, 3, NULL),
+                    Vector_CreatePyObject(nearest->co, 3, NULL),
                     PyLong_FromLong(nearest->index),
                     PyFloat_FromDouble(nearest->dist));
 }
@@ -222,7 +209,7 @@ static PyObject *py_kdtree_find(PyKDTree *self, PyObject *args, PyObject *kwargs
   const char *keywords[] = {"co", "filter", NULL};
 
   if (!PyArg_ParseTupleAndKeywords(
-          args, kwargs, "O|O:find", (char **)keywords, &py_co, &py_filter)) {
+          args, kwargs, "O|$O:find", (char **)keywords, &py_co, &py_filter)) {
     return NULL;
   }
 
@@ -441,7 +428,7 @@ static struct PyModuleDef kdtree_moduledef = {
     py_kdtree_doc,      /* m_doc */
     0,                  /* m_size */
     NULL,               /* m_methods */
-    NULL,               /* m_reload */
+    NULL,               /* m_slots */
     NULL,               /* m_traverse */
     NULL,               /* m_clear */
     NULL,               /* m_free */

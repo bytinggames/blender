@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2013 by Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2013 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edobj
@@ -54,7 +38,7 @@ static void object_warp_calc_view_matrix(float r_mat_view[4][4],
   mul_m4_m4m4(viewmat_roll, mat_offset, viewmat);
 
   /* apply the view and the object matrix */
-  mul_m4_m4m4(r_mat_view, viewmat_roll, obedit->obmat);
+  mul_m4_m4m4(r_mat_view, viewmat_roll, obedit->object_to_world);
 
   /* get the view-space cursor */
   mul_v3_m4v3(r_center_view, viewmat_roll, center);

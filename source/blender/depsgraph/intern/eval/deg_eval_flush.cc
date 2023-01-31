@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2013 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2013 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup depsgraph
@@ -58,15 +42,15 @@
 
 #include "intern/eval/deg_eval_copy_on_write.h"
 
-// Invalidate data-block data when update is flushed on it.
-//
-// The idea of this is to help catching cases when area is accessing data which
-// is not yet evaluated, which could happen due to missing relations. The issue
-// is that usually that data will be kept from previous frame, and it looks to
-// be plausible.
-//
-// This ensures that data does not look plausible, making it much easier to
-// catch usage of invalid state.
+/* Invalidate data-block data when update is flushed on it.
+ *
+ * The idea of this is to help catching cases when area is accessing data which
+ * is not yet evaluated, which could happen due to missing relations. The issue
+ * is that usually that data will be kept from previous frame, and it looks to
+ * be plausible.
+ *
+ * This ensures that data does not look plausible, making it much easier to
+ * catch usage of invalid state. */
 #undef INVALIDATE_ON_FLUSH
 
 namespace blender::deg {
@@ -145,7 +129,18 @@ inline void flush_handle_component_node(IDNode *id_node,
    *
    * TODO(sergey): Make this a more generic solution. */
   if (!ELEM(comp_node->type, NodeType::PARTICLE_SETTINGS, NodeType::PARTICLE_SYSTEM)) {
+    const bool is_geometry_component = comp_node->type == NodeType::GEOMETRY;
     for (OperationNode *op : comp_node->operations) {
+      /* Special case for the visibility operation in the geometry component.
+       *
+       * This operation is a part of the geometry component so that manual tag for geometry recalc
+       * ensures that the visibility is re-evaluated. This operation is not to be re-evaluated when
+       * an update is flushed to the geometry component via a time dependency or a driver targeting
+       * a modifier. Skipping update in this case avoids CPU time unnecessarily spent looping over
+       * modifiers and looking up operations by name in the visibility evaluation function. */
+      if (is_geometry_component && op->opcode == OperationCode::VISIBILITY) {
+        continue;
+      }
       op->flag |= DEPSOP_FLAG_NEEDS_UPDATE;
     }
   }
@@ -240,7 +235,7 @@ void flush_editors_id_update(Depsgraph *graph, const DEGEditorUpdateContext *upd
                      EVAL,
                      "Accumulated recalc bits for %s: %u\n",
                      id_orig->name,
-                     (unsigned int)id_cow->recalc);
+                     uint(id_cow->recalc));
 
     /* Inform editors. Only if the data-block is being evaluated a second
      * time, to distinguish between user edits and initial evaluation when
@@ -289,7 +284,7 @@ void invalidate_tagged_evaluated_transform(ID *id)
   switch (id_type) {
     case ID_OB: {
       Object *object = (Object *)id;
-      copy_vn_fl((float *)object->obmat, 16, NAN);
+      copy_vn_fl((float *)object->object_to_world, 16, NAN);
       break;
     }
     default:
@@ -346,9 +341,6 @@ void invalidate_tagged_evaluated_data(Depsgraph *graph)
 
 }  // namespace
 
-/* Flush updates from tagged nodes outwards until all affected nodes
- * are tagged.
- */
 void deg_graph_flush_updates(Depsgraph *graph)
 {
   /* Sanity checks. */
@@ -395,14 +387,8 @@ void deg_graph_flush_updates(Depsgraph *graph)
   invalidate_tagged_evaluated_data(graph);
 }
 
-/* Clear tags from all operation nodes. */
 void deg_graph_clear_tags(Depsgraph *graph)
 {
-  /* Go over all operation nodes, clearing tags. */
-  for (OperationNode *node : graph->operations) {
-    node->flag &= ~(DEPSOP_FLAG_DIRECTLY_MODIFIED | DEPSOP_FLAG_NEEDS_UPDATE |
-                    DEPSOP_FLAG_USER_MODIFIED);
-  }
   /* Clear any entry tags which haven't been flushed. */
   graph->entry_tags.clear();
 

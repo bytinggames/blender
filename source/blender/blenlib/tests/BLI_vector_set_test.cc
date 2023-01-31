@@ -1,4 +1,4 @@
-/* Apache License, Version 2.0 */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 #include "BLI_exception_safety_test_utils.hh"
 #include "BLI_strict_flags.h"
@@ -126,6 +126,19 @@ TEST(vector_set, RemoveContained)
   EXPECT_EQ(set[0], 7);
   set.remove_contained(7);
   EXPECT_EQ(set.size(), 0);
+}
+
+TEST(vector_set, RemoveIf)
+{
+  VectorSet<int64_t> set;
+  for (const int64_t i : IndexRange(100)) {
+    set.add(i * i);
+  }
+  set.remove_if([](const int64_t key) { return key % 2 == 0; });
+  EXPECT_EQ(set.size(), 50);
+  for (const int64_t i : IndexRange(100)) {
+    EXPECT_EQ(set.contains(i * i), i % 2 == 1);
+  }
 }
 
 TEST(vector_set, AddMultipleTimes)
@@ -256,6 +269,29 @@ TEST(vector_set, Clear)
   EXPECT_EQ(set.size(), 6);
   set.clear();
   EXPECT_EQ(set.size(), 0);
+}
+
+TEST(vector_set, LookupKey)
+{
+  VectorSet<std::string> set;
+  set.add("a");
+  set.add("b");
+  set.add("c");
+  EXPECT_EQ(set.lookup_key("a"), "a");
+  EXPECT_EQ(set.lookup_key_as("c"), "c");
+  EXPECT_EQ(set.lookup_key_ptr_as("d"), nullptr);
+  EXPECT_EQ(set.lookup_key_ptr_as("b")->size(), 1);
+  EXPECT_EQ(set.lookup_key_ptr("a"), set.lookup_key_ptr_as("a"));
+}
+
+TEST(vector_set, GrowWhenEmpty)
+{
+  /* Tests that the internal keys array is freed correctly when growing an empty set. */
+  VectorSet<int> set;
+  set.add(4);
+  set.remove(4);
+  EXPECT_TRUE(set.is_empty());
+  set.reserve(100);
 }
 
 }  // namespace blender::tests

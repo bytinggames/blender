@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 #pragma once
 
 /** \file
@@ -45,7 +31,6 @@ class ABCGenericMeshWriter : public ABCAbstractWriter {
    * exported object. */
   bool is_subd_;
   ModifierData *subsurf_modifier_;
-  ModifierData *liquid_sim_modifier_;
 
   CDStreamConfig m_custom_data_config;
 
@@ -70,10 +55,8 @@ class ABCGenericMeshWriter : public ABCAbstractWriter {
   void write_subd(HierarchyContext &context, Mesh *mesh);
   template<typename Schema> void write_face_sets(Object *object, Mesh *mesh, Schema &schema);
 
-  ModifierData *get_liquid_sim_modifier(Scene *scene_eval, Object *ob_eval);
-
   void write_arb_geo_params(Mesh *me);
-  void get_velocities(Mesh *mesh, std::vector<Imath::V3f> &vels);
+  bool get_velocities(Mesh *mesh, std::vector<Imath::V3f> &vels);
   void get_geo_groups(Object *object,
                       Mesh *mesh,
                       std::map<std::string, std::vector<int32_t>> &geo_groups);

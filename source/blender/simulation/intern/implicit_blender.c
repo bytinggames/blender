@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup sim
@@ -77,12 +61,12 @@ struct Cloth;
 /* DEFINITIONS */
 typedef float lfVector[3];
 typedef struct fmatrix3x3 {
-  float m[3][3];     /* 3x3 matrix */
-  unsigned int c, r; /* column and row number */
+  float m[3][3]; /* 3x3 matrix */
+  uint c, r;     /* column and row number */
   // int pinned; /* is this vertex allowed to move? */
-  float n1, n2, n3;    /* three normal vectors for collision constrains */
-  unsigned int vcount; /* vertex count */
-  unsigned int scount; /* spring count */
+  float n1, n2, n3; /* three normal vectors for collision constrains */
+  uint vcount;      /* vertex count */
+  uint scount;      /* spring count */
 } fmatrix3x3;
 
 ///////////////////////////
@@ -126,9 +110,9 @@ static void print_fvector(float m3[3])
 /* long float vector float (*)[3] */
 ///////////////////////////
 /* print long vector on console: for debug output */
-DO_INLINE void print_lfvector(float (*fLongVector)[3], unsigned int verts)
+DO_INLINE void print_lfvector(float (*fLongVector)[3], uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
   for (i = 0; i < verts; i++) {
     print_fvector(fLongVector[i]);
   }
@@ -136,7 +120,7 @@ DO_INLINE void print_lfvector(float (*fLongVector)[3], unsigned int verts)
 #  endif
 
 /* create long vector */
-DO_INLINE lfVector *create_lfvector(unsigned int verts)
+DO_INLINE lfVector *create_lfvector(uint verts)
 {
   /* TODO: check if memory allocation was successful */
   return (lfVector *)MEM_callocN(verts * sizeof(lfVector), "cloth_implicit_alloc_vector");
@@ -151,51 +135,43 @@ DO_INLINE void del_lfvector(float (*fLongVector)[3])
   }
 }
 /* copy long vector */
-DO_INLINE void cp_lfvector(float (*to)[3], float (*from)[3], unsigned int verts)
+DO_INLINE void cp_lfvector(float (*to)[3], float (*from)[3], uint verts)
 {
   memcpy(to, from, verts * sizeof(lfVector));
 }
 /* init long vector with float[3] */
-DO_INLINE void init_lfvector(float (*fLongVector)[3], const float vector[3], unsigned int verts)
+DO_INLINE void init_lfvector(float (*fLongVector)[3], const float vector[3], uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
   for (i = 0; i < verts; i++) {
     copy_v3_v3(fLongVector[i], vector);
   }
 }
 /* zero long vector with float[3] */
-DO_INLINE void zero_lfvector(float (*to)[3], unsigned int verts)
+DO_INLINE void zero_lfvector(float (*to)[3], uint verts)
 {
   memset(to, 0.0f, verts * sizeof(lfVector));
 }
-/* multiply long vector with scalar*/
-DO_INLINE void mul_lfvectorS(float (*to)[3],
-                             float (*fLongVector)[3],
-                             float scalar,
-                             unsigned int verts)
+/* Multiply long vector with scalar. */
+DO_INLINE void mul_lfvectorS(float (*to)[3], float (*fLongVector)[3], float scalar, uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   for (i = 0; i < verts; i++) {
     mul_fvector_S(to[i], fLongVector[i], scalar);
   }
 }
-/* multiply long vector with scalar*/
-/* A -= B * float */
-DO_INLINE void submul_lfvectorS(float (*to)[3],
-                                float (*fLongVector)[3],
-                                float scalar,
-                                unsigned int verts)
+/* Multiply long vector with scalar.
+ * `A -= B * float` */
+DO_INLINE void submul_lfvectorS(float (*to)[3], float (*fLongVector)[3], float scalar, uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
   for (i = 0; i < verts; i++) {
     VECSUBMUL(to[i], fLongVector[i], scalar);
   }
 }
 /* dot product for big vector */
-DO_INLINE float dot_lfvector(float (*fLongVectorA)[3],
-                             float (*fLongVectorB)[3],
-                             unsigned int verts)
+DO_INLINE float dot_lfvector(float (*fLongVectorA)[3], float (*fLongVectorB)[3], uint verts)
 {
   long i = 0;
   float temp = 0.0;
@@ -209,64 +185,58 @@ DO_INLINE float dot_lfvector(float (*fLongVectorA)[3],
   }
   return temp;
 }
-/* A = B + C  --> for big vector */
+/* `A = B + C` -> for big vector. */
 DO_INLINE void add_lfvector_lfvector(float (*to)[3],
                                      float (*fLongVectorA)[3],
                                      float (*fLongVectorB)[3],
-                                     unsigned int verts)
+                                     uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   for (i = 0; i < verts; i++) {
     add_v3_v3v3(to[i], fLongVectorA[i], fLongVectorB[i]);
   }
 }
-/* A = B + C * float --> for big vector */
-DO_INLINE void add_lfvector_lfvectorS(float (*to)[3],
-                                      float (*fLongVectorA)[3],
-                                      float (*fLongVectorB)[3],
-                                      float bS,
-                                      unsigned int verts)
+/* `A = B + C * float` -> for big vector. */
+DO_INLINE void add_lfvector_lfvectorS(
+    float (*to)[3], float (*fLongVectorA)[3], float (*fLongVectorB)[3], float bS, uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   for (i = 0; i < verts; i++) {
     VECADDS(to[i], fLongVectorA[i], fLongVectorB[i], bS);
   }
 }
-/* A = B * float + C * float --> for big vector */
+/* `A = B * float + C * float` -> for big vector */
 DO_INLINE void add_lfvectorS_lfvectorS(float (*to)[3],
                                        float (*fLongVectorA)[3],
                                        float aS,
                                        float (*fLongVectorB)[3],
                                        float bS,
-                                       unsigned int verts)
+                                       uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   for (i = 0; i < verts; i++) {
     VECADDSS(to[i], fLongVectorA[i], aS, fLongVectorB[i], bS);
   }
 }
-/* A = B - C * float --> for big vector */
-DO_INLINE void sub_lfvector_lfvectorS(float (*to)[3],
-                                      float (*fLongVectorA)[3],
-                                      float (*fLongVectorB)[3],
-                                      float bS,
-                                      unsigned int verts)
+/* `A = B - C * float` -> for big vector. */
+DO_INLINE void sub_lfvector_lfvectorS(
+    float (*to)[3], float (*fLongVectorA)[3], float (*fLongVectorB)[3], float bS, uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
   for (i = 0; i < verts; i++) {
     VECSUBS(to[i], fLongVectorA[i], fLongVectorB[i], bS);
   }
 }
-/* A = B - C --> for big vector */
+/* `A = B - C` -> for big vector. */
 DO_INLINE void sub_lfvector_lfvector(float (*to)[3],
                                      float (*fLongVectorA)[3],
                                      float (*fLongVectorB)[3],
-                                     unsigned int verts)
+                                     uint verts)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   for (i = 0; i < verts; i++) {
     sub_v3_v3v3(to[i], fLongVectorA[i], fLongVectorB[i]);
@@ -287,7 +257,7 @@ static void print_fmatrix(float m3[3][3])
 static void print_sparse_matrix(fmatrix3x3 *m)
 {
   if (m) {
-    unsigned int i;
+    uint i;
     for (i = 0; i < m[0].vcount + m[0].scount; i++) {
       printf("%d:\n", i);
       print_fmatrix(m[i].m);
@@ -390,7 +360,7 @@ DO_INLINE float det_fmatrix(float m[3][3])
 
 DO_INLINE void inverse_fmatrix(float to[3][3], float from[3][3])
 {
-  unsigned int i, j;
+  uint i, j;
   float d;
 
   if ((d = det_fmatrix(from)) == 0) {
@@ -455,7 +425,7 @@ DO_INLINE void add_fmatrix_fmatrix(float to[3][3],
   add_v3_v3v3(to[1], matrixA[1], matrixB[1]);
   add_v3_v3v3(to[2], matrixA[2], matrixB[2]);
 }
-/* A -= B*x + C*y (3x3 matrix sub-addition with 3x3 matrix) */
+/* `A -= B*x + (C * y)` (3x3 matrix sub-addition with 3x3 matrix). */
 DO_INLINE void subadd_fmatrixS_fmatrixS(
     float to[3][3], const float matrixA[3][3], float aS, const float matrixB[3][3], float bS)
 {
@@ -463,7 +433,7 @@ DO_INLINE void subadd_fmatrixS_fmatrixS(
   VECSUBADDSS(to[1], matrixA[1], aS, matrixB[1], bS);
   VECSUBADDSS(to[2], matrixA[2], aS, matrixB[2], bS);
 }
-/* A = B - C (3x3 matrix subtraction with 3x3 matrix) */
+/* `A = B - C` (3x3 matrix subtraction with 3x3 matrix). */
 DO_INLINE void sub_fmatrix_fmatrix(float to[3][3],
                                    const float matrixA[3][3],
                                    const float matrixB[3][3])
@@ -540,7 +510,7 @@ BLI_INLINE void madd_m3_m3fl(float r[3][3], const float m[3][3], float f)
 #  if 0
 static void print_bfmatrix(fmatrix3x3 *m3)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   for (i = 0; i < m3[0].vcount + m3[0].scount; i++) {
     print_fmatrix(m3[i].m);
@@ -555,7 +525,7 @@ BLI_INLINE void init_fmatrix(fmatrix3x3 *matrix, int r, int c)
 }
 
 /* create big matrix */
-DO_INLINE fmatrix3x3 *create_bfmatrix(unsigned int verts, unsigned int springs)
+DO_INLINE fmatrix3x3 *create_bfmatrix(uint verts, uint springs)
 {
   /* TODO: check if memory allocation was successful */
   fmatrix3x3 *temp = (fmatrix3x3 *)MEM_callocN(sizeof(fmatrix3x3) * (verts + springs),
@@ -583,7 +553,7 @@ DO_INLINE void del_bfmatrix(fmatrix3x3 *matrix)
 /* copy big matrix */
 DO_INLINE void cp_bfmatrix(fmatrix3x3 *to, fmatrix3x3 *from)
 {
-  /* TODO bounds checking */
+  /* TODO: bounds checking. */
   memcpy(to, from, sizeof(fmatrix3x3) * (from[0].vcount + from[0].scount));
 }
 
@@ -591,7 +561,7 @@ DO_INLINE void cp_bfmatrix(fmatrix3x3 *to, fmatrix3x3 *from)
 /* slow in parallel */
 DO_INLINE void init_bfmatrix(fmatrix3x3 *matrix, float m3[3][3])
 {
-  unsigned int i;
+  uint i;
 
   for (i = 0; i < matrix[0].vcount + matrix[0].scount; i++) {
     cp_fmatrix(matrix[i].m, m3);
@@ -602,7 +572,7 @@ DO_INLINE void init_bfmatrix(fmatrix3x3 *matrix, float m3[3][3])
 /* slow in parallel */
 DO_INLINE void initdiag_bfmatrix(fmatrix3x3 *matrix, float m3[3][3])
 {
-  unsigned int i, j;
+  uint i, j;
   float tmatrix[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
 
   for (i = 0; i < matrix[0].vcount; i++) {
@@ -613,11 +583,11 @@ DO_INLINE void initdiag_bfmatrix(fmatrix3x3 *matrix, float m3[3][3])
   }
 }
 
-/* SPARSE SYMMETRIC multiply big matrix with long vector*/
+/* SPARSE SYMMETRIC multiply big matrix with long vector. */
 /* STATUS: verified */
 DO_INLINE void mul_bfmatrix_lfvector(float (*to)[3], fmatrix3x3 *from, lfVector *fLongVector)
 {
-  unsigned int vcount = from[0].vcount;
+  uint vcount = from[0].vcount;
   lfVector *temp = create_lfvector(vcount);
 
   zero_lfvector(to, vcount);
@@ -626,7 +596,7 @@ DO_INLINE void mul_bfmatrix_lfvector(float (*to)[3], fmatrix3x3 *from, lfVector 
   {
 #  pragma omp section
     {
-      for (unsigned int i = from[0].vcount; i < from[0].vcount + from[0].scount; i++) {
+      for (uint i = from[0].vcount; i < from[0].vcount + from[0].scount; i++) {
         /* This is the lower triangle of the sparse matrix,
          * therefore multiplication occurs with transposed submatrices. */
         muladd_fmatrixT_fvector(to[from[i].c], from[i].m, fLongVector[from[i].r]);
@@ -634,7 +604,7 @@ DO_INLINE void mul_bfmatrix_lfvector(float (*to)[3], fmatrix3x3 *from, lfVector 
     }
 #  pragma omp section
     {
-      for (unsigned int i = 0; i < from[0].vcount + from[0].scount; i++) {
+      for (uint i = 0; i < from[0].vcount + from[0].scount; i++) {
         muladd_fmatrix_fvector(temp[from[i].r], from[i].m, fLongVector[from[i].c]);
       }
     }
@@ -644,13 +614,13 @@ DO_INLINE void mul_bfmatrix_lfvector(float (*to)[3], fmatrix3x3 *from, lfVector 
   del_lfvector(temp);
 }
 
-/* SPARSE SYMMETRIC sub big matrix with big matrix*/
+/* SPARSE SYMMETRIC sub big matrix with big matrix. */
 /* A -= B * float + C * float --> for big matrix */
 /* VERIFIED */
 DO_INLINE void subadd_bfmatrixS_bfmatrixS(
     fmatrix3x3 *to, fmatrix3x3 *from, float aS, fmatrix3x3 *matrix, float bS)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   /* process diagonal elements */
   for (i = 0; i < matrix[0].vcount + matrix[0].scount; i++) {
@@ -697,7 +667,7 @@ Implicit_Data *SIM_mass_spring_solver_create(int numverts, int numsprings)
   id->S = create_bfmatrix(numverts, 0);
   id->Pinv = create_bfmatrix(numverts, numsprings);
   id->P = create_bfmatrix(numverts, numsprings);
-  id->bigI = create_bfmatrix(numverts, numsprings); /* TODO 0 springs */
+  id->bigI = create_bfmatrix(numverts, numsprings); /* TODO: 0 springs. */
   id->M = create_bfmatrix(numverts, numsprings);
   id->X = create_lfvector(numverts);
   id->Xnew = create_lfvector(numverts);
@@ -773,7 +743,7 @@ BLI_INLINE void root_to_world_m3(Implicit_Data *data,
 
 DO_INLINE void filter(lfVector *V, fmatrix3x3 *S)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   for (i = 0; i < S[0].vcount; i++) {
     mul_m3_v3(S[i].m, V[S[i].r]);
@@ -786,11 +756,11 @@ DO_INLINE void filter(lfVector *V, fmatrix3x3 *S)
 static int cg_filtered(lfVector *ldV, fmatrix3x3 *lA, lfVector *lB, lfVector *z, fmatrix3x3 *S)
 {
   /* Solves for unknown X in equation AX=B */
-  unsigned int conjgrad_loopcount = 0, conjgrad_looplimit = 100;
+  uint conjgrad_loopcount = 0, conjgrad_looplimit = 100;
   float conjgrad_epsilon = 0.0001f /* , conjgrad_lasterror=0 */ /* UNUSED */;
   lfVector *q, *d, *tmp, *r;
   float s, starget, a, s_prev;
-  unsigned int numverts = lA[0].vcount;
+  uint numverts = lA[0].vcount;
   q = create_lfvector(numverts);
   d = create_lfvector(numverts);
   tmp = create_lfvector(numverts);
@@ -830,7 +800,7 @@ static int cg_filtered(lfVector *ldV, fmatrix3x3 *lA, lfVector *lB, lfVector *z,
     s_prev = s;
     s = dot_lfvector(r, r, numverts);
 
-    /* d = r+d*(s/s_prev); */
+    // d = r+d*(s/s_prev);
     add_lfvector_lfvectorS(d, r, d, (s / s_prev), numverts);
 
     filter(d, S);
@@ -858,10 +828,10 @@ static int cg_filtered(lfVector *ldV,
                        ImplicitSolverResult *result)
 {
   /* Solves for unknown X in equation AX=B */
-  unsigned int conjgrad_loopcount = 0, conjgrad_looplimit = 100;
+  uint conjgrad_loopcount = 0, conjgrad_looplimit = 100;
   float conjgrad_epsilon = 0.01f;
 
-  unsigned int numverts = lA[0].vcount;
+  uint numverts = lA[0].vcount;
   lfVector *fB = create_lfvector(numverts);
   lfVector *AdV = create_lfvector(numverts);
   lfVector *r = create_lfvector(numverts);
@@ -949,7 +919,7 @@ static int cg_filtered(lfVector *ldV,
 /* block diagonalizer */
 DO_INLINE void BuildPPinv(fmatrix3x3 *lA, fmatrix3x3 *P, fmatrix3x3 *Pinv)
 {
-  unsigned int i = 0;
+  uint i = 0;
 
   /* Take only the diagonal blocks of A */
   // #pragma omp parallel for private(i) if (lA[0].vcount > CLOTH_OPENMP_LIMIT)
@@ -970,7 +940,7 @@ static int cg_filtered_pre(lfVector *dv,
                            fmatrix3x3 *P,
                            fmatrix3x3 *Pinv)
 {
-  unsigned int numverts = lA[0].vcount, iterations = 0, conjgrad_looplimit = 100;
+  uint numverts = lA[0].vcount, iterations = 0, conjgrad_looplimit = 100;
   float delta0 = 0, deltaNew = 0, deltaOld = 0, alpha = 0;
   float conjgrad_epsilon = 0.0001;  /* 0.2 is dt for steps=5 */
   lfVector *r = create_lfvector(numverts);
@@ -1048,7 +1018,7 @@ static int cg_filtered_pre(lfVector *dv,
                            fmatrix3x3 *Pinv,
                            fmatrix3x3 *bigI)
 {
-  unsigned int numverts = lA[0].vcount, iterations = 0, conjgrad_looplimit = 100;
+  uint numverts = lA[0].vcount, iterations = 0, conjgrad_looplimit = 100;
   float delta0 = 0, deltaNew = 0, deltaOld = 0, alpha = 0, tol = 0;
   lfVector *r = create_lfvector(numverts);
   lfVector *p = create_lfvector(numverts);
@@ -1153,7 +1123,7 @@ static int cg_filtered_pre(lfVector *dv,
 
 bool SIM_mass_spring_solve_velocities(Implicit_Data *data, float dt, ImplicitSolverResult *result)
 {
-  unsigned int numverts = data->dFdV[0].vcount;
+  uint numverts = data->dFdV[0].vcount;
 
   lfVector *dFdXmV = create_lfvector(numverts);
   zero_lfvector(data->dV, numverts);
@@ -1439,7 +1409,7 @@ void SIM_mass_spring_force_drag(Implicit_Data *data, float drag)
   for (i = 0; i < numverts; i++) {
     float tmp[3][3];
 
-    /* NB: uses root space velocity, no need to transform */
+    /* NOTE: Uses root space velocity, no need to transform. */
     madd_v3_v3fl(data->F[i], data->V[i], -drag);
 
     copy_m3_m3(tmp, I);
@@ -1475,11 +1445,12 @@ static float calc_nor_area_tri(float nor[3],
   return normalize_v3(nor) / 2.0f;
 }
 
-/* XXX does not support force jacobians yet, since the effector system does not provide them either
- */
 void SIM_mass_spring_force_face_wind(
     Implicit_Data *data, int v1, int v2, int v3, const float (*winvec)[3])
 {
+  /* XXX does not support force jacobians yet,
+   * since the effector system does not provide them either. */
+
   const float effector_scale = 0.02f;
   const int vs[3] = {v1, v2, v3};
   float win[3], nor[3], area;
@@ -1683,8 +1654,8 @@ BLI_INLINE void dfdx_damp(float to[3][3],
                           float rest,
                           float damping)
 {
-  /* inner spring damping   vel is the relative velocity  of the endpoints. */
-  //  return (I-outerprod(dir, dir)) * (-damping * -(dot(dir, vel)/Max(length, rest)));
+  /* Inner spring damping `vel` is the relative velocity of the endpoints. */
+  // return (I - outerprod(dir, dir)) * (-damping * -(dot(dir, vel) / Max(length, rest)));
   mul_fvectorT_fvector(to, dir, dir);
   sub_fmatrix_fmatrix(to, I, to);
   mul_fmatrix_S(to, (-damping * -(dot_v3v3(dir, vel) / MAX2(length, rest))));
@@ -1854,10 +1825,11 @@ bool SIM_mass_spring_force_spring_linear(Implicit_Data *data,
   return true;
 }
 
-/* See "Stable but Responsive Cloth" (Choi, Ko 2005) */
 bool SIM_mass_spring_force_spring_bending(
     Implicit_Data *data, int i, int j, float restlen, float kb, float cb)
 {
+  /* See "Stable but Responsive Cloth" (Choi, Ko 2005). */
+
   float extent[3], length, dir[3], vel[3];
 
   /* calculate elongation */
@@ -1959,8 +1931,6 @@ BLI_INLINE void spring_angle(Implicit_Data *data,
   sub_v3_v3(r_vel_b, vel_e);
 }
 
-/* Angular springs roughly based on the bending model proposed by Baraff and Witkin in "Large Steps
- * in Cloth Simulation". */
 bool SIM_mass_spring_force_spring_angular(Implicit_Data *data,
                                           int i,
                                           int j,
@@ -2112,7 +2082,7 @@ BLI_INLINE void spring_hairbend_estimate_dfdx(Implicit_Data *data,
                                               int q,
                                               float dfdx[3][3])
 {
-  const float delta = 0.00001f; /* TODO find a good heuristic for this */
+  const float delta = 0.00001f; /* TODO: find a good heuristic for this. */
   float dvec_null[3][3], dvec_pos[3][3], dvec_neg[3][3];
   float f[3];
   int a, b;
@@ -2123,7 +2093,7 @@ BLI_INLINE void spring_hairbend_estimate_dfdx(Implicit_Data *data,
   copy_m3_m3(dvec_neg, dvec_pos);
   negate_m3(dvec_neg);
 
-  /* XXX TODO offset targets to account for position dependency */
+  /* XXX TODO: offset targets to account for position dependency. */
 
   for (a = 0; a < 3; a++) {
     spring_hairbend_forces(
@@ -2151,7 +2121,7 @@ BLI_INLINE void spring_hairbend_estimate_dfdv(Implicit_Data *data,
                                               int q,
                                               float dfdv[3][3])
 {
-  const float delta = 0.00001f; /* TODO find a good heuristic for this */
+  const float delta = 0.00001f; /* TODO: find a good heuristic for this. */
   float dvec_null[3][3], dvec_pos[3][3], dvec_neg[3][3];
   float f[3];
   int a, b;
@@ -2162,7 +2132,7 @@ BLI_INLINE void spring_hairbend_estimate_dfdv(Implicit_Data *data,
   copy_m3_m3(dvec_neg, dvec_pos);
   negate_m3(dvec_neg);
 
-  /* XXX TODO offset targets to account for position dependency */
+  /* XXX TODO: offset targets to account for position dependency. */
 
   for (a = 0; a < 3; a++) {
     spring_hairbend_forces(
@@ -2179,9 +2149,6 @@ BLI_INLINE void spring_hairbend_estimate_dfdv(Implicit_Data *data,
   }
 }
 
-/* Angular spring that pulls the vertex toward the local target
- * See "Artistic Simulation of Curly Hair" (Pixar technical memo #12-03a)
- */
 bool SIM_mass_spring_force_spring_bending_hair(Implicit_Data *data,
                                                int i,
                                                int j,
@@ -2190,6 +2157,9 @@ bool SIM_mass_spring_force_spring_bending_hair(Implicit_Data *data,
                                                float stiffness,
                                                float damping)
 {
+  /* Angular springs roughly based on the bending model proposed by Baraff and Witkin in
+   * "Large Steps in Cloth Simulation". */
+
   float goal[3];
   float fj[3], fk[3];
   float dfj_dxi[3][3], dfj_dxj[3][3], dfk_dxi[3][3], dfk_dxj[3][3], dfk_dxk[3][3];
@@ -2204,7 +2174,7 @@ bool SIM_mass_spring_force_spring_bending_hair(Implicit_Data *data,
   world_to_root_v3(data, j, goal, target);
 
   spring_hairbend_forces(data, i, j, k, goal, stiffness, damping, k, vecnull, vecnull, fk);
-  negate_v3_v3(fj, fk); /* counterforce */
+  negate_v3_v3(fj, fk); /* Counter-force. */
 
   spring_hairbend_estimate_dfdx(data, i, j, k, goal, stiffness, damping, i, dfk_dxi);
   spring_hairbend_estimate_dfdx(data, i, j, k, goal, stiffness, damping, j, dfk_dxj);

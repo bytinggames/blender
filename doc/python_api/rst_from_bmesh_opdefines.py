@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # This is a quite stupid script which extracts bmesh api docs from
 # 'bmesh_opdefines.c' in order to avoid having to add a lot of introspection
@@ -259,9 +241,9 @@ def main():
         comment_washed = []
         comment = [] if comment is None else comment
         for i, l in enumerate(comment):
-            assert((l.strip() == "") or
-                   (l in {"/*", " *"}) or
-                   (l.startswith(("/* ", " * "))))
+            assert ((l.strip() == "") or
+                    (l in {"/*", " *"}) or
+                    (l.startswith(("/* ", " * "))))
 
             l = l[3:]
             if i == 0 and not l.strip():
@@ -288,7 +270,7 @@ def main():
                     tp_sub = None
                 else:
                     print(arg)
-                    assert(0)
+                    assert 0
 
                 tp_str = ""
 
@@ -333,7 +315,7 @@ def main():
                         tp_str += " or any sequence of 3 floats"
                 elif tp == BMO_OP_SLOT_PTR:
                     tp_str = "dict"
-                    assert(tp_sub is not None)
+                    assert tp_sub is not None
                     if tp_sub == BMO_OP_SLOT_SUBTYPE_PTR_BMESH:
                         tp_str = ":class:`bmesh.types.BMesh`"
                     elif tp_sub == BMO_OP_SLOT_SUBTYPE_PTR_SCENE:
@@ -348,10 +330,10 @@ def main():
                         tp_str = ":class:`bpy.types.bpy_struct`"
                     else:
                         print("Can't find", vars_dict_reverse[tp_sub])
-                        assert(0)
+                        assert 0
 
                 elif tp == BMO_OP_SLOT_ELEMENT_BUF:
-                    assert(tp_sub is not None)
+                    assert tp_sub is not None
 
                     ls = []
                     if tp_sub & BM_VERT:
@@ -360,7 +342,7 @@ def main():
                         ls.append(":class:`bmesh.types.BMEdge`")
                     if tp_sub & BM_FACE:
                         ls.append(":class:`bmesh.types.BMFace`")
-                    assert(ls)  # must be at least one
+                    assert ls  # Must be at least one.
 
                     if tp_sub & BMO_OP_SLOT_SUBTYPE_ELEM_IS_SINGLE:
                         tp_str = "/".join(ls)
@@ -385,10 +367,10 @@ def main():
                             tp_str += "unknown internal data, not compatible with python"
                         else:
                             print("Can't find", vars_dict_reverse[tp_sub])
-                            assert(0)
+                            assert 0
                 else:
                     print("Can't find", vars_dict_reverse[tp])
-                    assert(0)
+                    assert 0
 
                 args_wash.append((name, tp_str, comment))
             return args_wash
@@ -412,7 +394,7 @@ def main():
             fw("   :return:\n\n")
 
             for (name, tp, comment) in args_out_wash:
-                assert(name.endswith(".out"))
+                assert name.endswith(".out")
                 name = name[:-4]
                 fw("      - ``%s``: %s\n\n" % (name, comment))
                 fw("        **type** %s\n" % tp)

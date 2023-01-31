@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edcurve
@@ -104,13 +88,14 @@ static void ED_curve_pick_vert__do_closest(void *userData,
   UNUSED_VARS_NDEBUG(handles_visible);
 }
 
-bool ED_curve_pick_vert(ViewContext *vc,
-                        short sel,
-                        Nurb **r_nurb,
-                        BezTriple **r_bezt,
-                        BPoint **r_bp,
-                        short *r_handle,
-                        Base **r_base)
+bool ED_curve_pick_vert_ex(ViewContext *vc,
+                           short sel,
+                           const int dist_px,
+                           Nurb **r_nurb,
+                           BezTriple **r_bezt,
+                           BPoint **r_bp,
+                           short *r_handle,
+                           Base **r_base)
 {
   /* (sel == 1): selected gets a disadvantage */
   /* in nurb and bezt or bp the nearest is written */
@@ -125,7 +110,7 @@ bool ED_curve_pick_vert(ViewContext *vc,
     bool is_changed;
   } data = {NULL};
 
-  data.dist = ED_view3d_select_dist_px();
+  data.dist = dist_px;
   data.hpoint = 0;
   data.select = sel;
   data.mval_fl[0] = vc->mval[0];
@@ -133,7 +118,7 @@ bool ED_curve_pick_vert(ViewContext *vc,
 
   uint bases_len;
   Base **bases = BKE_view_layer_array_from_bases_in_edit_mode_unique_data(
-      vc->view_layer, vc->v3d, &bases_len);
+      vc->scene, vc->view_layer, vc->v3d, &bases_len);
   for (uint base_index = 0; base_index < bases_len; base_index++) {
     Base *base = bases[base_index];
     data.is_changed = false;
@@ -159,6 +144,18 @@ bool ED_curve_pick_vert(ViewContext *vc,
   return (data.bezt || data.bp);
 }
 
+bool ED_curve_pick_vert(ViewContext *vc,
+                        short sel,
+                        Nurb **r_nurb,
+                        BezTriple **r_bezt,
+                        BPoint **r_bp,
+                        short *r_handle,
+                        Base **r_base)
+{
+  return ED_curve_pick_vert_ex(
+      vc, sel, ED_view3d_select_dist_px(), r_nurb, r_bezt, r_bp, r_handle, r_base);
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -168,8 +165,8 @@ bool ED_curve_pick_vert(ViewContext *vc,
 void ED_curve_nurb_vert_selected_find(
     Curve *cu, View3D *v3d, Nurb **r_nu, BezTriple **r_bezt, BPoint **r_bp)
 {
-  /* in nu and (bezt or bp) selected are written if there's 1 sel.  */
-  /* if more points selected in 1 spline: return only nu, bezt and bp are 0 */
+  /* In nu and (bezt or bp) selected are written if there's 1 sel. */
+  /* If more points selected in 1 spline: return only nu, bezt and bp are 0. */
   ListBase *editnurb = &cu->editnurb->nurbs;
   BezTriple *bezt1;
   BPoint *bp1;

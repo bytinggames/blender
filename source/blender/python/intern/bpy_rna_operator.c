@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pythonintern
@@ -30,6 +16,8 @@
 
 #include "BPY_extern.h"
 #include "bpy_capi_utils.h"
+
+#include "bpy_rna_operator.h" /* Own include. */
 
 /* -------------------------------------------------------------------- */
 /** \name Operator `poll_message_set` Method
@@ -89,19 +77,19 @@ static void pyop_poll_message_free_fn(bContext *UNUSED(C), void *user_data)
 }
 
 PyDoc_STRVAR(BPY_rna_operator_poll_message_set_doc,
-             ".. method:: poll_message_set(message, ...)\n"
+             ".. method:: poll_message_set(message, *args)\n"
              "\n"
              "   Set the message to show in the tool-tip when poll fails.\n"
              "\n"
              "   When message is callable, "
              "additional user defined positional arguments are passed to the message function.\n"
              "\n"
-             "   :param message: The message or a function that returns the message.\n"
+             "   :arg message: The message or a function that returns the message.\n"
              "   :type message: string or a callable that returns a string or None.\n");
 
 static PyObject *BPY_rna_operator_poll_message_set(PyObject *UNUSED(self), PyObject *args)
 {
-  const ssize_t args_len = PyTuple_GET_SIZE(args);
+  const Py_ssize_t args_len = PyTuple_GET_SIZE(args);
   if (args_len == 0) {
     PyErr_SetString(PyExc_ValueError,
                     "poll_message_set(message, ...): requires a message argument");

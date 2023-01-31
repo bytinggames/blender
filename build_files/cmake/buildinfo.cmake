@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 # This is called by cmake as an external process from
 # ./source/creator/CMakeLists.txt to write ./source/creator/buildinfo.h
 # Caller must define:
@@ -79,7 +81,7 @@ if(EXISTS ${SOURCE_DIR}/.git)
                     ERROR_QUIET)
     if(NOT _git_below_check STREQUAL "")
       # If there're commits between HEAD and upstream this means
-      # that we're reset-ed to older revision. Use it's hash then.
+      # that we're reset-ed to older revision. Use its hash then.
       execute_process(COMMAND git rev-parse --short=12 HEAD
                       WORKING_DIRECTORY ${SOURCE_DIR}
                       OUTPUT_VARIABLE MY_WC_HASH
@@ -99,10 +101,6 @@ if(EXISTS ${SOURCE_DIR}/.git)
                         OUTPUT_VARIABLE MY_WC_HASH
                         OUTPUT_STRIP_TRAILING_WHITESPACE)
       endif()
-    endif()
-
-    if(MY_WC_BRANCH MATCHES "^blender-v")
-      set(MY_WC_BRANCH "master")
     endif()
 
     unset(_git_below_check)
@@ -148,10 +146,10 @@ endif()
 # BUILD_PLATFORM is taken from CMake
 # but BUILD_DATE and BUILD_TIME are platform dependent
 if(NOT BUILD_DATE)
-  STRING(TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
+  string(TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 endif()
 if(NOT BUILD_TIME)
-  STRING(TIMESTAMP BUILD_TIME "%H:%M:%S" UTC)
+  string(TIMESTAMP BUILD_TIME "%H:%M:%S" UTC)
 endif()
 
 # Write a file with the BUILD_HASH define

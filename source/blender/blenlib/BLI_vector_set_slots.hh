@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -87,7 +73,7 @@ template<typename Key> class SimpleVectorSetSlot {
   template<typename ForwardKey, typename IsEqual>
   bool contains(const ForwardKey &key,
                 const IsEqual &is_equal,
-                uint64_t UNUSED(hash),
+                uint64_t /*hash*/,
                 const Key *keys) const
   {
     if (state_ >= 0) {
@@ -100,7 +86,7 @@ template<typename Key> class SimpleVectorSetSlot {
    * Change the state of this slot from empty/removed to occupied. The hash can be used by other
    * slot implementations.
    */
-  void occupy(int64_t index, uint64_t UNUSED(hash))
+  void occupy(int64_t index, uint64_t /*hash*/)
   {
     BLI_assert(!this->is_occupied());
     state_ = index;

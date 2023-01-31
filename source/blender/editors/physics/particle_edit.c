@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2007 by Janne Karhu.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2007 by Janne Karhu. All rights reserved. */
 
 /** \file
  * \ingroup edphys
@@ -46,8 +30,10 @@
 #include "BKE_bvhutils.h"
 #include "BKE_context.h"
 #include "BKE_global.h"
+#include "BKE_layer.h"
 #include "BKE_main.h"
 #include "BKE_mesh.h"
+#include "BKE_mesh_legacy_convert.h"
 #include "BKE_mesh_runtime.h"
 #include "BKE_modifier.h"
 #include "BKE_object.h"
@@ -183,7 +169,8 @@ void PE_free_ptcache_edit(PTCacheEdit *edit)
 int PE_minmax(
     Depsgraph *depsgraph, Scene *scene, ViewLayer *view_layer, float min[3], float max[3])
 {
-  Object *ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
   PTCacheEdit *edit = PE_get_current(depsgraph, scene, ob);
   ParticleSystem *psys;
   ParticleSystemModifierData *psmd_eval = NULL;
@@ -300,7 +287,7 @@ static void pe_update_hair_particle_edit_pointers(PTCacheEdit *edit)
 
 /* always gets at least the first particlesystem even if PSYS_CURRENT flag is not set
  *
- * note: this function runs on poll, therefore it can runs many times a second
+ * NOTE: this function runs on poll, therefore it can runs many times a second
  * keep it fast! */
 static PTCacheEdit *pe_get_current(Depsgraph *depsgraph, Scene *scene, Object *ob, bool create)
 {
@@ -368,7 +355,7 @@ static PTCacheEdit *pe_get_current(Depsgraph *depsgraph, Scene *scene, Object *o
     else if (pset->edittype == PE_TYPE_SOFTBODY && pid->type == PTCACHE_TYPE_SOFTBODY) {
       if (create && pid->cache->flag & PTCACHE_BAKED && !pid->cache->edit) {
         pset->flag |= PE_FADE_TIME;
-        // NICE TO HAVE but doesn't work: pset->brushtype = PE_BRUSH_COMB;
+        /* Nice to have but doesn't work: `pset->brushtype = PE_BRUSH_COMB;`. */
         PE_create_particle_edit(depsgraph, scene, ob, pid->cache, NULL);
       }
       edit = pid->cache->edit;
@@ -377,7 +364,7 @@ static PTCacheEdit *pe_get_current(Depsgraph *depsgraph, Scene *scene, Object *o
     else if (pset->edittype == PE_TYPE_CLOTH && pid->type == PTCACHE_TYPE_CLOTH) {
       if (create && pid->cache->flag & PTCACHE_BAKED && !pid->cache->edit) {
         pset->flag |= PE_FADE_TIME;
-        // NICE TO HAVE but doesn't work: pset->brushtype = PE_BRUSH_COMB;
+        /* Nice to have but doesn't work: `pset->brushtype = PE_BRUSH_COMB;`. */
         PE_create_particle_edit(depsgraph, scene, ob, pid->cache, NULL);
       }
       edit = pid->cache->edit;
@@ -466,6 +453,7 @@ static int pe_x_mirror(Object *ob)
 
 typedef struct PEData {
   ViewContext vc;
+  ViewDepths *depths;
 
   const bContext *context;
   Main *bmain;
@@ -502,6 +490,8 @@ typedef struct PEData {
   int select_action;
   int select_toggle_action;
   bool is_changed;
+
+  void *user_data;
 } PEData;
 
 static void PE_set_data(bContext *C, PEData *data)
@@ -524,21 +514,19 @@ static void PE_set_view3d_data(bContext *C, PEData *data)
   ED_view3d_viewcontext_init(C, &data->vc, data->depsgraph);
 
   if (!XRAY_ENABLED(data->vc.v3d)) {
-    if (!(data->vc.v3d->runtime.flag & V3D_RUNTIME_DEPTHBUF_OVERRIDDEN)) {
-      ED_view3d_depth_override(data->depsgraph,
-                               data->vc.region,
-                               data->vc.v3d,
-                               data->vc.obact,
-                               V3D_DEPTH_OBJECT_ONLY,
-                               true);
-    }
+    ED_view3d_depth_override(data->depsgraph,
+                             data->vc.region,
+                             data->vc.v3d,
+                             data->vc.obact,
+                             V3D_DEPTH_OBJECT_ONLY,
+                             &data->depths);
   }
 }
 
 static bool PE_create_shape_tree(PEData *data, Object *shapeob)
 {
   Object *shapeob_eval = DEG_get_evaluated_object(data->depsgraph, shapeob);
-  Mesh *mesh = BKE_object_get_evaluated_mesh(shapeob_eval);
+  const Mesh *mesh = BKE_object_get_evaluated_mesh(shapeob_eval);
 
   memset(&data->shape_bvh, 0, sizeof(data->shape_bvh));
 
@@ -570,6 +558,16 @@ static void PE_free_random_generator(PEData *data)
   }
 }
 
+static void PE_data_free(PEData *data)
+{
+  PE_free_random_generator(data);
+  PE_free_shape_tree(data);
+  if (data->depths) {
+    ED_view3d_depths_free(data->depths);
+    data->depths = NULL;
+  }
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
@@ -579,7 +577,7 @@ static void PE_free_random_generator(PEData *data)
 static bool key_test_depth(const PEData *data, const float co[3], const int screen_co[2])
 {
   View3D *v3d = data->vc.v3d;
-  ViewDepths *vd = data->vc.rv3d->depths;
+  ViewDepths *vd = data->depths;
   float depth;
 
   /* nothing to do */
@@ -609,7 +607,7 @@ static bool key_test_depth(const PEData *data, const float co[3], const int scre
   }
 
   float win[3];
-  ED_view3d_project(data->vc.region, co, win);
+  ED_view3d_project_v3(data->vc.region, co, win);
 
   if (win[2] - 0.00001f > depth) {
     return 0;
@@ -622,7 +620,7 @@ static bool key_inside_circle(const PEData *data, float rad, const float co[3], 
   float dx, dy, dist;
   int screen_co[2];
 
-  /* TODO, should this check V3D_PROJ_TEST_CLIP_BB too? */
+  /* TODO: should this check V3D_PROJ_TEST_CLIP_BB too? */
   if (ED_view3d_project_int_global(data->vc.region, co, screen_co, V3D_PROJ_TEST_CLIP_WIN) !=
       V3D_PROJ_RET_OK) {
     return 0;
@@ -991,7 +989,7 @@ static void PE_update_mirror_cache(Object *ob, ParticleSystem *psys)
 
   tree = BLI_kdtree_3d_new(totpart);
 
-  /* insert particles into kd tree */
+  /* Insert particles into KD-tree. */
   LOOP_PARTICLES
   {
     key = pa->hair;
@@ -1410,7 +1408,6 @@ static void pe_iterate_lengths(Scene *scene, PTCacheEdit *edit)
   BLI_task_parallel_range(0, edit->totpoint, &iter_data, iterate_lengths_iter, &settings);
 }
 
-/* set current distances to be kept between neighboring keys */
 void recalc_lengths(PTCacheEdit *edit)
 {
   POINT_P;
@@ -1428,13 +1425,12 @@ void recalc_lengths(PTCacheEdit *edit)
   }
 }
 
-/* calculate a tree for finding nearest emitter's vertice */
 void recalc_emitter_field(Depsgraph *UNUSED(depsgraph), Object *UNUSED(ob), ParticleSystem *psys)
 {
   PTCacheEdit *edit = psys->edit;
   Mesh *mesh = edit->psmd_eval->mesh_final;
   float *vec, *nor;
-  int i, totface /*, totvert*/;
+  int i, totface;
 
   if (!mesh) {
     return;
@@ -1447,7 +1443,7 @@ void recalc_emitter_field(Depsgraph *UNUSED(depsgraph), Object *UNUSED(ob), Part
   BLI_kdtree_3d_free(edit->emitter_field);
 
   totface = mesh->totface;
-  /*totvert=dm->getNumVerts(dm);*/ /*UNUSED*/
+  // int totvert = dm->getNumVerts(dm); /* UNUSED */
 
   edit->emitter_cosnos = MEM_callocN(sizeof(float[6]) * totface, "emitter cosnos");
 
@@ -1456,26 +1452,29 @@ void recalc_emitter_field(Depsgraph *UNUSED(depsgraph), Object *UNUSED(ob), Part
   vec = edit->emitter_cosnos;
   nor = vec + 3;
 
+  const MVert *verts = BKE_mesh_verts(mesh);
+  const float(*vert_normals)[3] = BKE_mesh_vertex_normals_ensure(mesh);
+  MFace *mfaces = (MFace *)CustomData_get_layer(&mesh->fdata, CD_MFACE);
   for (i = 0; i < totface; i++, vec += 6, nor += 6) {
-    MFace *mface = &mesh->mface[i];
-    MVert *mvert;
+    MFace *mface = &mfaces[i];
+    const MVert *mvert;
 
-    mvert = &mesh->mvert[mface->v1];
+    mvert = &verts[mface->v1];
     copy_v3_v3(vec, mvert->co);
-    copy_v3fl_v3s(nor, mvert->no);
+    copy_v3_v3(nor, vert_normals[mface->v1]);
 
-    mvert = &mesh->mvert[mface->v2];
+    mvert = &verts[mface->v2];
     add_v3_v3v3(vec, vec, mvert->co);
-    add_v3fl_v3fl_v3s(nor, nor, mvert->no);
+    add_v3_v3(nor, vert_normals[mface->v2]);
 
-    mvert = &mesh->mvert[mface->v3];
+    mvert = &verts[mface->v3];
     add_v3_v3v3(vec, vec, mvert->co);
-    add_v3fl_v3fl_v3s(nor, nor, mvert->no);
+    add_v3_v3(nor, vert_normals[mface->v3]);
 
     if (mface->v4) {
-      mvert = &mesh->mvert[mface->v4];
+      mvert = &verts[mface->v4];
       add_v3_v3v3(vec, vec, mvert->co);
-      add_v3fl_v3fl_v3s(nor, nor, mvert->no);
+      add_v3_v3(nor, vert_normals[mface->v4]);
 
       mul_v3_fl(vec, 0.25);
     }
@@ -1517,7 +1516,7 @@ static void PE_update_selection(Depsgraph *depsgraph, Scene *scene, Object *ob, 
     }
   }
 
-  psys_cache_edit_paths(depsgraph, scene, ob, edit, CFRA, G.is_rendering);
+  psys_cache_edit_paths(depsgraph, scene, ob, edit, scene->r.cfra, G.is_rendering);
 
   /* disable update flag */
   LOOP_POINTS {
@@ -1555,7 +1554,7 @@ void update_world_cos(Object *ob, PTCacheEdit *edit)
 }
 static void update_velocities(PTCacheEdit *edit)
 {
-  /*TODO: get frs_sec properly */
+  /* TODO: get frs_sec properly. */
   float vec1[3], vec2[3], frs_sec, dfra;
   POINT_P;
   KEY_K;
@@ -1652,11 +1651,11 @@ void PE_update_object(Depsgraph *depsgraph, Scene *scene, Object *ob, int usefla
    * and flagging with PEK_HIDE will prevent selection. This might get restored once this is
    * supported in drawing (but doesn't make much sense for hair anyways). */
   if (edit->psys && edit->psys->part->type == PART_EMITTER) {
-    PE_hide_keys_time(scene, edit, CFRA);
+    PE_hide_keys_time(scene, edit, scene->r.cfra);
   }
 
   /* regenerate path caches */
-  psys_cache_edit_paths(depsgraph, scene, ob, edit, CFRA, G.is_rendering);
+  psys_cache_edit_paths(depsgraph, scene, ob, edit, scene->r.cfra, G.is_rendering);
 
   /* disable update flag */
   LOOP_POINTS {
@@ -1726,46 +1725,6 @@ static void select_keys(PEData *data,
   }
 
   point->flag |= PEP_EDIT_RECALC;
-}
-
-static void extend_key_select(PEData *data, int point_index, int key_index, bool UNUSED(is_inside))
-{
-  PTCacheEdit *edit = data->edit;
-  PTCacheEditPoint *point = edit->points + point_index;
-  PTCacheEditKey *key = point->keys + key_index;
-
-  if ((key->flag & PEK_SELECT) == 0) {
-    key->flag |= PEK_SELECT;
-    point->flag |= PEP_EDIT_RECALC;
-    data->is_changed = true;
-  }
-}
-
-static void deselect_key_select(PEData *data,
-                                int point_index,
-                                int key_index,
-                                bool UNUSED(is_inside))
-{
-  PTCacheEdit *edit = data->edit;
-  PTCacheEditPoint *point = edit->points + point_index;
-  PTCacheEditKey *key = point->keys + key_index;
-
-  if ((key->flag & PEK_SELECT) != 0) {
-    key->flag &= ~PEK_SELECT;
-    point->flag |= PEP_EDIT_RECALC;
-    data->is_changed = true;
-  }
-}
-
-static void toggle_key_select(PEData *data, int point_index, int key_index, bool UNUSED(is_inside))
-{
-  PTCacheEdit *edit = data->edit;
-  PTCacheEditPoint *point = edit->points + point_index;
-  PTCacheEditKey *key = point->keys + key_index;
-
-  key->flag ^= PEK_SELECT;
-  point->flag |= PEP_EDIT_RECALC;
-  data->is_changed = true;
 }
 
 /** \} */
@@ -1869,51 +1828,118 @@ void PARTICLE_OT_select_all(wmOperatorType *ot)
 /** \name Pick Select Operator
  * \{ */
 
-bool PE_mouse_particles(bContext *C, const int mval[2], bool extend, bool deselect, bool toggle)
+struct NearestParticleData {
+  PTCacheEditPoint *point;
+  PTCacheEditKey *key;
+};
+
+static void nearest_key_fn(PEData *data, int point_index, int key_index, bool UNUSED(is_inside))
 {
+  PTCacheEdit *edit = data->edit;
+  PTCacheEditPoint *point = edit->points + point_index;
+  PTCacheEditKey *key = point->keys + key_index;
+
+  struct NearestParticleData *user_data = data->user_data;
+  user_data->point = point;
+  user_data->key = key;
+  data->is_changed = true;
+}
+
+static bool pe_nearest_point_and_key(bContext *C,
+                                     const int mval[2],
+                                     PTCacheEditPoint **r_point,
+                                     PTCacheEditKey **r_key)
+{
+  struct NearestParticleData user_data = {NULL};
+
   PEData data;
+  PE_set_view3d_data(C, &data);
+  data.mval = mval;
+  data.rad = ED_view3d_select_dist_px();
+
+  data.user_data = &user_data;
+  for_mouse_hit_keys(&data, nearest_key_fn, PSEL_NEAREST);
+  bool found = data.is_changed;
+  PE_data_free(&data);
+
+  *r_point = user_data.point;
+  *r_key = user_data.key;
+  return found;
+}
+
+bool PE_mouse_particles(bContext *C, const int mval[2], const struct SelectPick_Params *params)
+{
+  Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
   Scene *scene = CTX_data_scene(C);
   Object *ob = CTX_data_active_object(C);
-  POINT_P;
-  KEY_K;
 
-  PE_set_view3d_data(C, &data);
-
-  PTCacheEdit *edit = PE_get_current(data.depsgraph, scene, ob);
+  PTCacheEdit *edit = PE_get_current(depsgraph, scene, ob);
 
   if (!PE_start_edit(edit)) {
     return false;
   }
 
-  if (!extend && !deselect && !toggle) {
-    LOOP_VISIBLE_POINTS {
-      LOOP_SELECTED_KEYS {
-        key->flag &= ~PEK_SELECT;
+  PTCacheEditPoint *point;
+  PTCacheEditKey *key;
+
+  bool changed = false;
+  bool found = pe_nearest_point_and_key(C, mval, &point, &key);
+
+  if (params->sel_op == SEL_OP_SET) {
+    if ((found && params->select_passthrough) && (key->flag & PEK_SELECT)) {
+      found = false;
+    }
+    else if (found || params->deselect_all) {
+      /* Deselect everything. */
+      changed |= PE_deselect_all_visible_ex(edit);
+    }
+  }
+
+  if (found) {
+    switch (params->sel_op) {
+      case SEL_OP_ADD: {
+        if ((key->flag & PEK_SELECT) == 0) {
+          key->flag |= PEK_SELECT;
+          point->flag |= PEP_EDIT_RECALC;
+          changed = true;
+        }
+        break;
+      }
+      case SEL_OP_SUB: {
+        if ((key->flag & PEK_SELECT) != 0) {
+          key->flag &= ~PEK_SELECT;
+          point->flag |= PEP_EDIT_RECALC;
+          changed = true;
+        }
+        break;
+      }
+      case SEL_OP_XOR: {
+        key->flag ^= PEK_SELECT;
         point->flag |= PEP_EDIT_RECALC;
+        changed = true;
+        break;
+      }
+      case SEL_OP_SET: {
+        if ((key->flag & PEK_SELECT) == 0) {
+          key->flag |= PEK_SELECT;
+          point->flag |= PEP_EDIT_RECALC;
+          changed = true;
+        }
+        break;
+      }
+      case SEL_OP_AND: {
+        BLI_assert_unreachable(); /* Doesn't make sense for picking. */
+        break;
       }
     }
   }
 
-  data.mval = mval;
-  data.rad = ED_view3d_select_dist_px();
-
-  /* 1 = nearest only */
-  if (extend) {
-    for_mouse_hit_keys(&data, extend_key_select, PSEL_NEAREST);
-  }
-  else if (deselect) {
-    for_mouse_hit_keys(&data, deselect_key_select, PSEL_NEAREST);
-  }
-  else {
-    for_mouse_hit_keys(&data, toggle_key_select, PSEL_NEAREST);
+  if (changed) {
+    PE_update_selection(depsgraph, scene, ob, 1);
+    WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, ob);
   }
 
-  if (data.is_changed) {
-    PE_update_selection(data.depsgraph, scene, ob, 1);
-    WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, data.ob);
-  }
-
-  return true;
+  return changed || found;
 }
 
 /** \} */
@@ -2204,6 +2230,7 @@ static int select_linked_pick_exec(bContext *C, wmOperator *op)
   for_mouse_hit_keys(&data, select_keys, PSEL_NEAREST);
   PE_update_selection(data.depsgraph, data.scene, data.ob, 1);
   WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, data.ob);
+  PE_data_free(&data);
 
   return OPERATOR_FINISHED;
 }
@@ -2298,11 +2325,14 @@ bool PE_box_select(bContext *C, const rcti *rect, const int sel_op)
     for_mouse_hit_keys(&data, select_key_op, PSEL_ALL_KEYS);
   }
 
-  if (data.is_changed) {
-    PE_update_selection(data.depsgraph, scene, ob, 1);
+  bool is_changed = data.is_changed;
+  PE_data_free(&data);
+
+  if (is_changed) {
+    PE_update_selection(depsgraph, scene, ob, 1);
     WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, ob);
   }
-  return data.is_changed;
+  return is_changed;
 }
 
 /** \} */
@@ -2311,35 +2341,53 @@ bool PE_box_select(bContext *C, const rcti *rect, const int sel_op)
 /** \name Circle Select Operator
  * \{ */
 
-bool PE_circle_select(bContext *C, const int sel_op, const int mval[2], float rad)
+static void pe_select_cache_free_generic_userdata(void *data)
+{
+  PE_data_free(data);
+  MEM_freeN(data);
+}
+
+static void pe_select_cache_init_with_generic_userdata(bContext *C, wmGenericUserData *wm_userdata)
+{
+  struct PEData *data = MEM_callocN(sizeof(*data), __func__);
+  wm_userdata->data = data;
+  wm_userdata->free_fn = pe_select_cache_free_generic_userdata;
+  wm_userdata->use_free = true;
+  PE_set_view3d_data(C, data);
+}
+
+bool PE_circle_select(
+    bContext *C, wmGenericUserData *wm_userdata, const int sel_op, const int mval[2], float rad)
 {
   BLI_assert(ELEM(sel_op, SEL_OP_SET, SEL_OP_ADD, SEL_OP_SUB));
   Depsgraph *depsgraph = CTX_data_depsgraph_pointer(C);
   Scene *scene = CTX_data_scene(C);
   Object *ob = CTX_data_active_object(C);
   PTCacheEdit *edit = PE_get_current(depsgraph, scene, ob);
-  PEData data;
 
   if (!PE_start_edit(edit)) {
     return false;
   }
 
-  const bool select = (sel_op != SEL_OP_SUB);
+  if (wm_userdata->data == NULL) {
+    pe_select_cache_init_with_generic_userdata(C, wm_userdata);
+  }
 
-  PE_set_view3d_data(C, &data);
-  data.mval = mval;
-  data.rad = rad;
-  data.select = select;
+  PEData *data = wm_userdata->data;
+  data->mval = mval;
+  data->rad = rad;
+  data->select = (sel_op != SEL_OP_SUB);
 
   if (SEL_OP_USE_PRE_DESELECT(sel_op)) {
-    data.is_changed = PE_deselect_all_visible_ex(edit);
+    data->is_changed = PE_deselect_all_visible_ex(edit);
   }
-  for_mouse_hit_keys(&data, select_key, 0);
-  if (data.is_changed) {
-    PE_update_selection(data.depsgraph, scene, ob, 1);
+  for_mouse_hit_keys(data, select_key, 0);
+
+  if (data->is_changed) {
+    PE_update_selection(depsgraph, scene, ob, 1);
     WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, ob);
   }
-  return data.is_changed;
+  return data->is_changed;
 }
 
 /** \} */
@@ -2425,8 +2473,11 @@ int PE_lasso_select(bContext *C, const int mcoords[][2], const int mcoords_len, 
     }
   }
 
-  if (data.is_changed) {
-    PE_update_selection(data.depsgraph, scene, ob, 1);
+  bool is_changed = data.is_changed;
+  PE_data_free(&data);
+
+  if (is_changed) {
+    PE_update_selection(depsgraph, scene, ob, 1);
     WM_event_add_notifier(C, NC_OBJECT | ND_PARTICLE | NA_SELECTED, ob);
     return OPERATOR_FINISHED;
   }
@@ -2921,10 +2972,7 @@ static int remove_tagged_particles(Object *ob, ParticleSystem *psys, int mirror)
     }
     edit->points = new_points;
 
-    if (edit->mirror_cache) {
-      MEM_freeN(edit->mirror_cache);
-      edit->mirror_cache = NULL;
-    }
+    MEM_SAFE_FREE(edit->mirror_cache);
 
     if (psys->child) {
       MEM_freeN(psys->child);
@@ -2967,7 +3015,7 @@ static void remove_tagged_keys(Depsgraph *depsgraph, Object *ob, ParticleSystem 
     LOOP_TAGGED_KEYS {
       new_totkey--;
     }
-    /* we can't have elements with less than two keys*/
+    /* We can't have elements with less than two keys. */
     if (new_totkey < 2) {
       point->flag |= PEP_TAG;
     }
@@ -3070,9 +3118,8 @@ static void subdivide_particle(PEData *data, int pa_index)
 
   pa->flag |= PARS_REKEY;
 
-  nkey = new_keys = MEM_callocN((pa->totkey + totnewkey) * (sizeof(HairKey)),
-                                "Hair subdivide keys");
-  nekey = new_ekeys = MEM_callocN((pa->totkey + totnewkey) * (sizeof(PTCacheEditKey)),
+  nkey = new_keys = MEM_callocN((pa->totkey + totnewkey) * sizeof(HairKey), "Hair subdivide keys");
+  nekey = new_ekeys = MEM_callocN((pa->totkey + totnewkey) * sizeof(PTCacheEditKey),
                                   "Hair subdivide edit keys");
 
   key = pa->hair;
@@ -3106,7 +3153,7 @@ static void subdivide_particle(PEData *data, int pa_index)
       nkey++;
     }
   }
-  /*tip still not copied*/
+  /* Tip still not copied. */
   memcpy(nkey, key, sizeof(HairKey));
   memcpy(nekey, ekey, sizeof(PTCacheEditKey));
 
@@ -3346,7 +3393,7 @@ static void brush_drawcursor(bContext *C, int x, int y, void *UNUSED(customdata)
 
   if (brush) {
     uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
-    immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+    immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
     immUniformColor4ub(255, 255, 255, 128);
 
@@ -3486,7 +3533,7 @@ static void PE_mirror_x(Depsgraph *depsgraph, Scene *scene, Object *ob, int tagg
   }
 
   const bool use_dm_final_indices = (psys->part->use_modifier_stack &&
-                                     !psmd_eval->mesh_final->runtime.deformed_only);
+                                     !BKE_mesh_is_deformed_only(psmd_eval->mesh_final));
 
   /* NOTE: this is not nice to use tessfaces but hard to avoid since pa->num uses tessfaces */
   BKE_mesh_tessface_ensure(me);
@@ -3522,7 +3569,9 @@ static void PE_mirror_x(Depsgraph *depsgraph, Scene *scene, Object *ob, int tagg
   }
 
   if (newtotpart != psys->totpart) {
-    MFace *mtessface = use_dm_final_indices ? psmd_eval->mesh_final->mface : me->mface;
+    MFace *mtessface = use_dm_final_indices ?
+                           (MFace *)CustomData_get_layer(&psmd_eval->mesh_final->fdata, CD_MFACE) :
+                           (MFace *)CustomData_get_layer(&me->fdata, CD_MFACE);
 
     /* allocate new arrays and copy existing */
     new_pars = MEM_callocN(newtotpart * sizeof(ParticleData), "ParticleData new");
@@ -3540,10 +3589,7 @@ static void PE_mirror_x(Depsgraph *depsgraph, Scene *scene, Object *ob, int tagg
     }
     edit->points = new_points;
 
-    if (edit->mirror_cache) {
-      MEM_freeN(edit->mirror_cache);
-      edit->mirror_cache = NULL;
-    }
+    MEM_SAFE_FREE(edit->mirror_cache);
 
     edit->totpoint = psys->totpart = newtotpart;
 
@@ -3873,9 +3919,9 @@ static void brush_puff(PEData *data, int point_index, float mouse_distance)
       copy_v3_v3(co, key->co);
       mul_m4_v3(mat, co);
 
-      /* use 'kco' as the object space version of worldspace 'co',
-       * ob->imat is set before calling */
-      mul_v3_m4v3(kco, data->ob->imat, co);
+      /* Use `kco` as the object space version of world-space `co`,
+       * `ob->world_to_object` is set before calling. */
+      mul_v3_m4v3(kco, data->ob->world_to_object, co);
 
       point_index = BLI_kdtree_3d_find_nearest(edit->emitter_field, kco, NULL);
       if (point_index == -1) {
@@ -3884,7 +3930,7 @@ static void brush_puff(PEData *data, int point_index, float mouse_distance)
 
       copy_v3_v3(co_root, co);
       copy_v3_v3(no_root, &edit->emitter_cosnos[point_index * 6 + 3]);
-      mul_mat3_m4_v3(data->ob->obmat, no_root); /* normal into global-space */
+      mul_mat3_m4_v3(data->ob->object_to_world, no_root); /* normal into global-space */
       normalize_v3(no_root);
 
       if (puff_volume) {
@@ -3919,7 +3965,7 @@ static void brush_puff(PEData *data, int point_index, float mouse_distance)
         /* keep the same distance from the root or we get glitches T35406. */
         dist_ensure_v3_v3fl(co, co_root, length_accum);
 
-        /* re-use dco to compare before and after translation and add to the offset  */
+        /* Re-use dco to compare before and after translation and add to the offset. */
         copy_v3_v3(dco, key->co);
 
         mul_v3_m4v3(key->co, imat, co);
@@ -3938,10 +3984,10 @@ static void brush_puff(PEData *data, int point_index, float mouse_distance)
           /* this is simple but looks bad, adds annoying kinks */
           add_v3_v3(key->co, ofs);
 #else
-          /* translate (not rotate) the rest of the hair if its not selected  */
+          /* Translate (not rotate) the rest of the hair if its not selected. */
           {
 /* NOLINTNEXTLINE: readability-redundant-preprocessor */
-#  if 0 /* kindof works but looks worse than what's below */
+#  if 0 /* Kind of works but looks worse than what's below. */
 
             /* Move the unselected point on a vector based on the
              * hair direction and the offset */
@@ -3963,15 +4009,15 @@ static void brush_puff(PEData *data, int point_index, float mouse_distance)
             copy_v3_v3(oco, key->co);
             mul_m4_v3(mat, oco);
 
-            /* use 'kco' as the object space version of worldspace 'co',
-             * ob->imat is set before calling */
-            mul_v3_m4v3(kco, data->ob->imat, oco);
+            /* Use `kco` as the object space version of world-space `co`,
+             * `ob->world_to_object` is set before calling. */
+            mul_v3_m4v3(kco, data->ob->world_to_object, oco);
 
             point_index = BLI_kdtree_3d_find_nearest(edit->emitter_field, kco, NULL);
             if (point_index != -1) {
               copy_v3_v3(onor, &edit->emitter_cosnos[point_index * 6 + 3]);
-              mul_mat3_m4_v3(data->ob->obmat, onor); /* normal into worldspace */
-              mul_mat3_m4_v3(imat, onor);            /* worldspace into particle space */
+              mul_mat3_m4_v3(data->ob->object_to_world, onor); /* Normal into world-space. */
+              mul_mat3_m4_v3(imat, onor); /* World-space into particle-space. */
               normalize_v3(onor);
             }
             else {
@@ -4133,8 +4179,8 @@ static int particle_intersect_mesh(Depsgraph *depsgraph,
   }
 
   totface = mesh->totface;
-  mface = mesh->mface;
-  mvert = mesh->mvert;
+  mface = (MFace *)CustomData_get_layer(&mesh->fdata, CD_MFACE);
+  mvert = BKE_mesh_verts_for_write(mesh);
 
   /* lets intersect the faces */
   for (i = 0; i < totface; i++, mface++) {
@@ -4307,7 +4353,7 @@ static void brush_add_count_iter(void *__restrict iter_data_v,
                               0,
                               0,
                               0)) {
-    if (psys->part->use_modifier_stack && !psmd_eval->mesh_final->runtime.deformed_only) {
+    if (psys->part->use_modifier_stack && !BKE_mesh_is_deformed_only(psmd_eval->mesh_final)) {
       add_pars[iter].num = add_pars[iter].num_dmcache;
       add_pars[iter].num_dmcache = DMCACHE_ISCHILD;
     }
@@ -4366,7 +4412,7 @@ static int brush_add(const bContext *C, PEData *data, short number)
   short size = pset->brush[PE_BRUSH_ADD].size;
   RNG *rng;
 
-  invert_m4_m4(imat, ob->obmat);
+  invert_m4_m4(imat, ob->object_to_world);
 
   if (psys->flag & PSYS_GLOBAL_HAIR) {
     return 0;
@@ -4384,7 +4430,7 @@ static int brush_add(const bContext *C, PEData *data, short number)
 
   timestep = psys_get_timestep(&sim);
 
-  if (psys->part->use_modifier_stack || psmd_eval->mesh_final->runtime.deformed_only) {
+  if (psys->part->use_modifier_stack || BKE_mesh_is_deformed_only(psmd_eval->mesh_final)) {
     mesh = psmd_eval->mesh_final;
   }
   else {
@@ -4461,10 +4507,7 @@ static int brush_add(const bContext *C, PEData *data, short number)
     }
     edit->points = new_points;
 
-    if (edit->mirror_cache) {
-      MEM_freeN(edit->mirror_cache);
-      edit->mirror_cache = NULL;
-    }
+    MEM_SAFE_FREE(edit->mirror_cache);
 
     /* create tree for interpolation */
     if (pset->flag & PE_INTERPOLATE_ADDED && psys->totpart) {
@@ -4640,7 +4683,7 @@ typedef struct BrushEdit {
   int lastmouse[2];
   float zfac;
 
-  /* optional cached view settings to avoid setting on every mousemove */
+  /** Optional cached view settings to avoid setting on every mouse-move. */
   PEData data;
 } BrushEdit;
 
@@ -4654,10 +4697,6 @@ static int brush_edit_init(bContext *C, wmOperator *op)
   ARegion *region = CTX_wm_region(C);
   BrushEdit *bedit;
   float min[3], max[3];
-
-  if (!WM_toolsystem_active_tool_is_brush(C)) {
-    return 0;
-  }
 
   /* set the 'distance factor' for grabbing (used in comb etc) */
   INIT_MINMAX(min, max);
@@ -4673,7 +4712,7 @@ static int brush_edit_init(bContext *C, wmOperator *op)
   bedit->ob = ob;
   bedit->edit = edit;
 
-  bedit->zfac = ED_view3d_calc_zfac(region->regiondata, min, NULL);
+  bedit->zfac = ED_view3d_calc_zfac(region->regiondata, min);
 
   /* cache view depths and settings for re-use */
   PE_set_view3d_data(C, &bedit->data);
@@ -4746,7 +4785,7 @@ static void brush_edit_apply(bContext *C, wmOperator *op, PointerRNA *itemptr)
 
       switch (pset->brushtype) {
         case PE_BRUSH_COMB: {
-          const float mval_f[2] = {dx, dy};
+          const float xy_delta[2] = {dx, dy};
           data.mval = mval;
           data.rad = pe_brush_size_get(scene, brush);
 
@@ -4758,9 +4797,9 @@ static void brush_edit_apply(bContext *C, wmOperator *op, PointerRNA *itemptr)
             data.combfac = 1.0f - data.combfac;
           }
 
-          invert_m4_m4(ob->imat, ob->obmat);
+          invert_m4_m4(ob->world_to_object, ob->object_to_world);
 
-          ED_view3d_win_to_delta(region, mval_f, vec, bedit->zfac);
+          ED_view3d_win_to_delta(region, xy_delta, bedit->zfac, vec);
           data.dvec = vec;
 
           foreach_mouse_hit_key(&data, brush_comb, selected);
@@ -4826,7 +4865,7 @@ static void brush_edit_apply(bContext *C, wmOperator *op, PointerRNA *itemptr)
             }
 
             data.invert = (brush->invert ^ flip);
-            invert_m4_m4(ob->imat, ob->obmat);
+            invert_m4_m4(ob->world_to_object, ob->object_to_world);
 
             foreach_mouse_hit_point(&data, brush_puff, selected);
           }
@@ -4856,7 +4895,7 @@ static void brush_edit_apply(bContext *C, wmOperator *op, PointerRNA *itemptr)
 
           data.smoothfac = brush->strength;
 
-          invert_m4_m4(ob->imat, ob->obmat);
+          invert_m4_m4(ob->world_to_object, ob->object_to_world);
 
           foreach_mouse_hit_key(&data, brush_smooth_get, selected);
 
@@ -4921,7 +4960,7 @@ static void brush_edit_exit(wmOperator *op)
 {
   BrushEdit *bedit = op->customdata;
 
-  PE_free_random_generator(&bedit->data);
+  PE_data_free(&bedit->data);
   MEM_freeN(bedit);
 }
 
@@ -4952,7 +4991,7 @@ static void brush_edit_apply_event(bContext *C, wmOperator *op, const wmEvent *e
   RNA_collection_add(op->ptr, "stroke", &itemptr);
 
   RNA_float_set_array(&itemptr, "mouse", mouse);
-  RNA_boolean_set(&itemptr, "pen_flip", event->shift != false); /* XXX hardcoded */
+  RNA_boolean_set(&itemptr, "pen_flip", event->modifier & KM_SHIFT); /* XXX hardcoded */
 
   /* apply */
   brush_edit_apply(C, op, &itemptr);
@@ -4995,6 +5034,11 @@ static void brush_edit_cancel(bContext *UNUSED(C), wmOperator *op)
   brush_edit_exit(op);
 }
 
+static bool brush_edit_poll(bContext *C)
+{
+  return PE_poll_view3d(C) && WM_toolsystem_active_tool_is_brush(C);
+}
+
 void PARTICLE_OT_brush_edit(wmOperatorType *ot)
 {
   /* identifiers */
@@ -5007,7 +5051,7 @@ void PARTICLE_OT_brush_edit(wmOperatorType *ot)
   ot->invoke = brush_edit_invoke;
   ot->modal = brush_edit_modal;
   ot->cancel = brush_edit_cancel;
-  ot->poll = PE_poll_view3d;
+  ot->poll = brush_edit_poll;
 
   /* flags */
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO | OPTYPE_BLOCKING;
@@ -5068,7 +5112,7 @@ static bool shape_cut_test_point(PEData *data, ParticleEditSettings *pset, Parti
   userdata.num_hits = 0;
 
   float co_shape[3];
-  mul_v3_m4v3(co_shape, pset->shape_object->imat, key->co);
+  mul_v3_m4v3(co_shape, pset->shape_object->world_to_object, key->co);
 
   BLI_bvhtree_ray_cast_all(
       shape_bvh->tree, co_shape, dir, 0.0f, BVH_RAYCAST_DIST_MAX, point_inside_bvh_cb, &userdata);
@@ -5109,8 +5153,8 @@ static void shape_cut(PEData *data, int pa_index)
       float dir_shape[3];
       float len_shape;
 
-      mul_v3_m4v3(co_curr_shape, pset->shape_object->imat, key->co);
-      mul_v3_m4v3(co_next_shape, pset->shape_object->imat, (key + 1)->co);
+      mul_v3_m4v3(co_curr_shape, pset->shape_object->world_to_object, key->co);
+      mul_v3_m4v3(co_next_shape, pset->shape_object->world_to_object, (key + 1)->co);
 
       sub_v3_v3v3(dir_shape, co_next_shape, co_curr_shape);
       len_shape = normalize_v3(dir_shape);
@@ -5234,7 +5278,6 @@ void PARTICLE_OT_shape_cut(wmOperatorType *ot)
 /** \name Particle Edit Toggle Operator
  * \{ */
 
-/* initialize needed data for bake edit */
 void PE_create_particle_edit(
     Depsgraph *depsgraph, Scene *scene, Object *ob, PointCache *cache, ParticleSystem *psys)
 {
@@ -5369,14 +5412,13 @@ static bool particle_edit_toggle_poll(bContext *C)
   Object *ob = CTX_data_active_object(C);
 
   if (ob == NULL || ob->type != OB_MESH) {
-    return 0;
+    return false;
   }
-  if (!ob->data || ID_IS_LINKED(ob->data)) {
-    return 0;
+  if (!ob->data || ID_IS_LINKED(ob->data) || ID_IS_OVERRIDE_LIBRARY(ob->data)) {
+    return false;
   }
 
-  return (ob->particlesystem.first || BKE_modifiers_findby_type(ob, eModifierType_Cloth) ||
-          BKE_modifiers_findby_type(ob, eModifierType_Softbody));
+  return ED_object_particle_edit_mode_supported(ob);
 }
 
 static void free_all_psys_edit(Object *object)
@@ -5391,6 +5433,12 @@ static void free_all_psys_edit(Object *object)
   }
 }
 
+bool ED_object_particle_edit_mode_supported(const Object *ob)
+{
+  return (ob->particlesystem.first || BKE_modifiers_findby_type(ob, eModifierType_Cloth) ||
+          BKE_modifiers_findby_type(ob, eModifierType_Softbody));
+}
+
 void ED_object_particle_edit_mode_enter_ex(Depsgraph *depsgraph, Scene *scene, Object *ob)
 {
   /* Needed so #ParticleSystemModifierData.mesh_final is set. */
@@ -5403,7 +5451,7 @@ void ED_object_particle_edit_mode_enter_ex(Depsgraph *depsgraph, Scene *scene, O
   edit = PE_create_current(depsgraph, scene, ob);
 
   /* Mesh may have changed since last entering editmode.
-   * note, this may have run before if the edit data was just created,
+   * NOTE: this may have run before if the edit data was just created,
    * so could avoid this and speed up a little. */
   if (edit && edit->psys) {
     /* Make sure pointer to the evaluated modifier data is up to date,

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bke
@@ -30,11 +16,14 @@
 #include "DNA_screen_types.h"
 #include "DNA_workspace_types.h"
 
+#include "BLI_fileops.h"
 #include "BLI_listbase.h"
 #include "BLI_path_util.h"
 #include "BLI_string.h"
 #include "BLI_system.h"
 #include "BLI_utildefines.h"
+
+#include "PIL_time.h"
 
 #include "IMB_colormanagement.h"
 
@@ -73,10 +62,29 @@
 #endif
 
 /* -------------------------------------------------------------------- */
-/** \name High Level `.blend` file read/write.
+/** \name Blend File IO (High Level)
  * \{ */
 
-static bool clean_paths_visit_cb(void *UNUSED(userdata), char *path_dst, const char *path_src)
+static bool blendfile_or_libraries_versions_atleast(Main *bmain,
+                                                    const short versionfile,
+                                                    const short subversionfile)
+{
+  if (!MAIN_VERSION_ATLEAST(bmain, versionfile, subversionfile)) {
+    return false;
+  }
+
+  LISTBASE_FOREACH (Library *, library, &bmain->libraries) {
+    if (!MAIN_VERSION_ATLEAST(library, versionfile, subversionfile)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+static bool foreach_path_clean_cb(BPathForeachPathData *UNUSED(bpath_data),
+                                  char *path_dst,
+                                  const char *path_src)
 {
   strcpy(path_dst, path_src);
   BLI_path_slash_native(path_dst);
@@ -84,13 +92,16 @@ static bool clean_paths_visit_cb(void *UNUSED(userdata), char *path_dst, const c
 }
 
 /* make sure path names are correct for OS */
-static void clean_paths(Main *main)
+static void clean_paths(Main *bmain)
 {
-  Scene *scene;
+  BKE_bpath_foreach_path_main(&(BPathForeachPathData){
+      .bmain = bmain,
+      .callback_function = foreach_path_clean_cb,
+      .flag = BKE_BPATH_FOREACH_PATH_SKIP_MULTIFILE,
+      .user_data = NULL,
+  });
 
-  BKE_bpath_traverse_main(main, clean_paths_visit_cb, BKE_BPATH_TRAVERSE_SKIP_MULTIFILE, NULL);
-
-  for (scene = main->scenes.first; scene; scene = scene->id.next) {
+  LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
     BLI_path_slash_native(scene->r.pic);
   }
 }
@@ -126,7 +137,7 @@ static void setup_app_userdef(BlendFileData *bfd)
 }
 
 /**
- * Context matching, handle no-ui case
+ * Context matching, handle no-UI case.
  *
  * \note this is called on Undo so any slow conversion functions here
  * should be avoided or check (mode != LOAD_UNDO).
@@ -136,7 +147,7 @@ static void setup_app_userdef(BlendFileData *bfd)
 static void setup_app_data(bContext *C,
                            BlendFileData *bfd,
                            const struct BlendFileReadParams *params,
-                           ReportList *reports)
+                           BlendFileReadReport *reports)
 {
   Main *bmain = G_MAIN;
   Scene *curscene = NULL;
@@ -155,7 +166,7 @@ static void setup_app_data(bContext *C,
   /* may happen with library files - UNDO file should never have NULL curscene (but may have a
    * NULL curscreen)... */
   else if (ELEM(NULL, bfd->curscreen, bfd->curscene)) {
-    BKE_report(reports, RPT_WARNING, "Library file, loading empty scene");
+    BKE_report(reports->reports, RPT_WARNING, "Library file, loading empty scene");
     mode = LOAD_UI_OFF;
   }
   else if (G.fileflags & G_FILE_NO_UI) {
@@ -175,7 +186,7 @@ static void setup_app_data(bContext *C,
     clean_paths(bfd->main);
   }
 
-  /* XXX here the complex windowmanager matching */
+  /* The following code blocks performs complex window-manager matching. */
 
   /* no load screens? */
   if (mode != LOAD_UI) {
@@ -249,7 +260,7 @@ static void setup_app_data(bContext *C,
        * replace it with 'curscene' if its needed */
     }
     /* and we enforce curscene to be in current screen */
-    else if (win) { /* can run in bgmode */
+    else if (win) { /* The window may be NULL in background-mode. */
       win->scene = curscene;
     }
 
@@ -269,18 +280,15 @@ static void setup_app_data(bContext *C,
     }
 
     /* We need to tag this here because events may be handled immediately after.
-     * only the current screen is important because we wont have to handle
-     * events from multiple screens at once.*/
+     * only the current screen is important because we won't have to handle
+     * events from multiple screens at once. */
     if (curscreen) {
       BKE_screen_gizmo_tag_refresh(curscreen);
     }
   }
 
-  /* free G_MAIN Main database */
-  //  CTX_wm_manager_set(C, NULL);
-  BKE_blender_globals_clear();
-
-  bmain = G_MAIN = bfd->main;
+  BKE_blender_globals_main_replace(bfd->main);
+  bmain = G_MAIN;
   bfd->main = NULL;
 
   CTX_data_main_set(C, bmain);
@@ -342,16 +350,28 @@ static void setup_app_data(bContext *C,
     do_versions_ipos_to_animato(bmain);
   }
 
-  bmain->recovered = 0;
+  /* NOTE: readfile's `do_versions` does not allow to create new IDs, and only operates on a single
+   * library at a time. This code needs to operate on the whole Main at once. */
+  /* NOTE: Check bmain version (i.e. current blend file version), AND the versions of all the
+   * linked libraries. */
+  if (mode != LOAD_UNDO && !blendfile_or_libraries_versions_atleast(bmain, 302, 1)) {
+    BKE_lib_override_library_main_proxy_convert(bmain, reports);
+  }
+
+  if (mode != LOAD_UNDO && !blendfile_or_libraries_versions_atleast(bmain, 302, 3)) {
+    BKE_lib_override_library_main_hierarchy_root_ensure(bmain);
+  }
+
+  bmain->recovered = false;
 
   /* startup.blend or recovered startup */
   if (is_startup) {
-    bmain->name[0] = '\0';
+    bmain->filepath[0] = '\0';
   }
   else if (recover) {
-    /* In case of autosave or quit.blend, use original filename instead. */
-    bmain->recovered = 1;
-    BLI_strncpy(bmain->name, bfd->filename, FILE_MAX);
+    /* In case of autosave or quit.blend, use original filepath instead. */
+    bmain->recovered = true;
+    STRNCPY(bmain->filepath, bfd->filepath);
   }
 
   /* baseflags, groups, make depsgraph, etc */
@@ -396,10 +416,17 @@ static void setup_app_data(bContext *C,
   }
 
   if (mode != LOAD_UNDO && !USER_EXPERIMENTAL_TEST(&U, no_override_auto_resync)) {
+    reports->duration.lib_overrides_resync = PIL_check_seconds_timer();
+
     BKE_lib_override_library_main_resync(
         bmain,
         curscene,
-        bfd->cur_view_layer ? bfd->cur_view_layer : BKE_view_layer_default_view(curscene));
+        bfd->cur_view_layer ? bfd->cur_view_layer : BKE_view_layer_default_view(curscene),
+        reports);
+
+    reports->duration.lib_overrides_resync = PIL_check_seconds_timer() -
+                                             reports->duration.lib_overrides_resync;
+
     /* We need to rebuild some of the deleted override rules (for UI feedback purpose). */
     BKE_lib_override_library_main_operations_create(bmain, true);
   }
@@ -408,7 +435,7 @@ static void setup_app_data(bContext *C,
 static void setup_app_blend_file_data(bContext *C,
                                       BlendFileData *bfd,
                                       const struct BlendFileReadParams *params,
-                                      ReportList *reports)
+                                      BlendFileReadReport *reports)
 {
   if ((params->skip_flags & BLO_READ_SKIP_USERDEF) == 0) {
     setup_app_userdef(bfd);
@@ -418,31 +445,23 @@ static void setup_app_blend_file_data(bContext *C,
   }
 }
 
-static void handle_subversion_warning(Main *main, ReportList *reports)
+static void handle_subversion_warning(Main *main, BlendFileReadReport *reports)
 {
   if (main->minversionfile > BLENDER_FILE_VERSION ||
       (main->minversionfile == BLENDER_FILE_VERSION &&
        main->minsubversionfile > BLENDER_FILE_SUBVERSION)) {
-    BKE_reportf(reports,
-                RPT_ERROR,
+    BKE_reportf(reports->reports,
+                RPT_WARNING,
                 "File written by newer Blender binary (%d.%d), expect loss of data!",
                 main->minversionfile,
                 main->minsubversionfile);
   }
 }
 
-/**
- * Shared setup function that makes the data from `bfd` into the current blend file,
- * replacing the contents of #G.main.
- * This uses the bfd #BKE_blendfile_read and similarly named functions.
- *
- * This is done in a separate step so the caller may perform actions after it is known the file
- * loaded correctly but before the file replaces the existing blend file contents.
- */
 void BKE_blendfile_read_setup_ex(bContext *C,
                                  BlendFileData *bfd,
                                  const struct BlendFileReadParams *params,
-                                 ReportList *reports,
+                                 BlendFileReadReport *reports,
                                  /* Extra args. */
                                  const bool startup_update_defaults,
                                  const char *startup_app_template)
@@ -459,17 +478,14 @@ void BKE_blendfile_read_setup_ex(bContext *C,
 void BKE_blendfile_read_setup(bContext *C,
                               BlendFileData *bfd,
                               const struct BlendFileReadParams *params,
-                              ReportList *reports)
+                              BlendFileReadReport *reports)
 {
   BKE_blendfile_read_setup_ex(C, bfd, params, reports, false, NULL);
 }
 
-/**
- * \return Blend file data, this must be passed to #BKE_blendfile_read_setup when non-NULL.
- */
 struct BlendFileData *BKE_blendfile_read(const char *filepath,
                                          const struct BlendFileReadParams *params,
-                                         ReportList *reports)
+                                         BlendFileReadReport *reports)
 {
   /* Don't print startup file loading. */
   if (params->is_startup == false) {
@@ -481,14 +497,11 @@ struct BlendFileData *BKE_blendfile_read(const char *filepath,
     handle_subversion_warning(bfd->main, reports);
   }
   else {
-    BKE_reports_prependf(reports, "Loading '%s' failed: ", filepath);
+    BKE_reports_prependf(reports->reports, "Loading '%s' failed: ", filepath);
   }
   return bfd;
 }
 
-/**
- * \return Blend file data, this must be passed to #BKE_blendfile_read_setup when non-NULL.
- */
 struct BlendFileData *BKE_blendfile_read_from_memory(const void *filebuf,
                                                      int filelength,
                                                      const struct BlendFileReadParams *params,
@@ -504,10 +517,6 @@ struct BlendFileData *BKE_blendfile_read_from_memory(const void *filebuf,
   return bfd;
 }
 
-/**
- * \return Blend file data, this must be passed to #BKE_blendfile_read_setup when non-NULL.
- * \note `memfile` is the undo buffer.
- */
 struct BlendFileData *BKE_blendfile_read_from_memfile(Main *bmain,
                                                       struct MemFile *memfile,
                                                       const struct BlendFileReadParams *params,
@@ -530,10 +539,6 @@ struct BlendFileData *BKE_blendfile_read_from_memfile(Main *bmain,
   return bfd;
 }
 
-/**
- * Utility to make a file 'empty' used for startup to optionally give an empty file.
- * Handy for tests.
- */
 void BKE_blendfile_read_make_empty(bContext *C)
 {
   Main *bmain = CTX_data_main(C);
@@ -552,13 +557,42 @@ void BKE_blendfile_read_make_empty(bContext *C)
   FOREACH_MAIN_LISTBASE_END;
 }
 
-/* only read the userdef from a .blend */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Blend File IO (Preferences)
+ *
+ * Application Templates
+ * =====================
+ *
+ * When using app-templates, both regular & app-template preferences are used.
+ * Note that "regular" preferences refers to the preferences used with no app-template is active.
+ *
+ * - Reading preferences is performed for both the app-template & regular preferences.
+ *
+ *   The preferences are merged by using some from the app-template and other settings from the
+ *   regular preferences (add-ons from the app-template for example are used),
+ *   undo-memory uses the regular preferences (for e.g.).
+ *
+ * - Writing preferences is performed for both the app-template & regular preferences.
+ *
+ *   Writing unmodified preference (#U) into the regular preferences
+ *   would loose any settings the app-template overrides.
+ *   To keep default settings the regular preferences is read, add-ons etc temporarily swapped
+ *   into #U for writing, then swapped back out so as not to change the run-time preferences.
+ *
+ * \note The function #BKE_blender_userdef_app_template_data_swap determines which settings
+ * the app-template overrides.
+ * \{ */
+
 UserDef *BKE_blendfile_userdef_read(const char *filepath, ReportList *reports)
 {
   BlendFileData *bfd;
   UserDef *userdef = NULL;
 
-  bfd = BLO_read_from_file(filepath, BLO_READ_SKIP_ALL & ~BLO_READ_SKIP_USERDEF, reports);
+  bfd = BLO_read_from_file(filepath,
+                           BLO_READ_SKIP_ALL & ~BLO_READ_SKIP_USERDEF,
+                           &(struct BlendFileReadReport){.reports = reports});
   if (bfd) {
     if (bfd->user) {
       userdef = bfd->user;
@@ -611,6 +645,7 @@ UserDef *BKE_blendfile_userdef_from_defaults(void)
         "io_scene_obj",
         "io_scene_x3d",
         "cycles",
+        "pose_library",
     };
     for (int i = 0; i < ARRAY_SIZE(addons); i++) {
       bAddon *addon = BKE_addon_new();
@@ -648,18 +683,10 @@ UserDef *BKE_blendfile_userdef_from_defaults(void)
   BKE_studiolight_default(userdef->light_param, userdef->light_ambient);
 
   BKE_preferences_asset_library_default_add(userdef);
-  /* Enable asset browser features by default for alpha testing.
-   * BLO_sanitize_experimental_features_userpref_blend() will disable it again for non-alpha
-   * builds. */
-  userdef->experimental.use_asset_browser = true;
 
   return userdef;
 }
 
-/**
- * Only write the userdef in a .blend
- * \return success
- */
 bool BKE_blendfile_userdef_write(const char *filepath, ReportList *reports)
 {
   Main *mainb = MEM_callocN(sizeof(Main), "empty main");
@@ -680,19 +707,17 @@ bool BKE_blendfile_userdef_write(const char *filepath, ReportList *reports)
   return ok;
 }
 
-/**
- * Only write the userdef in a .blend, merging with the existing blend file.
- * \return success
- *
- * \note In the future we should re-evaluate user preferences,
- * possibly splitting out system/hardware specific prefs.
- */
 bool BKE_blendfile_userdef_write_app_template(const char *filepath, ReportList *reports)
 {
-  /* if it fails, overwrite is OK. */
-  UserDef *userdef_default = BKE_blendfile_userdef_read(filepath, NULL);
+  /* Checking that `filepath` exists is not essential, it just avoids printing a warning that
+   * the file can't be found. In this case it's not an error - as the file is used if it exists,
+   * falling back to the defaults.
+   * If the preferences exists but file reading fails - the file can be assumed corrupt
+   * so overwriting the file is OK. */
+  UserDef *userdef_default = BLI_exists(filepath) ? BKE_blendfile_userdef_read(filepath, NULL) :
+                                                    NULL;
   if (userdef_default == NULL) {
-    return BKE_blendfile_userdef_write(filepath, reports);
+    userdef_default = BKE_blendfile_userdef_from_defaults();
   }
 
   BKE_blender_userdef_app_template_data_swap(&U, userdef_default);
@@ -712,7 +737,7 @@ bool BKE_blendfile_userdef_write_all(ReportList *reports)
 
   if ((cfgdir = BKE_appdir_folder_id_create(BLENDER_USER_CONFIG, NULL))) {
     bool ok_write;
-    BLI_path_join(filepath, sizeof(filepath), cfgdir, BLENDER_USERPREF_FILE, NULL);
+    BLI_path_join(filepath, sizeof(filepath), cfgdir, BLENDER_USERPREF_FILE);
 
     printf("Writing userprefs: '%s' ", filepath);
     if (use_template_userpref) {
@@ -724,10 +749,12 @@ bool BKE_blendfile_userdef_write_all(ReportList *reports)
 
     if (ok_write) {
       printf("ok\n");
+      BKE_report(reports, RPT_INFO, "Preferences saved");
     }
     else {
       printf("fail\n");
       ok = false;
+      BKE_report(reports, RPT_ERROR, "Saving preferences failed");
     }
   }
   else {
@@ -737,7 +764,7 @@ bool BKE_blendfile_userdef_write_all(ReportList *reports)
   if (use_template_userpref) {
     if ((cfgdir = BKE_appdir_folder_id_create(BLENDER_USER_CONFIG, U.app_template))) {
       /* Also save app-template prefs */
-      BLI_path_join(filepath, sizeof(filepath), cfgdir, BLENDER_USERPREF_FILE, NULL);
+      BLI_path_join(filepath, sizeof(filepath), cfgdir, BLENDER_USERPREF_FILE);
 
       printf("Writing userprefs app-template: '%s' ", filepath);
       if (BKE_blendfile_userdef_write(filepath, reports) != 0) {
@@ -760,6 +787,12 @@ bool BKE_blendfile_userdef_write_all(ReportList *reports)
   return ok;
 }
 
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Blend File IO (WorkSpace)
+ * \{ */
+
 WorkspaceConfigFileData *BKE_blendfile_workspace_config_read(const char *filepath,
                                                              const void *filebuf,
                                                              int filelength,
@@ -769,7 +802,8 @@ WorkspaceConfigFileData *BKE_blendfile_workspace_config_read(const char *filepat
   WorkspaceConfigFileData *workspace_config = NULL;
 
   if (filepath) {
-    bfd = BLO_read_from_file(filepath, BLO_READ_SKIP_USERDEF, reports);
+    bfd = BLO_read_from_file(
+        filepath, BLO_READ_SKIP_USERDEF, &(struct BlendFileReadReport){.reports = reports});
   }
   else {
     bfd = BLO_read_from_memory(filebuf, filelength, BLO_READ_SKIP_USERDEF, reports);
@@ -821,7 +855,7 @@ void BKE_blendfile_workspace_config_data_free(WorkspaceConfigFileData *workspace
 /** \} */
 
 /* -------------------------------------------------------------------- */
-/** \name Partial `.blend` file save.
+/** \name Blend File Write (Partial)
  * \{ */
 
 void BKE_blendfile_write_partial_begin(Main *bmain_src)
@@ -854,10 +888,6 @@ static void blendfile_write_partial_cb(void *UNUSED(handle), Main *UNUSED(bmain)
   }
 }
 
-/**
- * \param remap_mode: Choose the kind of path remapping or none #eBLO_WritePathRemap.
- * \return Success.
- */
 bool BKE_blendfile_write_partial(Main *bmain_src,
                                  const char *filepath,
                                  const int write_flags,
@@ -869,11 +899,12 @@ bool BKE_blendfile_write_partial(Main *bmain_src,
   int a, retval;
 
   void *path_list_backup = NULL;
-  const int path_list_flag = (BKE_BPATH_TRAVERSE_SKIP_LIBRARY | BKE_BPATH_TRAVERSE_SKIP_MULTIFILE);
+  const eBPathForeachFlag path_list_flag = (BKE_BPATH_FOREACH_PATH_SKIP_LINKED |
+                                            BKE_BPATH_FOREACH_PATH_SKIP_MULTIFILE);
 
   /* This is needed to be able to load that file as a real one later
-   * (otherwise main->name will not be set at read time). */
-  BLI_strncpy(bmain_dst->name, bmain_src->name, sizeof(bmain_dst->name));
+   * (otherwise `main->filepath` will not be set at read time). */
+  STRNCPY(bmain_dst->filepath, bmain_src->filepath);
 
   BLO_main_expander(blendfile_write_partial_cb);
   BLO_expand_main(NULL, bmain_src);

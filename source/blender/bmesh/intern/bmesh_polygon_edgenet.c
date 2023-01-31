@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -49,7 +35,7 @@
  *
  * \{ */
 
-/* Note: All these flags _must_ be cleared on exit */
+/* NOTE: All these flags _must_ be cleared on exit. */
 
 /* face is a part of the edge-net (including the original face we're splitting) */
 #define FACE_NET _FLAG_WALK
@@ -337,7 +323,7 @@ static bool bm_face_split_edgenet_find_loop_walk(BMVert *v_init,
     /* in rare cases there may be edges with a single connecting vertex */
     if (e_next != e_first) {
       do {
-        if ((BM_ELEM_API_FLAG_TEST(e_next, EDGE_NET)) &&
+        if (BM_ELEM_API_FLAG_TEST(e_next, EDGE_NET) &&
             (bm_edge_flagged_radial_count(e_next) < 2)) {
           BMVert *v_next;
 
@@ -452,14 +438,6 @@ static bool bm_face_split_edgenet_find_loop(BMVert *v_init,
   return false;
 }
 
-/**
- * Splits a face into many smaller faces defined by an edge-net.
- * handle customdata and degenerate cases.
- *
- * - Isolated holes or unsupported face configurations, will be ignored.
- * - Customdata calculations aren't efficient
- *   (need to calculate weights for each vert).
- */
 bool BM_face_split_edgenet(BMesh *bm,
                            BMFace *f,
                            BMEdge **edge_net,
@@ -519,7 +497,7 @@ bool BM_face_split_edgenet(BMesh *bm,
   } while ((l_iter = l_iter->next) != l_first);
 #endif
 
-  /* Note: 'VERT_IN_QUEUE' is often not needed at all,
+  /* NOTE: 'VERT_IN_QUEUE' is often not needed at all,
    * however in rare cases verts are added multiple times to the queue,
    * that on its own is harmless but in _very_ rare cases,
    * the queue will overflow its maximum size,
@@ -1135,11 +1113,13 @@ static BMVert *bm_face_split_edgenet_partial_connect(BMesh *bm, BMVert *v_delimi
     BMVert *v_other = BM_edge_other_vert(e_face_init ? e_face_init : v_delimit->e, v_delimit);
 
     BLI_SMALLSTACK_PUSH(search, v_other);
-    BM_elem_flag_disable(v_other, VERT_NOT_IN_STACK);
+    if (BM_elem_flag_test(v_other, VERT_NOT_IN_STACK)) {
+      BM_elem_flag_disable(v_other, VERT_NOT_IN_STACK);
+      BLI_linklist_prepend_alloca(&vert_stack, v_other);
+    }
 
     while ((v_other = BLI_SMALLSTACK_POP(search))) {
       BLI_assert(BM_elem_flag_test(v_other, VERT_NOT_IN_STACK) == false);
-      BLI_linklist_prepend_alloca(&vert_stack, v_other);
       BMEdge *e_iter = v_other->e;
       do {
         BMVert *v_step = BM_edge_other_vert(e_iter, v_other);
@@ -1147,6 +1127,7 @@ static BMVert *bm_face_split_edgenet_partial_connect(BMesh *bm, BMVert *v_delimi
           if (BM_elem_flag_test(v_step, VERT_NOT_IN_STACK)) {
             BM_elem_flag_disable(v_step, VERT_NOT_IN_STACK);
             BLI_SMALLSTACK_PUSH(search, v_step);
+            BLI_linklist_prepend_alloca(&vert_stack, v_step);
           }
         }
       } while ((e_iter = BM_DISK_EDGE_NEXT(e_iter, v_other)) != v_other->e);
@@ -1220,14 +1201,6 @@ static bool bm_vert_partial_connect_check_overlap(const int *remap,
 
 #endif /* USE_PARTIAL_CONNECT */
 
-/**
- * For when the edge-net has holes in it-this connects them.
- *
- * \param use_partial_connect: Support for handling islands connected by only a single edge,
- * \note that this is quite slow so avoid using where possible.
- * \param mem_arena: Avoids many small allocs & should be cleared after each use.
- * take care since \a edge_net_new is stored in \a r_edge_net_new.
- */
 bool BM_face_split_edgenet_connect_islands(BMesh *bm,
                                            BMFace *f,
                                            BMEdge **edge_net_init,
@@ -1299,8 +1272,8 @@ bool BM_face_split_edgenet_connect_islands(BMesh *bm,
         BMVert *v_delimit = (&edge_arr[i]->v1)[j];
         BMVert *v_other;
 
-        /* note, remapping will _never_ map a vertex to an already mapped vertex */
-        while (UNLIKELY((v_other = bm_face_split_edgenet_partial_connect(bm, v_delimit, f)))) {
+        /* NOTE: remapping will _never_ map a vertex to an already mapped vertex. */
+        while (UNLIKELY(v_other = bm_face_split_edgenet_partial_connect(bm, v_delimit, f))) {
           struct TempVertPair *tvp = BLI_memarena_alloc(mem_arena, sizeof(*tvp));
           tvp->next = temp_vert_pairs.list;
           tvp->v_orig = v_delimit;

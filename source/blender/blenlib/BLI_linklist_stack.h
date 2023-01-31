@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 #pragma once
 
@@ -28,7 +12,7 @@
  * \note These macros follow STACK_* macros defined in 'BLI_utildefines.h'
  *       and should be kept (mostly) interchangeable.
  *
- * \note ``_##var##_type`` is a dummy variable only used for typechecks.
+ * \note `_##var##_type` is a dummy variable only used for type-checks.
  */
 
 /* -------------------------------------------------------------------- */
@@ -119,7 +103,7 @@
       _##var##_free = _##var##_free->next; \
     } \
     else { \
-      _##var##_temp = alloca(sizeof(LinkNode)); \
+      _##var##_temp = (LinkNode *)alloca(sizeof(LinkNode)); \
     } \
     _##var##_temp->next = _##var##_stack; \
     _##var##_temp->link = data; \

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2016 by Mike Erwin.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 by Mike Erwin. All rights reserved. */
 
 /** \file
  * \ingroup gpu
@@ -23,11 +7,11 @@
 
 #include "gpu_shader_interface.hh"
 #include "gpu_vertex_buffer_private.hh"
-#include "gpu_vertex_format_private.h"
 
 #include "gl_batch.hh"
 #include "gl_context.hh"
 #include "gl_index_buffer.hh"
+#include "gl_storage_buffer.hh"
 #include "gl_vertex_buffer.hh"
 
 #include "gl_vertex_array.hh"
@@ -38,7 +22,7 @@ namespace blender::gpu {
 /** \name Vertex Array Bindings
  * \{ */
 
-/* Returns enabled vertex pointers as a bitflag (one bit per attrib). */
+/** Returns enabled vertex pointers as a bit-flag (one bit per attribute). */
 static uint16_t vbo_bind(const ShaderInterface *interface,
                          const GPUVertFormat *format,
                          uint v_first,
@@ -55,22 +39,22 @@ static uint16_t vbo_bind(const ShaderInterface *interface,
     const GPUVertAttr *a = &format->attrs[a_idx];
 
     if (format->deinterleaved) {
-      offset += ((a_idx == 0) ? 0 : format->attrs[a_idx - 1].sz) * v_len;
-      stride = a->sz;
+      offset += ((a_idx == 0) ? 0 : format->attrs[a_idx - 1].size) * v_len;
+      stride = a->size;
     }
     else {
       offset = a->offset;
     }
 
     /* This is in fact an offset in memory. */
-    const GLvoid *pointer = (const GLubyte *)(intptr_t)(offset + v_first * stride);
+    const GLvoid *pointer = (const GLubyte *)intptr_t(offset + v_first * stride);
     const GLenum type = to_gl(static_cast<GPUVertCompType>(a->comp_type));
 
     for (uint n_idx = 0; n_idx < a->name_len; n_idx++) {
       const char *name = GPU_vertformat_attr_name_get(format, a, n_idx);
       const ShaderInput *input = interface->attr_get(name);
 
-      if (input == nullptr) {
+      if (input == nullptr || input->location == -1) {
         continue;
       }
 
@@ -108,7 +92,6 @@ static uint16_t vbo_bind(const ShaderInterface *interface,
   return enabled_attrib;
 }
 
-/* Update the Attrib Binding of the currently bound VAO. */
 void GLVertArray::update_bindings(const GLuint vao,
                                   const GPUBatch *batch_, /* Should be GLBatch. */
                                   const ShaderInterface *interface,
@@ -136,13 +119,25 @@ void GLVertArray::update_bindings(const GLuint vao,
     }
   }
 
+  if (batch->resource_id_buf) {
+    const ShaderInput *input = interface->attr_get("drw_ResourceID");
+    if (input) {
+      dynamic_cast<GLStorageBuf *>(unwrap(batch->resource_id_buf))->bind_as(GL_ARRAY_BUFFER);
+      glEnableVertexAttribArray(input->location);
+      glVertexAttribDivisor(input->location, 1);
+      glVertexAttribIPointer(
+          input->location, 1, to_gl(GPU_COMP_I32), sizeof(uint32_t), (GLvoid *)nullptr);
+      attr_mask &= ~(1 << input->location);
+    }
+  }
+
   if (attr_mask != 0 && GLContext::vertex_attrib_binding_support) {
     for (uint16_t mask = 1, a = 0; a < 16; a++, mask <<= 1) {
       if (attr_mask & mask) {
         GLContext *ctx = GLContext::get();
         /* This replaces glVertexAttrib4f(a, 0.0f, 0.0f, 0.0f, 1.0f); with a more modern style.
          * Fix issues for some drivers (see T75069). */
-        glBindVertexBuffer(a, ctx->default_attr_vbo_, (intptr_t)0, (intptr_t)0);
+        glBindVertexBuffer(a, ctx->default_attr_vbo_, intptr_t(0), intptr_t(0));
         glEnableVertexAttribArray(a);
         glVertexAttribFormat(a, 4, GL_FLOAT, GL_FALSE, 0);
         glVertexAttribBinding(a, a);
@@ -156,7 +151,6 @@ void GLVertArray::update_bindings(const GLuint vao,
   }
 }
 
-/* Another version of update_bindings for Immediate mode. */
 void GLVertArray::update_bindings(const GLuint vao,
                                   const uint v_first,
                                   const GPUVertFormat *format,

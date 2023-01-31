@@ -1,21 +1,7 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
- * \ingroup clog
+ * \ingroup intern_clog
  */
 
 #include <assert.h>
@@ -79,15 +65,15 @@ typedef struct CLG_IDFilter {
 } CLG_IDFilter;
 
 typedef struct CLogContext {
-  /** Single linked list of types.  */
+  /** Single linked list of types. */
   CLG_LogType *types;
-  /** Single linked list of references.  */
+  /** Single linked list of references. */
   CLG_LogRef *refs;
 #ifdef WITH_CLOG_PTHREADS
   pthread_mutex_t types_lock;
 #endif
 
-  /* exclude, include filters.  */
+  /* exclude, include filters. */
   CLG_IDFilter *filters[2];
   bool use_color;
   bool use_basename;
@@ -322,7 +308,9 @@ static bool clg_ctx_filter_check(CLogContext *ctx, const char *identifier)
       if (flt->match[0] == '*' && flt->match[len - 1] == '*') {
         char *match = MEM_callocN(sizeof(char) * len - 1, __func__);
         memcpy(match, flt->match + 1, len - 2);
-        if (strstr(identifier, match) != NULL) {
+        const bool success = (strstr(identifier, match) != NULL);
+        MEM_freeN(match);
+        if (success) {
           return (bool)i;
         }
       }
@@ -386,7 +374,7 @@ static void clg_ctx_fatal_action(CLogContext *ctx)
 
 static void clg_ctx_backtrace(CLogContext *ctx)
 {
-  /* Note: we avoid writing to 'FILE', for back-trace we make an exception,
+  /* NOTE: we avoid writing to 'FILE', for back-trace we make an exception,
    * if necessary we could have a version of the callback that writes to file
    * descriptor all at once. */
   ctx->callbacks.backtrace_fn(ctx->output_file);

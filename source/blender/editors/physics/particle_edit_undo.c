@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2007 by Janne Karhu.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2007 by Janne Karhu. All rights reserved. */
 
 /** \file
  * \ingroup edphys
@@ -37,6 +21,7 @@
 #include "BLI_utildefines.h"
 
 #include "BKE_context.h"
+#include "BKE_layer.h"
 #include "BKE_particle.h"
 #include "BKE_pointcache.h"
 #include "BKE_undo_system.h"
@@ -128,10 +113,7 @@ static void undoptcache_to_editcache(PTCacheUndo *undo, PTCacheEdit *edit)
   if (edit->points) {
     MEM_freeN(edit->points);
   }
-  if (edit->mirror_cache) {
-    MEM_freeN(edit->mirror_cache);
-    edit->mirror_cache = NULL;
-  }
+  MEM_SAFE_FREE(edit->mirror_cache);
 
   edit->points = MEM_dupallocN(undo->points);
   edit->totpoint = undo->totpoint;
@@ -230,7 +212,8 @@ static bool particle_undosys_poll(struct bContext *C)
   Depsgraph *depsgraph = CTX_data_depsgraph_pointer(C);
   Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
   PTCacheEdit *edit = PE_get_current(depsgraph, scene, ob);
 
   return (edit != NULL);
@@ -244,7 +227,8 @@ static bool particle_undosys_step_encode(struct bContext *C,
   ParticleUndoStep *us = (ParticleUndoStep *)us_p;
   ViewLayer *view_layer = CTX_data_view_layer(C);
   us->scene_ref.ptr = CTX_data_scene(C);
-  us->object_ref.ptr = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(us->scene_ref.ptr, view_layer);
+  us->object_ref.ptr = BKE_view_layer_active_object_get(view_layer);
   PTCacheEdit *edit = PE_get_current(depsgraph, us->scene_ref.ptr, us->object_ref.ptr);
   undoptcache_from_editcache(&us->data, edit);
   return true;
@@ -301,7 +285,6 @@ static void particle_undosys_foreach_ID_ref(UndoStep *us_p,
   foreach_ID_ref_fn(user_data, ((UndoRefID *)&us->object_ref));
 }
 
-/* Export for ED_undo_sys. */
 void ED_particle_undosys_type(UndoType *ut)
 {
   ut->name = "Edit Particle";

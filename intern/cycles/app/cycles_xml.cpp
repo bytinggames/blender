@@ -1,18 +1,5 @@
-/*
- * Copyright 2011-2013 Blender Foundation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* SPDX-License-Identifier: Apache-2.0
+ * Copyright 2011-2022 Blender Foundation */
 
 #include <stdio.h>
 
@@ -22,27 +9,28 @@
 
 #include "graph/node_xml.h"
 
-#include "render/background.h"
-#include "render/camera.h"
-#include "render/film.h"
-#include "render/graph.h"
-#include "render/integrator.h"
-#include "render/light.h"
-#include "render/mesh.h"
-#include "render/nodes.h"
-#include "render/object.h"
-#include "render/osl.h"
-#include "render/scene.h"
-#include "render/shader.h"
+#include "scene/alembic.h"
+#include "scene/background.h"
+#include "scene/camera.h"
+#include "scene/film.h"
+#include "scene/integrator.h"
+#include "scene/light.h"
+#include "scene/mesh.h"
+#include "scene/object.h"
+#include "scene/osl.h"
+#include "scene/scene.h"
+#include "scene/shader.h"
+#include "scene/shader_graph.h"
+#include "scene/shader_nodes.h"
 
-#include "subd/subd_patch.h"
-#include "subd/subd_split.h"
+#include "subd/patch.h"
+#include "subd/split.h"
 
-#include "util/util_foreach.h"
-#include "util/util_path.h"
-#include "util/util_projection.h"
-#include "util/util_transform.h"
-#include "util/util_xml.h"
+#include "util/foreach.h"
+#include "util/path.h"
+#include "util/projection.h"
+#include "util/transform.h"
+#include "util/xml.h"
 
 #include "app/cycles_xml.h"
 
@@ -51,12 +39,12 @@ CCL_NAMESPACE_BEGIN
 /* XML reading state */
 
 struct XMLReadState : public XMLReader {
-  Scene *scene;      /* scene pointer */
-  Transform tfm;     /* current transform state */
-  bool smooth;       /* smooth normal state */
-  Shader *shader;    /* current shader */
-  string base;       /* base path to current file*/
-  float dicing_rate; /* current dicing rate */
+  Scene *scene;      /* Scene pointer. */
+  Transform tfm;     /* Current transform state. */
+  bool smooth;       /* Smooth normal state. */
+  Shader *shader;    /* Current shader. */
+  string base;       /* Base path to current file. */
+  float dicing_rate; /* Current dicing rate. */
 
   XMLReadState() : scene(NULL), smooth(false), shader(NULL), dicing_rate(1.0f)
   {
@@ -205,6 +193,31 @@ static void xml_read_camera(XMLReadState &state, xml_node node)
   cam->update(state.scene);
 }
 
+/* Alembic */
+
+#ifdef WITH_ALEMBIC
+static void xml_read_alembic(XMLReadState &state, xml_node graph_node)
+{
+  AlembicProcedural *proc = state.scene->create_node<AlembicProcedural>();
+  xml_read_node(state, proc, graph_node);
+
+  for (xml_node node = graph_node.first_child(); node; node = node.next_sibling()) {
+    if (string_iequals(node.name(), "object")) {
+      string path;
+      if (xml_read_string(&path, node, "path")) {
+        ustring object_path(path, 0);
+        AlembicObject *object = static_cast<AlembicObject *>(
+            proc->get_or_create_object(object_path));
+
+        array<Node *> used_shaders = object->get_used_shaders();
+        used_shaders.push_back_slow(state.shader);
+        object->set_used_shaders(used_shaders);
+      }
+    }
+  }
+}
+#endif
+
 /* Shader */
 
 static void xml_read_shader_graph(XMLReadState &state, Shader *shader, xml_node graph_node)
@@ -333,6 +346,7 @@ static void xml_read_shader_graph(XMLReadState &state, Shader *shader, xml_node 
       }
 
       snode = (ShaderNode *)node_type->create(node_type);
+      snode->set_owner(graph);
     }
 
     xml_read_node(graph_reader, snode, node);
@@ -385,7 +399,7 @@ static Mesh *xml_add_mesh(Scene *scene, const Transform &tfm)
   Mesh *mesh = new Mesh();
   scene->geometry.push_back(mesh);
 
-  /* create object*/
+  /* Create object. */
   Object *object = new Object();
   object->set_geometry(mesh);
   object->set_tfm(tfm);
@@ -659,6 +673,11 @@ static void xml_read_scene(XMLReadState &state, xml_node scene_node)
       if (xml_read_string(&src, node, "src"))
         xml_read_include(state, src);
     }
+#ifdef WITH_ALEMBIC
+    else if (string_iequals(node.name(), "alembic")) {
+      xml_read_alembic(state, node);
+    }
+#endif
     else
       fprintf(stderr, "Unknown node \"%s\".\n", node.name());
   }
@@ -703,7 +722,7 @@ void xml_read_file(Scene *scene, const char *filepath)
 
   xml_read_include(state, path_filename(filepath));
 
-  scene->params.bvh_type = SceneParams::BVH_STATIC;
+  scene->params.bvh_type = BVH_TYPE_STATIC;
 }
 
 CCL_NAMESPACE_END

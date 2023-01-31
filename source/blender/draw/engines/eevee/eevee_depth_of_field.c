@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2016, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Blender Foundation. */
 
 /** \file
  * \ingroup draw_engine
@@ -77,7 +62,7 @@ static float circle_to_polygon_radius(float sides_count, float theta)
          cosf(theta - side_angle * floorf((sides_count * theta + M_PI) / (2.0f * M_PI)));
 }
 
-/* Remap input angle to have homogenous spacing of points along a polygon edge.
+/* Remap input angle to have homogeneous spacing of points along a polygon edge.
  * Expect theta to be in [0..2pi] range. */
 static float circle_to_polygon_angle(float sides_count, float theta)
 {
@@ -204,7 +189,7 @@ int EEVEE_depth_of_field_init(EEVEE_ViewLayerData *UNUSED(sldata),
   const DRWContextState *draw_ctx = DRW_context_state_get();
   const Scene *scene_eval = DEG_get_evaluated_scene(draw_ctx->depsgraph);
 
-  Camera *cam = (camera != NULL) ? camera->data : NULL;
+  Camera *cam = (camera != NULL && camera->type == OB_CAMERA) ? camera->data : NULL;
 
   if (cam && (cam->dof.flag & CAM_DOF_ENABLED)) {
     RegionView3D *rv3d = draw_ctx->rv3d;
@@ -234,7 +219,7 @@ int EEVEE_depth_of_field_init(EEVEE_ViewLayerData *UNUSED(sldata),
     }
 
     const float scale_camera = (is_ortho) ? 1.0 : 0.001f;
-    /* we want radius here for the aperture number  */
+    /* We want radius here for the aperture number. */
     float aperture = 0.5f * scale_camera * focal_len / fstop;
     float focal_len_scaled = scale_camera * focal_len;
     float sensor_scaled = scale_camera * sensor;
@@ -251,7 +236,7 @@ int EEVEE_depth_of_field_init(EEVEE_ViewLayerData *UNUSED(sldata),
 
     effects->dof_coc_params[1] = -aperture *
                                  fabsf(focal_len_scaled / (focus_dist - focal_len_scaled));
-    /* FIXME(fclem) This is broken for vertically fit sensor. */
+    /* FIXME(@fclem): This is broken for vertically fit sensor. */
     effects->dof_coc_params[1] *= viewport_size[0] / sensor_scaled;
 
     if ((scene_eval->eevee.flag & SCE_EEVEE_DOF_JITTER) != 0) {
@@ -352,7 +337,7 @@ int EEVEE_depth_of_field_init(EEVEE_ViewLayerData *UNUSED(sldata),
 
 /**
  * Create bokeh texture.
- **/
+ */
 static void dof_bokeh_pass_init(EEVEE_FramebufferList *fbl,
                                 EEVEE_PassList *psl,
                                 EEVEE_EffectsInfo *fx)
@@ -392,7 +377,7 @@ static void dof_bokeh_pass_init(EEVEE_FramebufferList *fbl,
 
 /**
  * Outputs halfResColorBuffer and halfResCocBuffer.
- **/
+ */
 static void dof_setup_pass_init(EEVEE_FramebufferList *fbl,
                                 EEVEE_PassList *psl,
                                 EEVEE_EffectsInfo *fx)
@@ -426,7 +411,7 @@ static void dof_setup_pass_init(EEVEE_FramebufferList *fbl,
 
 /**
  * Outputs min & max COC in each 8x8 half res pixel tiles (so 1/16th of full resolution).
- **/
+ */
 static void dof_flatten_tiles_pass_init(EEVEE_FramebufferList *fbl,
                                         EEVEE_PassList *psl,
                                         EEVEE_EffectsInfo *fx)
@@ -459,7 +444,7 @@ static void dof_flatten_tiles_pass_init(EEVEE_FramebufferList *fbl,
  * Dilates the min & max COCS to cover maximum COC values.
  * Output format/dimensions should be the same as coc_flatten_pass as they are swapped for
  * doing multiple dilation passes.
- **/
+ */
 static void dof_dilate_tiles_pass_init(EEVEE_FramebufferList *fbl,
                                        EEVEE_PassList *psl,
                                        EEVEE_EffectsInfo *fx)
@@ -540,7 +525,7 @@ static void dof_dilate_tiles_pass_draw(EEVEE_FramebufferList *fbl,
 
 /**
  * Create mipmapped color & COC textures for gather passes.
- **/
+ */
 static void dof_reduce_pass_init(EEVEE_FramebufferList *fbl,
                                  EEVEE_PassList *psl,
                                  EEVEE_TextureList *txl,
@@ -625,8 +610,8 @@ static void dof_reduce_pass_init(EEVEE_FramebufferList *fbl,
   }
 
   if (txl->dof_reduced_color) {
-    /* TODO(fclem) In the future, we need to check if mip_count did not change.
-     * For now it's ok as we always define all mip level.*/
+    /* TODO(@fclem): In the future, we need to check if mip_count did not change.
+     * For now it's ok as we always define all mip level. */
     if (res[0] != GPU_texture_width(txl->dof_reduced_color) ||
         res[1] != GPU_texture_width(txl->dof_reduced_color)) {
       DRW_TEXTURE_FREE_SAFE(txl->dof_reduced_color);
@@ -641,10 +626,6 @@ static void dof_reduce_pass_init(EEVEE_FramebufferList *fbl,
         "dof_reduced_color", UNPACK2(res), mip_count, GPU_RGBA16F, NULL);
     txl->dof_reduced_coc = GPU_texture_create_2d(
         "dof_reduced_coc", UNPACK2(res), mip_count, GPU_R16F, NULL);
-
-    /* TODO(fclem) Remove once we have immutable storage or when mips are generated on creation. */
-    GPU_texture_generate_mipmap(txl->dof_reduced_color);
-    GPU_texture_generate_mipmap(txl->dof_reduced_coc);
   }
 
   GPU_framebuffer_ensure_config(&fbl->dof_reduce_fb,
@@ -666,7 +647,7 @@ static void dof_reduce_pass_init(EEVEE_FramebufferList *fbl,
 /**
  * Do the gather convolution. For each pixels we gather multiple pixels in its neighborhood
  * depending on the min & max CoC tiles.
- **/
+ */
 static void dof_gather_pass_init(EEVEE_FramebufferList *fbl,
                                  EEVEE_PassList *psl,
                                  EEVEE_TextureList *txl,
@@ -792,7 +773,7 @@ static void dof_gather_pass_init(EEVEE_FramebufferList *fbl,
  * Filter an input buffer using a median filter to reduce noise.
  * NOTE: We use the holefill texture as our input to reduce memory usage.
  * Thus, the holefill pass cannot be filtered.
- **/
+ */
 static void dof_filter_pass_init(EEVEE_FramebufferList *fbl,
                                  EEVEE_PassList *psl,
                                  EEVEE_EffectsInfo *fx)
@@ -825,7 +806,7 @@ static void dof_filter_pass_init(EEVEE_FramebufferList *fbl,
 /**
  * Do the Scatter convolution. A sprite is emitted for every 4 pixels but is only expanded if the
  * pixels are bright enough to be scattered.
- **/
+ */
 static void dof_scatter_pass_init(EEVEE_FramebufferList *fbl,
                                   EEVEE_PassList *psl,
                                   EEVEE_TextureList *txl,
@@ -896,7 +877,7 @@ static void dof_scatter_pass_init(EEVEE_FramebufferList *fbl,
 /**
  * Recombine the result of the foreground and background processing. Also perform a slight out of
  * focus blur to improve geometric continuity.
- **/
+ */
 static void dof_recombine_pass_init(EEVEE_FramebufferList *UNUSED(fbl),
                                     EEVEE_PassList *psl,
                                     EEVEE_EffectsInfo *fx)

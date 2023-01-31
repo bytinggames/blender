@@ -1,22 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- * util.c
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup imbuf
@@ -58,12 +41,12 @@
 #define UTIL_DEBUG 0
 
 const char *imb_ext_image[] = {
-    ".png", ".tga",  ".bmp", ".jpg", ".jpeg", ".sgi", ".rgb", ".rgba",
+    ".png",  ".tga",  ".bmp", ".jpg", ".jpeg", ".sgi", ".rgb", ".rgba",
 #ifdef WITH_TIFF
-    ".tif", ".tiff", ".tx",
+    ".tif",  ".tiff", ".tx",
 #endif
 #ifdef WITH_OPENJPEG
-    ".jp2", ".j2c",
+    ".jp2",  ".j2c",
 #endif
 #ifdef WITH_HDR
     ".hdr",
@@ -72,13 +55,16 @@ const char *imb_ext_image[] = {
     ".dds",
 #endif
 #ifdef WITH_CINEON
-    ".dpx", ".cin",
+    ".dpx",  ".cin",
 #endif
 #ifdef WITH_OPENEXR
     ".exr",
 #endif
 #ifdef WITH_OPENIMAGEIO
-    ".psd", ".pdd",  ".psb",
+    ".psd",  ".pdd",  ".psb",
+#endif
+#ifdef WITH_WEBP
+    ".webp",
 #endif
     NULL,
 };
@@ -98,7 +84,7 @@ const char *imb_ext_movie[] = {
     ".mpg2", ".vob", ".mkv", ".flv",   ".divx", ".xvid", ".mxf", ".webm", NULL,
 };
 
-/* sort of wrong being here... */
+/** Sort of wrong having audio extensions in imbuf. */
 const char *imb_ext_audio[] = {
     ".wav",
     ".ogg",
@@ -120,8 +106,7 @@ const char *imb_ext_audio[] = {
 /* Increased from 32 to 64 because of the bitmaps header size. */
 #define HEADER_SIZE 64
 
-static ssize_t imb_ispic_read_header_from_filepath(const char *filepath,
-                                                   unsigned char buf[HEADER_SIZE])
+static ssize_t imb_ispic_read_header_from_filepath(const char *filepath, uchar buf[HEADER_SIZE])
 {
   BLI_stat_t st;
   int fp;
@@ -149,7 +134,7 @@ static ssize_t imb_ispic_read_header_from_filepath(const char *filepath,
   return size;
 }
 
-int IMB_ispic_type_from_memory(const unsigned char *buf, const size_t buf_size)
+int IMB_ispic_type_from_memory(const uchar *buf, const size_t buf_size)
 {
   for (const ImFileType *type = IMB_FILE_TYPES; type < IMB_FILE_TYPES_LAST; type++) {
     if (type->is_a != NULL) {
@@ -164,7 +149,7 @@ int IMB_ispic_type_from_memory(const unsigned char *buf, const size_t buf_size)
 
 int IMB_ispic_type(const char *filepath)
 {
-  unsigned char buf[HEADER_SIZE];
+  uchar buf[HEADER_SIZE];
   const ssize_t buf_size = imb_ispic_read_header_from_filepath(filepath, buf);
   if (buf_size <= 0) {
     return IMB_FTYPE_NONE;
@@ -174,7 +159,7 @@ int IMB_ispic_type(const char *filepath)
 
 bool IMB_ispic_type_matches(const char *filepath, int filetype)
 {
-  unsigned char buf[HEADER_SIZE];
+  uchar buf[HEADER_SIZE];
   const ssize_t buf_size = imb_ispic_read_header_from_filepath(filepath, buf);
   if (buf_size <= 0) {
     return false;
@@ -182,7 +167,7 @@ bool IMB_ispic_type_matches(const char *filepath, int filetype)
 
   const ImFileType *type = IMB_file_type_from_ftype(filetype);
   if (type != NULL) {
-    /* Requesting to load a type that can't check it's own header doesn't make sense.
+    /* Requesting to load a type that can't check its own header doesn't make sense.
      * Keep the check for developers. */
     BLI_assert(type->is_a != NULL);
     if (type->is_a != NULL) {
@@ -245,7 +230,6 @@ static void ffmpeg_log_callback(void *ptr, int level, const char *format, va_lis
 
 void IMB_ffmpeg_init(void)
 {
-  av_register_all();
   avdevice_register_all();
 
   ffmpeg_last_error[0] = '\0';
@@ -266,10 +250,9 @@ const char *IMB_ffmpeg_last_error(void)
 static int isffmpeg(const char *filepath)
 {
   AVFormatContext *pFormatCtx = NULL;
-  unsigned int i;
+  uint i;
   int videoStream;
-  AVCodec *pCodec;
-  AVCodecContext *pCodecCtx;
+  const AVCodec *pCodec;
 
   if (BLI_path_extension_check_n(filepath,
                                  ".swf",
@@ -310,8 +293,8 @@ static int isffmpeg(const char *filepath)
   /* Find the first video stream */
   videoStream = -1;
   for (i = 0; i < pFormatCtx->nb_streams; i++) {
-    if (pFormatCtx->streams[i] && pFormatCtx->streams[i]->codec &&
-        (pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)) {
+    if (pFormatCtx->streams[i] && pFormatCtx->streams[i]->codecpar &&
+        (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)) {
       videoStream = i;
       break;
     }
@@ -322,21 +305,15 @@ static int isffmpeg(const char *filepath)
     return 0;
   }
 
-  pCodecCtx = pFormatCtx->streams[videoStream]->codec;
+  AVCodecParameters *codec_par = pFormatCtx->streams[videoStream]->codecpar;
 
   /* Find the decoder for the video stream */
-  pCodec = avcodec_find_decoder(pCodecCtx->codec_id);
+  pCodec = avcodec_find_decoder(codec_par->codec_id);
   if (pCodec == NULL) {
     avformat_close_input(&pFormatCtx);
     return 0;
   }
 
-  if (avcodec_open2(pCodecCtx, pCodec, NULL) < 0) {
-    avformat_close_input(&pFormatCtx);
-    return 0;
-  }
-
-  avcodec_close(pCodecCtx);
   avformat_close_input(&pFormatCtx);
 
   return 1;
@@ -411,15 +388,4 @@ bool IMB_isanim(const char *filepath)
   type = imb_get_anim_type(filepath);
 
   return (type && type != ANIM_SEQUENCE);
-}
-
-bool IMB_isfloat(const ImBuf *ibuf)
-{
-  const ImFileType *type = IMB_file_type_from_ibuf(ibuf);
-  if (type != NULL) {
-    if (type->flag & IM_FTYPE_FLOAT) {
-      return true;
-    }
-  }
-  return false;
 }

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bke
@@ -152,7 +138,7 @@ static struct bUnitDef buMetricLenDef[] = {
   {"micrometer", "micrometers", "µm",  "um", "Micrometers",    "MICROMETERS", UN_SC_UM,  0.0, B_UNIT_DEF_NONE},
 
   /* These get displayed because of float precision problems in the transform header,
-   * could work around, but for now probably people wont use these. */
+   * could work around, but for now probably people won't use these. */
 #if 0
   {"nanometer", "Nanometers",     "nm", NULL, 0.000000001, 0.0,   B_UNIT_DEF_NONE},
   {"picometer", "Picometers",     "pm", NULL, 0.000000000001, 0.0, B_UNIT_DEF_NONE},
@@ -282,7 +268,7 @@ static struct bUnitCollection buImperialAclCollection = {buImperialAclDef, 0, 0,
 /* Time. */
 static struct bUnitDef buNaturalTimeDef[] = {
   /* Weeks? - probably not needed for Blender. */
-  {"day",         "days",         "d",   NULL, "Days",         "DAYS",     90000.0,      0.0, B_UNIT_DEF_NONE},
+  {"day",         "days",         "d",   NULL, "Days",         "DAYS",     86400.0,      0.0, B_UNIT_DEF_NONE},
   {"hour",        "hours",        "hr",  "h",  "Hours",        "HOURS",     3600.0,      0.0, B_UNIT_DEF_NONE},
   {"minute",      "minutes",      "min", "m",  "Minutes",      "MINUTES",     60.0,      0.0, B_UNIT_DEF_NONE},
   {"second",      "seconds",      "sec", "s",  "Seconds",      "SECONDS",      1.0,      0.0, B_UNIT_DEF_NONE}, /* Base unit. */
@@ -358,6 +344,7 @@ static const struct bUnitCollection *bUnitSystems[][B_UNIT_TYPE_TOT] = {
      NULL,
      &buNaturalRotCollection,
      &buNaturalTimeCollection,
+     &buNaturalTimeCollection,
      NULL,
      NULL,
      NULL,
@@ -370,6 +357,7 @@ static const struct bUnitCollection *bUnitSystems[][B_UNIT_TYPE_TOT] = {
      &buMetricVolCollection,
      &buMetricMassCollection,
      &buNaturalRotCollection,
+     &buNaturalTimeCollection,
      &buNaturalTimeCollection,
      &buMetricVelCollection,
      &buMetricAclCollection,
@@ -384,12 +372,13 @@ static const struct bUnitCollection *bUnitSystems[][B_UNIT_TYPE_TOT] = {
      &buImperialMassCollection,
      &buNaturalRotCollection,
      &buNaturalTimeCollection,
+     &buNaturalTimeCollection,
      &buImperialVelCollection,
      &buImperialAclCollection,
      &buCameraLenCollection,
      &buPowerCollection,
      &buImperialTempCollection},
-    {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+    {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
 };
 
 static const bUnitCollection *unit_get_system(int system, int type)
@@ -471,11 +460,20 @@ static size_t unit_as_string(char *str,
   }
 
   double value_conv = (value / unit->scalar) - unit->bias;
+  bool strip_skip = false;
+
+  /* Negative precision is used to disable stripping of zeroes.
+   * This reduces text jumping when changing values. */
+  if (prec < 0) {
+    strip_skip = true;
+    prec *= -1;
+  }
 
   /* Adjust precision to expected number of significant digits.
    * Note that here, we shall not have to worry about very big/small numbers, units are expected
    * to replace 'scientific notation' in those cases. */
   prec -= integer_digits_d(value_conv);
+
   CLAMP(prec, 0, 6);
 
   /* Convert to a string. */
@@ -489,12 +487,14 @@ static size_t unit_as_string(char *str,
   size_t i = len - 1;
 
   if (prec > 0) {
-    while (i > 0 && str[i] == '0') { /* 4.300 -> 4.3 */
-      str[i--] = pad;
-    }
+    if (!strip_skip) {
+      while (i > 0 && str[i] == '0') { /* 4.300 -> 4.3 */
+        str[i--] = pad;
+      }
 
-    if (i > 0 && str[i] == '.') { /* 10. -> 10 */
-      str[i--] = pad;
+      if (i > 0 && str[i] == '.') { /* 10. -> 10 */
+        str[i--] = pad;
+      }
     }
   }
 
@@ -714,8 +714,8 @@ static const char *unit_find_str(const char *str, const char *substr, bool case_
       if (str_found == str ||
           /* Weak unicode support!, so "µm" won't match up be replaced by "m"
            * since non ascii utf8 values will NEVER return true */
-          isalpha_or_utf8(*BLI_str_prev_char_utf8(str_found)) == 0) {
-        /* Next char cannot be alphanum. */
+          isalpha_or_utf8(*BLI_str_find_prev_char_utf8(str_found, str)) == 0) {
+        /* Next char cannot be alpha-numeric. */
         int len_name = strlen(substr);
 
         if (!isalpha_or_utf8(*(str_found + len_name))) {
@@ -741,10 +741,10 @@ static const char *unit_find_str(const char *str, const char *substr, bool case_
  *
  * "1m1cm+2mm"              - Original value.
  * "1*1#1*0.01#+2*0.001#"   - Replace numbers.
- * "1*1+1*0.01 +2*0.001 "   - Add add signs if ( + - * / | & ~ < > ^ ! = % ) not found in between.
+ * "1*1+1*0.01 +2*0.001 "   - Add plus signs if ( + - * / | & ~ < > ^ ! = % ) not found in between.
  */
 
-/* Not too strict, (+ - * /) are most common.  */
+/* Not too strict, (+ - * /) are most common. */
 static bool ch_is_op(char op)
 {
   switch (op) {
@@ -830,7 +830,7 @@ static char *find_next_op(const char *str, char *remaining_str, int len_max)
       return remaining_str + i;
     }
   }
-  BLI_assert(!"String should be NULL terminated");
+  BLI_assert_msg(0, "String should be NULL terminated");
   return remaining_str + i;
 }
 
@@ -845,8 +845,8 @@ static bool unit_distribute_negatives(char *str, const int len_max)
   bool changed = false;
 
   char *remaining_str = str;
-  int remaining_str_len = len_max;
   while ((remaining_str = find_next_negative(str, remaining_str)) != NULL) {
+    int remaining_str_len;
     /* Exit early in the unlikely situation that we've run out of length to add the parentheses. */
     remaining_str_len = len_max - (int)(remaining_str - str);
     if (remaining_str_len <= 2) {
@@ -914,7 +914,7 @@ static int unit_scale_str(char *str,
     return 0;
   }
 
-  /* XXX - investigate, does not respect len_max properly.  */
+  /* XXX: investigate, does not respect len_max properly. */
   char *str_found = (char *)unit_find_str(str, replace_str, case_sensitive);
 
   if (str_found == NULL) {
@@ -928,7 +928,7 @@ static int unit_scale_str(char *str,
   /* Deal with unit bias for temperature units. Order of operations is important, so we
    * have to add parentheses, add the bias, then multiply by the scalar like usual.
    *
-   * Note: If these changes don't fit in the buffer properly unit evaluation has failed,
+   * NOTE: If these changes don't fit in the buffer properly unit evaluation has failed,
    * just try not to destroy anything while failing. */
   if (unit->bias != 0.0) {
     /* Add the open parenthesis. */
@@ -943,7 +943,7 @@ static int unit_scale_str(char *str,
 
     /* Add the addition sign, the bias, and the close parenthesis after the value. */
     int value_end_ofs = find_end_of_value_chars(str, len_max, prev_op_ofs + 2);
-    int len_bias_num = BLI_snprintf(str_tmp, TEMP_STR_SIZE, "+%.9g)", unit->bias);
+    int len_bias_num = BLI_snprintf_rlen(str_tmp, TEMP_STR_SIZE, "+%.9g)", unit->bias);
     if (value_end_ofs + len_bias_num < len_max) {
       memmove(str + value_end_ofs + len_bias_num, str + value_end_ofs, len - value_end_ofs + 1);
       memcpy(str + value_end_ofs, str_tmp, len_bias_num);
@@ -957,7 +957,8 @@ static int unit_scale_str(char *str,
   int len_move = (len - (found_ofs + len_name)) + 1; /* 1+ to copy the string terminator. */
 
   /* "#" Removed later */
-  int len_num = BLI_snprintf(str_tmp, TEMP_STR_SIZE, "*%.9g" SEP_STR, unit->scalar / scale_pref);
+  int len_num = BLI_snprintf_rlen(
+      str_tmp, TEMP_STR_SIZE, "*%.9g" SEP_STR, unit->scalar / scale_pref);
 
   if (len_num > len_max) {
     len_num = len_max;
@@ -984,7 +985,7 @@ static int unit_scale_str(char *str,
     memcpy(str_found, str_tmp, len_num); /* Without the string terminator. */
   }
 
-  /* Since the null terminator wont be moved if the stringlen_max
+  /* Since the null terminator won't be moved if the stringlen_max
    * was not long enough to fit everything in it. */
   str[len_max - 1] = '\0';
   return found_ofs + len_num;
@@ -1024,6 +1025,16 @@ static bool unit_find(const char *str, const bUnitDef *unit)
   return false;
 }
 
+static const bUnitDef *unit_find_in_collection(const bUnitCollection *usys, const char *str)
+{
+  for (const bUnitDef *unit = usys->units; unit->name; unit++) {
+    if (unit_find(str, unit)) {
+      return unit;
+    }
+  }
+  return NULL;
+}
+
 /**
  * Try to find a default unit from current or previous string.
  * This allows us to handle cases like 2 + 2mm, people would expect to get 4mm, not 2.002m!
@@ -1034,25 +1045,15 @@ static const bUnitDef *unit_detect_from_str(const bUnitCollection *usys,
                                             const char *str,
                                             const char *str_prev)
 {
-  const bUnitDef *unit = NULL;
-
   /* See which units the new value has. */
-  for (unit = usys->units; unit->name; unit++) {
-    if (unit_find(str, unit)) {
-      break;
-    }
-  }
+  const bUnitDef *unit = unit_find_in_collection(usys, str);
   /* Else, try to infer the default unit from the previous string. */
-  if (str_prev && (unit == NULL || unit->name == NULL)) {
+  if (str_prev && (unit == NULL)) {
     /* See which units the original value had. */
-    for (unit = usys->units; unit->name; unit++) {
-      if (unit_find(str_prev, unit)) {
-        break;
-      }
-    }
+    unit = unit_find_in_collection(usys, str_prev);
   }
   /* Else, fall back to default unit. */
-  if (unit == NULL || unit->name == NULL) {
+  if (unit == NULL) {
     unit = unit_default(usys);
   }
 
@@ -1066,11 +1067,8 @@ bool BKE_unit_string_contains_unit(const char *str, int type)
     if (!is_valid_unit_collection(usys)) {
       continue;
     }
-
-    for (int i = 0; i < usys->length; i++) {
-      if (unit_find(str, usys->units + i)) {
-        return true;
-      }
+    if (unit_find_in_collection(usys, str)) {
+      return true;
     }
   }
   return false;
@@ -1087,22 +1085,6 @@ double BKE_unit_apply_preferred_unit(const struct UnitSettings *settings, int ty
   return value * scalar + bias;
 }
 
-/**
- * Make a copy of the string that replaces the units with numbers.
- *
- * This is only used when evaluating user input and can afford to be a bit slower
- *
- * This is to be used before python evaluation so..
- * 10.1km -> 10.1*1000.0
- * ...will be resolved by python.
- *
- * Values will be split by an add sign.
- * 5'2" -> 5*0.3048 + 2*0.0254
- *
- * \param str_prev: is optional, when valid it is used to get a base unit when none is set.
- *
- * \return True of a change was made.
- */
 bool BKE_unit_replace_string(
     char *str, int len_max, const char *str_prev, double scale_pref, int system, int type)
 {
@@ -1132,8 +1114,8 @@ bool BKE_unit_replace_string(
     strncpy(str, str_tmp, len_max);
   }
   else {
-    /* BLI_snprintf would not fit into str_tmp, cant do much in this case.
-     * Check for this because otherwise BKE_unit_replace_string could call its self forever. */
+    /* BLI_snprintf would not fit into str_tmp, can't do much in this case.
+     * Check for this because otherwise BKE_unit_replace_string could call itself forever. */
     return changed;
   }
 
@@ -1170,13 +1152,12 @@ bool BKE_unit_replace_string(
    */
   {
     char *str_found = str;
-    const char *ch = str;
 
     while ((str_found = strchr(str_found, SEP_CHR))) {
       bool op_found = false;
 
       /* Any operators after this? */
-      for (ch = str_found + 1; *ch != '\0'; ch++) {
+      for (const char *ch = str_found + 1; *ch != '\0'; ch++) {
         if (ELEM(*ch, ' ', '\t')) {
           continue;
         }
@@ -1192,7 +1173,6 @@ bool BKE_unit_replace_string(
   return changed;
 }
 
-/* 45µm --> 45um */
 void BKE_unit_name_to_alt(char *str, int len_max, const char *orig_str, int system, int type)
 {
   const bUnitCollection *usys = unit_get_system(system, type);
@@ -1299,7 +1279,7 @@ const char *BKE_unit_identifier_get(const void *usys_pt, int index)
 {
   const bUnitDef *unit = ((const bUnitCollection *)usys_pt)->units + index;
   if (unit->identifier == NULL) {
-    BLI_assert(false && "identifier for this unit is not specified yet");
+    BLI_assert_msg(0, "identifier for this unit is not specified yet");
   }
   return unit->identifier;
 }

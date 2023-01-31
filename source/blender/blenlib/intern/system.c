@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bli
@@ -35,7 +21,9 @@
 
 #  include "BLI_winstuff.h"
 #else
-#  include <execinfo.h>
+#  if defined(HAVE_EXECINFO_H)
+#    include <execinfo.h>
+#  endif
 #  include <unistd.h>
 #endif
 
@@ -46,7 +34,7 @@ int BLI_cpu_support_sse2(void)
   return 1;
 #elif defined(__GNUC__) && defined(i386)
   /* for GCC x86 we check cpuid */
-  unsigned int d;
+  uint d;
   __asm__(
       "pushl %%ebx\n\t"
       "cpuid\n\t"
@@ -56,7 +44,7 @@ int BLI_cpu_support_sse2(void)
   return (d & 0x04000000) != 0;
 #elif (defined(_MSC_VER) && defined(_M_IX86))
   /* also check cpuid for MSVC x86 */
-  unsigned int d;
+  uint d;
   __asm {
     xor     eax, eax
     inc eax
@@ -73,14 +61,11 @@ int BLI_cpu_support_sse2(void)
 
 /* Windows stack-walk lives in system_win32.c */
 #if !defined(_MSC_VER)
-/**
- * Write a backtrace into a file for systems which support it.
- */
 void BLI_system_backtrace(FILE *fp)
 {
-  /* ------------- */
-  /* Linux / Apple */
-#  if defined(__linux__) || defined(__APPLE__)
+  /* ----------------------- */
+  /* If system as execinfo.h */
+#  if defined(HAVE_EXECINFO_H)
 
 #    define SIZE 100
   void *buffer[SIZE];
@@ -100,8 +85,8 @@ void BLI_system_backtrace(FILE *fp)
 #    undef SIZE
 
 #  else
-  /* ------------------ */
-  /* non msvc/osx/linux */
+  /* --------------------- */
+  /* Non MSVC/Apple/Linux. */
   (void)fp;
 #  endif
 }
@@ -169,12 +154,12 @@ void BLI_hostname_get(char *buffer, size_t bufsize)
   if (gethostname(buffer, bufsize - 1) < 0) {
     BLI_strncpy(buffer, "-unknown-", bufsize);
   }
-  /* When gethostname() truncates, it doesn't guarantee the trailing \0. */
+  /* When `gethostname()` truncates, it doesn't guarantee the trailing `\0`. */
   buffer[bufsize - 1] = '\0';
 #else
   DWORD bufsize_inout = bufsize;
   if (!GetComputerName(buffer, &bufsize_inout)) {
-    strncpy(buffer, "-unknown-", bufsize);
+    BLI_strncpy(buffer, "-unknown-", bufsize);
   }
 #endif
 }
@@ -184,7 +169,7 @@ size_t BLI_system_memory_max_in_megabytes(void)
   /* Maximum addressable bytes on this platform.
    *
    * NOTE: Due to the shift arithmetic this is a half of the memory. */
-  const size_t limit_bytes_half = (((size_t)1) << ((sizeof(size_t[8])) - 1));
+  const size_t limit_bytes_half = (((size_t)1) << (sizeof(size_t[8]) - 1));
   /* Convert it to megabytes and return. */
   return (limit_bytes_half >> 20) * 2;
 }

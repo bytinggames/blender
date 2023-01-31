@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -122,14 +108,14 @@ static void rna_Pose_IK_update(Main *UNUSED(bmain), Scene *UNUSED(scene), Pointe
   BIK_clear_data(ob->pose);
 }
 
-static char *rna_Pose_path(PointerRNA *UNUSED(ptr))
+static char *rna_Pose_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("pose");
 }
 
-static char *rna_PoseBone_path(PointerRNA *ptr)
+static char *rna_PoseBone_path(const PointerRNA *ptr)
 {
-  bPoseChannel *pchan = ptr->data;
+  const bPoseChannel *pchan = ptr->data;
   char name_esc[sizeof(pchan->name) * 2];
 
   BLI_str_escape(name_esc, pchan->name, sizeof(name_esc));
@@ -140,8 +126,8 @@ static char *rna_PoseBone_path(PointerRNA *ptr)
 
 static bool rna_bone_group_poll(Object *ob, ReportList *reports)
 {
-  if ((ob->proxy != NULL) || (ob->proxy_group != NULL) || ID_IS_OVERRIDE_LIBRARY(ob)) {
-    BKE_report(reports, RPT_ERROR, "Cannot edit bone groups for proxies or library overrides");
+  if (ID_IS_OVERRIDE_LIBRARY(ob)) {
+    BKE_report(reports, RPT_ERROR, "Cannot edit bone groups for library overrides");
     return false;
   }
 
@@ -224,16 +210,10 @@ static void rna_BoneGroup_name_set(PointerRNA *ptr, const char *value)
                  sizeof(agrp->name));
 }
 
-static IDProperty *rna_PoseBone_idprops(PointerRNA *ptr, bool create)
+static IDProperty **rna_PoseBone_idprops(PointerRNA *ptr)
 {
   bPoseChannel *pchan = ptr->data;
-
-  if (create && !pchan->prop) {
-    IDPropertyTemplate val = {0};
-    pchan->prop = IDP_New(IDP_GROUP, &val, "RNA_PoseBone group");
-  }
-
-  return pchan->prop;
+  return &pchan->prop;
 }
 
 static void rna_Pose_ik_solver_set(struct PointerRNA *ptr, int value)
@@ -620,8 +600,8 @@ static void rna_PoseChannel_constraints_remove(
 
   ED_object_constraint_update(bmain, ob);
 
-  BKE_constraints_active_set(&pchan->constraints,
-                             NULL); /* XXX, is this really needed? - Campbell */
+  /* XXX(@campbellbarton): is this really needed? */
+  BKE_constraints_active_set(&pchan->constraints, NULL);
 
   WM_main_add_notifier(NC_OBJECT | ND_CONSTRAINT | NA_REMOVED, id);
 
@@ -656,6 +636,7 @@ static bConstraint *rna_PoseChannel_constraints_copy(ID *id,
   Object *ob = (Object *)id;
   bConstraint *con = con_ptr->data;
   bConstraint *new_con = BKE_constraint_copy_for_pose(ob, pchan, con);
+  new_con->flag |= CONSTRAINT_OVERRIDE_LIBRARY_LOCAL;
 
   ED_object_constraint_dependency_tag_update(bmain, ob, new_con);
   WM_main_add_notifier(NC_OBJECT | ND_CONSTRAINT | NA_ADDED, id);
@@ -663,11 +644,11 @@ static bConstraint *rna_PoseChannel_constraints_copy(ID *id,
   return new_con;
 }
 
-bool rna_PoseChannel_constraints_override_apply(Main *UNUSED(bmain),
+bool rna_PoseChannel_constraints_override_apply(Main *bmain,
                                                 PointerRNA *ptr_dst,
                                                 PointerRNA *ptr_src,
                                                 PointerRNA *UNUSED(ptr_storage),
-                                                PropertyRNA *UNUSED(prop_dst),
+                                                PropertyRNA *prop_dst,
                                                 PropertyRNA *UNUSED(prop_src),
                                                 PropertyRNA *UNUSED(prop_storage),
                                                 const int UNUSED(len_dst),
@@ -687,29 +668,18 @@ bool rna_PoseChannel_constraints_override_apply(Main *UNUSED(bmain),
   /* Remember that insertion operations are defined and stored in correct order, which means that
    * even if we insert several items in a row, we always insert first one, then second one, etc.
    * So we should always find 'anchor' constraint in both _src *and* _dst */
-  bConstraint *con_anchor = NULL;
-  if (opop->subitem_local_name && opop->subitem_local_name[0]) {
-    con_anchor = BLI_findstring(
-        &pchan_dst->constraints, opop->subitem_local_name, offsetof(bConstraint, name));
-  }
-  if (con_anchor == NULL && opop->subitem_local_index >= 0) {
-    con_anchor = BLI_findlink(&pchan_dst->constraints, opop->subitem_local_index);
-  }
-  /* Otherwise we just insert in first position. */
+  const size_t name_offset = offsetof(bConstraint, name);
+  bConstraint *con_anchor = BLI_listbase_string_or_index_find(&pchan_dst->constraints,
+                                                              opop->subitem_reference_name,
+                                                              name_offset,
+                                                              opop->subitem_reference_index);
+  /* If `con_anchor` is NULL, `con_src` will be inserted in first position. */
 
-  bConstraint *con_src = NULL;
-  if (opop->subitem_local_name && opop->subitem_local_name[0]) {
-    con_src = BLI_findstring(
-        &pchan_src->constraints, opop->subitem_local_name, offsetof(bConstraint, name));
-  }
-  if (con_src == NULL && opop->subitem_local_index >= 0) {
-    con_src = BLI_findlink(&pchan_src->constraints, opop->subitem_local_index);
-  }
-  con_src = con_src ? con_src->next : pchan_src->constraints.first;
+  bConstraint *con_src = BLI_listbase_string_or_index_find(
+      &pchan_src->constraints, opop->subitem_local_name, name_offset, opop->subitem_local_index);
 
   if (con_src == NULL) {
-    printf("%s: Could not find constraint to insert, doing nothing...\n", __func__);
-    BLI_assert(0);
+    BLI_assert(con_src != NULL);
     return false;
   }
 
@@ -724,19 +694,22 @@ bool rna_PoseChannel_constraints_override_apply(Main *UNUSED(bmain),
   BKE_constraint_unique_name(con_dst, &pchan_dst->constraints);
 
   //  printf("%s: We inserted a constraint...\n", __func__);
+  RNA_property_update_main(bmain, NULL, ptr_dst, prop_dst);
   return true;
 }
 
-static int rna_PoseChannel_proxy_editable(PointerRNA *ptr, const char **r_info)
+static int rna_PoseChannel_proxy_editable(PointerRNA *UNUSED(ptr), const char **UNUSED(r_info))
 {
+#  if 0
   Object *ob = (Object *)ptr->owner_id;
   bArmature *arm = ob->data;
   bPoseChannel *pchan = (bPoseChannel *)ptr->data;
 
-  if (ob->proxy && pchan->bone && (pchan->bone->layer & arm->layer_protected)) {
+  if (pchan->bone && (pchan->bone->layer & arm->layer_protected)) {
     *r_info = "Can't edit property of a proxy on a protected layer";
     return 0;
   }
+#  endif
 
   return PROP_EDITABLE;
 }
@@ -885,7 +858,6 @@ static void rna_PoseChannel_custom_shape_transform_set(PointerRNA *ptr,
 
 #else
 
-/* common properties for Action/Bone Groups - related to color */
 void rna_def_actionbone_group_common(StructRNA *srna, int update_flag, const char *update_cb)
 {
   PropertyRNA *prop;
@@ -932,7 +904,7 @@ static void rna_def_bone_group(BlenderRNA *brna)
   RNA_def_property_string_funcs(prop, NULL, NULL, "rna_BoneGroup_name_set");
   RNA_def_struct_name_property(srna, prop);
 
-  /* TODO: add some runtime-collections stuff to access grouped bones  */
+  /* TODO: add some runtime-collections stuff to access grouped bones. */
 
   /* color set */
   rna_def_actionbone_group_common(srna, NC_OBJECT | ND_POSE, "rna_Pose_update");
@@ -1359,10 +1331,25 @@ static void rna_def_pose_channel(BlenderRNA *brna)
   RNA_def_property_editable_func(prop, "rna_PoseChannel_proxy_editable");
   RNA_def_property_update(prop, NC_OBJECT | ND_POSE, "rna_Pose_dependency_update");
 
-  prop = RNA_def_property(srna, "custom_shape_scale", PROP_FLOAT, PROP_NONE);
-  RNA_def_property_float_sdna(prop, NULL, "custom_scale");
-  RNA_def_property_range(prop, 0.0f, 1000.0f);
+  prop = RNA_def_property(srna, "custom_shape_scale_xyz", PROP_FLOAT, PROP_XYZ);
+  RNA_def_property_float_sdna(prop, NULL, "custom_scale_xyz");
+  RNA_def_property_flag(prop, PROP_PROPORTIONAL);
+  RNA_def_property_float_array_default(prop, rna_default_scale_3d);
   RNA_def_property_ui_text(prop, "Custom Shape Scale", "Adjust the size of the custom shape");
+  RNA_def_property_update(prop, NC_OBJECT | ND_POSE, "rna_Pose_update");
+
+  prop = RNA_def_property(srna, "custom_shape_translation", PROP_FLOAT, PROP_XYZ);
+  RNA_def_property_float_sdna(prop, NULL, "custom_translation");
+  RNA_def_property_flag(prop, PROP_PROPORTIONAL);
+  RNA_def_property_ui_text(
+      prop, "Custom Shape Translation", "Adjust the location of the custom shape");
+  RNA_def_property_ui_range(prop, -FLT_MAX, FLT_MAX, 1, RNA_TRANSLATION_PREC_DEFAULT);
+  RNA_def_property_update(prop, NC_OBJECT | ND_POSE, "rna_Pose_update");
+
+  prop = RNA_def_property(srna, "custom_shape_rotation_euler", PROP_FLOAT, PROP_EULER);
+  RNA_def_property_float_sdna(prop, NULL, "custom_rotation_euler");
+  RNA_def_property_ui_text(
+      prop, "Custom Shape Rotation", "Adjust the rotation of the custom shape");
   RNA_def_property_update(prop, NC_OBJECT | ND_POSE, "rna_Pose_update");
 
   prop = RNA_def_property(srna, "use_custom_shape_bone_size", PROP_BOOLEAN, PROP_NONE);
@@ -1375,7 +1362,7 @@ static void rna_def_pose_channel(BlenderRNA *brna)
   RNA_def_property_pointer_sdna(prop, NULL, "custom_tx");
   RNA_def_property_struct_type(prop, "PoseBone");
   RNA_def_property_flag(prop, PROP_EDITABLE | PROP_PTR_NO_OWNERSHIP);
-  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   RNA_def_property_ui_text(prop,
                            "Custom Shape Transform",
                            "Bone that defines the display transform of this custom shape");

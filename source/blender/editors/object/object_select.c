@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edobj
@@ -25,6 +9,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "MEM_guardedalloc.h"
 
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
@@ -87,14 +73,6 @@
 /** \name Public Object Selection API
  * \{ */
 
-/**
- * Simple API for object selection, rather than just using the flag
- * this takes into account the 'restrict selection in 3d view' flag.
- * deselect works always, the restriction just prevents selection
- *
- * \note Caller must send a `NC_SCENE | ND_OB_SELECT` notifier
- * (or a `NC_SCENE | ND_OB_VISIBLE` in case of visibility toggling).
- */
 void ED_object_base_select(Base *base, eObjectSelect_Mode mode)
 {
   if (mode == BA_INVERT) {
@@ -119,9 +97,6 @@ void ED_object_base_select(Base *base, eObjectSelect_Mode mode)
   }
 }
 
-/**
- * Call when the active base has changed.
- */
 void ED_object_base_active_refresh(Main *bmain, Scene *scene, ViewLayer *view_layer)
 {
   WM_main_add_notifier(NC_SCENE | ND_OB_ACTIVE, scene);
@@ -132,9 +107,6 @@ void ED_object_base_active_refresh(Main *bmain, Scene *scene, ViewLayer *view_la
   }
 }
 
-/**
- * Change active base, it includes the notifier
- */
 void ED_object_base_activate(bContext *C, Base *base)
 {
   Scene *scene = CTX_data_scene(C);
@@ -145,29 +117,28 @@ void ED_object_base_activate(bContext *C, Base *base)
 
 void ED_object_base_activate_with_mode_exit_if_needed(bContext *C, Base *base)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
 
   /* Currently we only need to be concerned with edit-mode. */
-  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *obedit = BKE_view_layer_edit_object_get(view_layer);
   if (obedit) {
     Object *ob = base->object;
     if (((ob->mode & OB_MODE_EDIT) == 0) || (obedit->type != ob->type)) {
       Main *bmain = CTX_data_main(C);
-      Scene *scene = CTX_data_scene(C);
       ED_object_editmode_exit_multi_ex(bmain, scene, view_layer, EM_FREEDATA);
     }
   }
   ED_object_base_activate(C, base);
 }
 
-bool ED_object_base_deselect_all_ex(ViewLayer *view_layer,
-                                    View3D *v3d,
-                                    int action,
-                                    bool *r_any_visible)
+bool ED_object_base_deselect_all_ex(
+    const Scene *scene, ViewLayer *view_layer, View3D *v3d, int action, bool *r_any_visible)
 {
   if (action == SEL_TOGGLE) {
     action = SEL_SELECT;
-    FOREACH_VISIBLE_BASE_BEGIN (view_layer, v3d, base) {
+    FOREACH_VISIBLE_BASE_BEGIN (scene, view_layer, v3d, base) {
       if (v3d && ((v3d->object_type_exclude_select & (1 << base->object->type)) != 0)) {
         continue;
       }
@@ -181,7 +152,7 @@ bool ED_object_base_deselect_all_ex(ViewLayer *view_layer,
 
   bool any_visible = false;
   bool changed = false;
-  FOREACH_VISIBLE_BASE_BEGIN (view_layer, v3d, base) {
+  FOREACH_VISIBLE_BASE_BEGIN (scene, view_layer, v3d, base) {
     if (v3d && ((v3d->object_type_exclude_select & (1 << base->object->type)) != 0)) {
       continue;
     }
@@ -218,9 +189,12 @@ bool ED_object_base_deselect_all_ex(ViewLayer *view_layer,
   return changed;
 }
 
-bool ED_object_base_deselect_all(ViewLayer *view_layer, View3D *v3d, int action)
+bool ED_object_base_deselect_all(const Scene *scene,
+                                 ViewLayer *view_layer,
+                                 View3D *v3d,
+                                 int action)
 {
-  return ED_object_base_deselect_all_ex(view_layer, v3d, action, NULL);
+  return ED_object_base_deselect_all_ex(scene, view_layer, v3d, action, NULL);
 }
 
 /** \} */
@@ -231,7 +205,7 @@ bool ED_object_base_deselect_all(ViewLayer *view_layer, View3D *v3d, int action)
 
 static int get_base_select_priority(Base *base)
 {
-  if (base->flag & BASE_VISIBLE_DEPSGRAPH) {
+  if (base->flag & BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT) {
     if (base->flag & BASE_SELECTABLE) {
       return 3;
     }
@@ -240,16 +214,13 @@ static int get_base_select_priority(Base *base)
   return 1;
 }
 
-/**
- * If id is not already an Object, try to find an object that uses it as data.
- * Prefers active, then selected, then visible/selectable.
- */
-Base *ED_object_find_first_by_data_id(ViewLayer *view_layer, ID *id)
+Base *ED_object_find_first_by_data_id(const Scene *scene, ViewLayer *view_layer, ID *id)
 {
   BLI_assert(OB_DATA_SUPPORT_ID(GS(id->name)));
 
   /* Try active object. */
-  Base *basact = view_layer->basact;
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Base *basact = BKE_view_layer_active_base_get(view_layer);
 
   if (basact && basact->object && basact->object->data == id) {
     return basact;
@@ -259,7 +230,7 @@ Base *ED_object_find_first_by_data_id(ViewLayer *view_layer, ID *id)
   Base *base_best = NULL;
   int priority_best = 0;
 
-  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
+  LISTBASE_FOREACH (Base *, base, BKE_view_layer_object_bases_get(view_layer)) {
     if (base->object && base->object->data == id) {
       if (base->flag & BASE_SELECTED) {
         return base;
@@ -277,28 +248,24 @@ Base *ED_object_find_first_by_data_id(ViewLayer *view_layer, ID *id)
   return base_best;
 }
 
-/**
- * Select and make the target object active in the view layer.
- * If already selected, selection isn't changed.
- *
- * \returns false if not found in current view layer
- */
 bool ED_object_jump_to_object(bContext *C, Object *ob, const bool UNUSED(reveal_hidden))
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
+  BKE_view_layer_synced_ensure(scene, view_layer);
   Base *base = BKE_view_layer_base_find(view_layer, ob);
 
   if (base == NULL) {
     return false;
   }
 
-  /* TODO, use 'reveal_hidden', as is done with bones. */
+  /* TODO: use 'reveal_hidden', as is done with bones. */
 
-  if (view_layer->basact != base || !(base->flag & BASE_SELECTED)) {
+  if (BKE_view_layer_active_base_get(view_layer) != base || !(base->flag & BASE_SELECTED)) {
     /* Select if not selected. */
     if (!(base->flag & BASE_SELECTED)) {
-      ED_object_base_deselect_all(view_layer, v3d, SEL_DESELECT);
+      ED_object_base_deselect_all(scene, view_layer, v3d, SEL_DESELECT);
 
       if (BASE_VISIBLE(v3d, base)) {
         ED_object_base_select(base, BA_SELECT);
@@ -314,13 +281,6 @@ bool ED_object_jump_to_object(bContext *C, Object *ob, const bool UNUSED(reveal_
   return true;
 }
 
-/**
- * Select and make the target object and bone active.
- * Switches to Pose mode if in Object mode so the selection is visible.
- * Un-hides the target bone and bone layer if necessary.
- *
- * \returns false if object not in layer, bone not found, or other error
- */
 bool ED_object_jump_to_bone(bContext *C,
                             Object *ob,
                             const char *bone_name,
@@ -427,6 +387,7 @@ static bool objects_selectable_poll(bContext *C)
 
 static int object_select_by_type_exec(bContext *C, wmOperator *op)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
   short obtype, extend;
@@ -435,7 +396,7 @@ static int object_select_by_type_exec(bContext *C, wmOperator *op)
   extend = RNA_boolean_get(op->ptr, "extend");
 
   if (extend == 0) {
-    ED_object_base_deselect_all(view_layer, v3d, SEL_DESELECT);
+    ED_object_base_deselect_all(scene, view_layer, v3d, SEL_DESELECT);
   }
 
   CTX_DATA_BEGIN (C, Base *, base, visible_bases) {
@@ -445,7 +406,6 @@ static int object_select_by_type_exec(bContext *C, wmOperator *op)
   }
   CTX_DATA_END;
 
-  Scene *scene = CTX_data_scene(C);
   DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
   WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 
@@ -579,7 +539,7 @@ static bool object_select_all_by_particle(bContext *C, Object *ob)
 
   CTX_DATA_BEGIN (C, Base *, base, visible_bases) {
     if (((base->flag & BASE_SELECTED) == 0) && ((base->flag & BASE_SELECTABLE) != 0)) {
-      /* loop through other particles*/
+      /* Loop through other particles. */
       ParticleSystem *psys;
 
       for (psys = base->object->particlesystem.first; psys; psys = psys->next) {
@@ -668,10 +628,11 @@ static int object_select_linked_exec(bContext *C, wmOperator *op)
   extend = RNA_boolean_get(op->ptr, "extend");
 
   if (extend == 0) {
-    ED_object_base_deselect_all(view_layer, v3d, SEL_DESELECT);
+    ED_object_base_deselect_all(scene, view_layer, v3d, SEL_DESELECT);
   }
 
-  ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  ob = BKE_view_layer_active_object_get(view_layer);
   if (ob == NULL) {
     BKE_report(op->reports, RPT_ERROR, "No active object");
     return OPERATOR_CANCELLED;
@@ -822,17 +783,21 @@ static bool select_grouped_children(bContext *C, Object *ob, const bool recursiv
   return changed;
 }
 
-static bool select_grouped_parent(bContext *C) /* Makes parent active and de-selected OBACT */
+/* Makes parent active and de-selected BKE_view_layer_active_object_get. */
+static bool select_grouped_parent(bContext *C)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
   Base *baspar, *basact = CTX_data_active_base(C);
   bool changed = false;
 
   if (!basact || !(basact->object->parent)) {
-    return 0; /* we know OBACT is valid */
+    /* We know BKE_view_layer_active_object_get is valid. */
+    return 0;
   }
 
+  BKE_view_layer_synced_ensure(scene, view_layer);
   baspar = BKE_view_layer_base_find(view_layer, basact->object->parent);
 
   /* can be NULL if parent in other scene */
@@ -901,6 +866,7 @@ static bool select_grouped_collection(bContext *C, Object *ob)
 
 static bool select_grouped_object_hooks(bContext *C, Object *ob)
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
 
@@ -913,8 +879,9 @@ static bool select_grouped_object_hooks(bContext *C, Object *ob)
     if (md->type == eModifierType_Hook) {
       hmd = (HookModifierData *)md;
       if (hmd->object) {
+        BKE_view_layer_synced_ensure(scene, view_layer);
         base = BKE_view_layer_base_find(view_layer, hmd->object);
-        if (base && ((base->flag & BASE_SELECTED) == 0) && (BASE_SELECTABLE(v3d, base))) {
+        if (base && ((base->flag & BASE_SELECTED) == 0) && BASE_SELECTABLE(v3d, base)) {
           ED_object_base_select(base, BA_SELECT);
           changed = true;
         }
@@ -991,7 +958,7 @@ static bool select_grouped_color(bContext *C, Object *ob)
 
   CTX_DATA_BEGIN (C, Base *, base, selectable_bases) {
     if (((base->flag & BASE_SELECTED) == 0) &&
-        (compare_v3v3(base->object->color, ob->color, 0.005f))) {
+        compare_v3v3(base->object->color, ob->color, 0.005f)) {
       ED_object_base_select(base, BA_SELECT);
       changed = true;
     }
@@ -1063,10 +1030,11 @@ static int object_select_grouped_exec(bContext *C, wmOperator *op)
   extend = RNA_boolean_get(op->ptr, "extend");
 
   if (extend == 0) {
-    changed = ED_object_base_deselect_all(view_layer, v3d, SEL_DESELECT);
+    changed = ED_object_base_deselect_all(scene, view_layer, v3d, SEL_DESELECT);
   }
 
-  ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  ob = BKE_view_layer_active_object_get(view_layer);
   if (ob == NULL) {
     BKE_report(op->reports, RPT_ERROR, "No active object");
     return OPERATOR_CANCELLED;
@@ -1156,15 +1124,15 @@ void OBJECT_OT_select_grouped(wmOperatorType *ot)
 
 static int object_select_all_exec(bContext *C, wmOperator *op)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
   int action = RNA_enum_get(op->ptr, "action");
   bool any_visible = false;
 
-  bool changed = ED_object_base_deselect_all_ex(view_layer, v3d, action, &any_visible);
+  bool changed = ED_object_base_deselect_all_ex(scene, view_layer, v3d, action, &any_visible);
 
   if (changed) {
-    Scene *scene = CTX_data_scene(C);
     DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
     WM_event_add_notifier(C, NC_SCENE | ND_OB_SELECT, scene);
 
@@ -1173,7 +1141,7 @@ static int object_select_all_exec(bContext *C, wmOperator *op)
     return OPERATOR_FINISHED;
   }
   if (any_visible == false) {
-    /* TODO(campbell): Looks like we could remove this,
+    /* TODO(@campbellbarton): Looks like we could remove this,
      * if not comment should say why its needed. */
     return OPERATOR_PASS_THROUGH;
   }
@@ -1283,6 +1251,7 @@ static int object_select_mirror_exec(bContext *C, wmOperator *op)
     if (!STREQ(name_flip, primbase->object->id.name + 2)) {
       Object *ob = (Object *)BKE_libblock_find_name(bmain, ID_OB, name_flip);
       if (ob) {
+        BKE_view_layer_synced_ensure(scene, view_layer);
         Base *secbase = BKE_view_layer_base_find(view_layer, ob);
 
         if (secbase) {
@@ -1334,9 +1303,11 @@ void OBJECT_OT_select_mirror(wmOperatorType *ot)
 
 static bool object_select_more_less(bContext *C, const bool select)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
 
-  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  LISTBASE_FOREACH (Base *, base, BKE_view_layer_object_bases_get(view_layer)) {
     Object *ob = base->object;
     ob->flag &= ~OB_DONE;
     ob->id.tag &= ~LIB_TAG_DOIT;
@@ -1454,20 +1425,28 @@ void OBJECT_OT_select_less(wmOperatorType *ot)
 
 static int object_select_random_exec(bContext *C, wmOperator *op)
 {
+  const bool select = (RNA_enum_get(op->ptr, "action") == SEL_SELECT);
   const float randfac = RNA_float_get(op->ptr, "ratio");
   const int seed = WM_operator_properties_select_random_seed_increment_get(op);
-  const bool select = (RNA_enum_get(op->ptr, "action") == SEL_SELECT);
 
-  RNG *rng = BLI_rng_new_srandom(seed);
+  ListBase ctx_data_list;
+  CTX_data_selectable_bases(C, &ctx_data_list);
+  const int tot = BLI_listbase_count(&ctx_data_list);
+  int elem_map_len = 0;
+  Base **elem_map = MEM_mallocN(sizeof(*elem_map) * tot, __func__);
 
-  CTX_DATA_BEGIN (C, Base *, base, selectable_bases) {
-    if (BLI_rng_get_float(rng) < randfac) {
-      ED_object_base_select(base, select);
-    }
+  CollectionPointerLink *ctx_link;
+  for (ctx_link = ctx_data_list.first; ctx_link; ctx_link = ctx_link->next) {
+    elem_map[elem_map_len++] = ctx_link->ptr.data;
   }
-  CTX_DATA_END;
+  BLI_freelistN(&ctx_data_list);
 
-  BLI_rng_free(rng);
+  BLI_array_randomize(elem_map, sizeof(*elem_map), elem_map_len, seed);
+  const int count_select = elem_map_len * randfac;
+  for (int i = 0; i < count_select; i++) {
+    ED_object_base_select(elem_map[i], select);
+  }
+  MEM_freeN(elem_map);
 
   Scene *scene = CTX_data_scene(C);
   DEG_id_tag_update(&scene->id, ID_RECALC_SELECT);
@@ -1486,7 +1465,7 @@ void OBJECT_OT_select_random(wmOperatorType *ot)
   ot->idname = "OBJECT_OT_select_random";
 
   /* api callbacks */
-  /*ot->invoke = object_select_random_invoke XXX - need a number popup ;*/
+  // ot->invoke = object_select_random_invoke; /* TODO: need a number popup. */
   ot->exec = object_select_random_exec;
   ot->poll = objects_selectable_poll;
 

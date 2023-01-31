@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup sptext
@@ -48,7 +33,12 @@
 #include "text_format.h"
 #include "text_intern.h"
 
-/******************** text font drawing ******************/
+#include "WM_api.h"
+#include "WM_types.h"
+
+/* -------------------------------------------------------------------- */
+/** \name Text Font Drawing
+ * \{ */
 
 typedef struct TextDrawContext {
   int font_id;
@@ -67,7 +57,7 @@ static void text_draw_context_init(const SpaceText *st, TextDrawContext *tdc)
 
 static void text_font_begin(const TextDrawContext *tdc)
 {
-  BLF_size(tdc->font_id, tdc->lheight_px, 72);
+  BLF_size(tdc->font_id, (float)tdc->lheight_px);
 }
 
 static void text_font_end(const TextDrawContext *UNUSED(tdc))
@@ -76,10 +66,8 @@ static void text_font_end(const TextDrawContext *UNUSED(tdc))
 
 static int text_font_draw(const TextDrawContext *tdc, int x, int y, const char *str)
 {
-  int columns;
-
   BLF_position(tdc->font_id, x, y, 0);
-  columns = BLF_draw_mono(tdc->font_id, str, BLF_DRAW_STR_DUMMY_MAX, tdc->cwidth_px);
+  const int columns = BLF_draw_mono(tdc->font_id, str, BLF_DRAW_STR_DUMMY_MAX, tdc->cwidth_px);
 
   return tdc->cwidth_px * columns;
 }
@@ -87,18 +75,17 @@ static int text_font_draw(const TextDrawContext *tdc, int x, int y, const char *
 static int text_font_draw_character(const TextDrawContext *tdc, int x, int y, char c)
 {
   BLF_position(tdc->font_id, x, y, 0);
-  BLF_draw(tdc->font_id, &c, 1);
+  BLF_draw_mono(tdc->font_id, &c, 1, tdc->cwidth_px);
 
   return tdc->cwidth_px;
 }
 
-static int text_font_draw_character_utf8(const TextDrawContext *tdc, int x, int y, const char *c)
+static int text_font_draw_character_utf8(
+    const TextDrawContext *tdc, int x, int y, const char *c, const int c_len)
 {
-  int columns;
-
-  const size_t len = BLI_str_utf8_size_safe(c);
+  BLI_assert(c_len == BLI_str_utf8_size_safe(c));
   BLF_position(tdc->font_id, x, y, 0);
-  columns = BLF_draw_mono(tdc->font_id, c, len, tdc->cwidth_px);
+  const int columns = BLF_draw_mono(tdc->font_id, c, c_len, tdc->cwidth_px);
 
   return tdc->cwidth_px * columns;
 }
@@ -156,11 +143,14 @@ static void format_draw_color(const TextDrawContext *tdc, char formatchar)
   }
 }
 
-/************************** draw text *****************************/
+/** \} */
 
-/**
- * Notes on word-wrap
- * --
+/* -------------------------------------------------------------------- */
+/** \name Draw Text
+ *
+ * Notes on Word-Wrap
+ * ==================
+ *
  * All word-wrap functions follow the algorithm below to maintain consistency:
  * - line:
  *   The line to wrap (tabs converted to spaces)
@@ -185,7 +175,8 @@ static void format_draw_color(const TextDrawContext *tdc, char formatchar)
  *         pos += 1
  *     print line[draw_start:]
  * \encode
- */
+ *
+ * \{ */
 
 int wrap_width(const SpaceText *st, ARegion *region)
 {
@@ -197,7 +188,6 @@ int wrap_width(const SpaceText *st, ARegion *region)
   return max > 8 ? max : 8;
 }
 
-/* Sets (offl, offc) for transforming (line, curs) to its wrapped position */
 void wrap_offset(
     const SpaceText *st, ARegion *region, TextLine *linein, int cursin, int *offl, int *offc)
 {
@@ -302,7 +292,6 @@ void wrap_offset(
   }
 }
 
-/* cursin - mem, offc - view */
 void wrap_offset_in_line(
     const SpaceText *st, ARegion *region, TextLine *linein, int cursin, int *offl, int *offc)
 {
@@ -462,13 +451,15 @@ static int text_draw_wrapped(const SpaceText *st,
       }
 
       /* Draw the visible portion of text on the overshot line */
-      for (a = fstart, ma = mstart; ma < mend; a++, ma += BLI_str_utf8_size_safe(str + ma)) {
+      for (a = fstart, ma = mstart; ma < mend; a++) {
         if (use_syntax) {
           if (fmt_prev != format[a]) {
             format_draw_color(tdc, fmt_prev = format[a]);
           }
         }
-        x += text_font_draw_character_utf8(tdc, x, y, str + ma);
+        const int c_len = BLI_str_utf8_size_safe(str + ma);
+        x += text_font_draw_character_utf8(tdc, x, y, str + ma, c_len);
+        ma += c_len;
         fpos++;
       }
       y -= TXT_LINE_HEIGHT(st);
@@ -490,15 +481,16 @@ static int text_draw_wrapped(const SpaceText *st,
   }
 
   /* Draw the remaining text */
-  for (a = fstart, ma = mstart; str[ma] && y > clip_min_y;
-       a++, ma += BLI_str_utf8_size_safe(str + ma)) {
+  for (a = fstart, ma = mstart; str[ma] && y > clip_min_y; a++) {
     if (use_syntax) {
       if (fmt_prev != format[a]) {
         format_draw_color(tdc, fmt_prev = format[a]);
       }
     }
 
-    x += text_font_draw_character_utf8(tdc, x, y, str + ma);
+    const int c_len = BLI_str_utf8_size_safe(str + ma);
+    x += text_font_draw_character_utf8(tdc, x, y, str + ma, c_len);
+    ma += c_len;
   }
 
   flatten_string_free(&fs);
@@ -558,8 +550,9 @@ static void text_draw(const SpaceText *st,
       if (format[a] != fmt_prev) {
         format_draw_color(tdc, fmt_prev = format[a]);
       }
-      x += text_font_draw_character_utf8(tdc, x, y, in + str_shift);
-      str_shift += BLI_str_utf8_size_safe(in + str_shift);
+      const int c_len = BLI_str_utf8_size_safe(in + str_shift);
+      x += text_font_draw_character_utf8(tdc, x, y, in + str_shift, c_len);
+      str_shift += c_len;
     }
   }
   else {
@@ -569,7 +562,11 @@ static void text_draw(const SpaceText *st,
   flatten_string_free(&fs);
 }
 
-/************************ cache utilities *****************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Cache Utilities
+ * \{ */
 
 typedef struct DrawCache {
   int *line_height;
@@ -686,10 +683,7 @@ static void text_update_drawcache(SpaceText *st, ARegion *region)
     }
   }
   else {
-    if (drawcache->line_height) {
-      MEM_freeN(drawcache->line_height);
-      drawcache->line_height = NULL;
-    }
+    MEM_SAFE_FREE(drawcache->line_height);
 
     if (full_update || drawcache->update_flag) {
       nlines = BLI_listbase_count(&txt->lines);
@@ -712,7 +706,7 @@ static void text_update_drawcache(SpaceText *st, ARegion *region)
   drawcache->showlinenrs = st->showlinenrs;
   drawcache->tabnumber = st->tabnumber;
 
-  strncpy(drawcache->text_id, txt->id.name, MAX_ID_NAME);
+  STRNCPY(drawcache->text_id, txt->id.name);
 
   /* clear update flag */
   drawcache->update_flag = 0;
@@ -782,7 +776,11 @@ void text_free_caches(SpaceText *st)
   }
 }
 
-/************************ word-wrap utilities *****************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Word-Wrap Utilities
+ * \{ */
 
 /* cache should be updated in caller */
 static int text_get_visible_lines_no(const SpaceText *st, int lineno)
@@ -861,7 +859,11 @@ int text_get_total_lines(SpaceText *st, ARegion *region)
   return drawcache->total_lines;
 }
 
-/************************ draw scrollbar *****************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Draw Scroll-Bar
+ * \{ */
 
 static void calc_text_rcts(SpaceText *st, ARegion *region, rcti *scroll, rcti *back)
 {
@@ -923,12 +925,12 @@ static void calc_text_rcts(SpaceText *st, ARegion *region, rcti *scroll, rcti *b
     hlstart = (lhlstart * pix_available) / ltexth;
     hlend = (lhlend * pix_available) / ltexth;
 
-    /* The scrollbar is non-linear sized. */
+    /* The scroll-bar is non-linear sized. */
     if (pix_bardiff > 0) {
       /* the start of the highlight is in the current viewport */
       if (st->runtime.viewlines && lhlstart >= st->top &&
           lhlstart <= st->top + st->runtime.viewlines) {
-        /* Speed the progression of the start of the highlight through the scrollbar. */
+        /* Speed the progression of the start of the highlight through the scroll-bar. */
         hlstart = (((pix_available - pix_bardiff) * lhlstart) / ltexth) +
                   (pix_bardiff * (lhlstart - st->top) / st->runtime.viewlines);
       }
@@ -938,7 +940,7 @@ static void calc_text_rcts(SpaceText *st, ARegion *region, rcti *scroll, rcti *b
         hlstart = barstart + barheight;
       }
       else if (lhlend > st->top && lhlstart < st->top && hlstart > barstart) {
-        /*fill out start */
+        /* Fill out start. */
         hlstart = barstart;
       }
 
@@ -949,7 +951,7 @@ static void calc_text_rcts(SpaceText *st, ARegion *region, rcti *scroll, rcti *b
       /* the end of the highlight is in the current viewport */
       if (st->runtime.viewlines && lhlend >= st->top &&
           lhlend <= st->top + st->runtime.viewlines) {
-        /* Speed the progression of the end of the highlight through the scrollbar. */
+        /* Speed the progression of the end of the highlight through the scroll-bar. */
         hlend = (((pix_available - pix_bardiff) * lhlend) / ltexth) +
                 (pix_bardiff * (lhlend - st->top) / st->runtime.viewlines);
       }
@@ -992,10 +994,10 @@ static void draw_textscroll(const SpaceText *st, rcti *scroll, rcti *back)
   float col[4];
   float rad;
 
-  /* background so highlights don't go behind the scrollbar */
+  /* Background so highlights don't go behind the scroll-bar. */
   uint pos = GPU_vertformat_attr_add(
       immVertexFormat(), "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
   immUniformThemeColor(TH_BACK);
   immRecti(pos, back->xmin, back->ymin, back->xmax, back->ymax);
   immUnbindProgram();
@@ -1022,9 +1024,14 @@ static void draw_textscroll(const SpaceText *st, rcti *scroll, rcti *back)
       col);
 }
 
-/*********************** draw documentation *******************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Draw Documentation
+ * \{ */
 
 #if 0
+
 static void draw_documentation(const SpaceText *st, ARegion *region)
 {
   TextDrawContext tdc = {0};
@@ -1069,7 +1076,7 @@ static void draw_documentation(const SpaceText *st, ARegion *region)
   /* Draw panel */
   uint pos = GPU_vertformat_attr_add(
       immVertexFormat(), "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
   immUniformThemeColor(TH_BACK);
   immRecti(pos, x, y, x + boxw, y - boxh);
@@ -1102,7 +1109,7 @@ static void draw_documentation(const SpaceText *st, ARegion *region)
     if (*p == '\r' && *(++p) != '\n') {
       *(--p) = '\n'; /* Fix line endings */
     }
-    if (*p == ' ' || *p == '\t') {
+    if (ELEM(*p, ' ', '\t')) {
       br = i;
     }
     else if (*p == '\n') {
@@ -1132,9 +1139,14 @@ static void draw_documentation(const SpaceText *st, ARegion *region)
     }
   }
 }
+
 #endif
 
-/*********************** draw suggestion list *******************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Draw Suggestion List
+ * \{ */
 
 static void draw_suggestion_list(const SpaceText *st, const TextDrawContext *tdc, ARegion *region)
 {
@@ -1194,7 +1206,7 @@ static void draw_suggestion_list(const SpaceText *st, const TextDrawContext *tdc
 
   uint pos = GPU_vertformat_attr_add(
       immVertexFormat(), "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
   immUniformThemeColor(TH_SHADE1);
   immRecti(pos, x - 1, y + 1, x + boxw + 1, y - boxh - 1);
@@ -1220,7 +1232,7 @@ static void draw_suggestion_list(const SpaceText *st, const TextDrawContext *tdc
     if (item == sel) {
       uint posi = GPU_vertformat_attr_add(
           immVertexFormat(), "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
-      immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+      immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
       immUniformThemeColor(TH_SHADE2);
       immRecti(posi, x + margin_x, y - 3, x + margin_x + w, y + lheight - 3);
@@ -1237,7 +1249,11 @@ static void draw_suggestion_list(const SpaceText *st, const TextDrawContext *tdc
   }
 }
 
-/*********************** draw cursor ************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Draw Cursor
+ * \{ */
 
 static void draw_text_decoration(SpaceText *st, ARegion *region)
 {
@@ -1264,7 +1280,7 @@ static void draw_text_decoration(SpaceText *st, ARegion *region)
 
   uint pos = GPU_vertformat_attr_add(
       immVertexFormat(), "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
   /* Draw the selection */
   if (text->curl != text->sell || text->curc != text->selc) {
@@ -1399,7 +1415,11 @@ static void draw_text_decoration(SpaceText *st, ARegion *region)
   immUnbindProgram();
 }
 
-/******************* draw matching brackets *********************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Draw Matching Brackets
+ * \{ */
 
 static void draw_brackets(const SpaceText *st, const TextDrawContext *tdc, ARegion *region)
 {
@@ -1475,7 +1495,7 @@ static void draw_brackets(const SpaceText *st, const TextDrawContext *tdc, ARegi
     /* closing bracket, search backward for open */
     fc--;
     if (c > 0) {
-      c -= linep->line + c - BLI_str_prev_char_utf8(linep->line + c);
+      c -= linep->line + c - BLI_str_find_prev_char_utf8(linep->line + c, linep->line);
     }
     while (linep) {
       while (fc >= 0) {
@@ -1496,7 +1516,7 @@ static void draw_brackets(const SpaceText *st, const TextDrawContext *tdc, ARegi
         }
         fc--;
         if (c > 0) {
-          c -= linep->line + c - BLI_str_prev_char_utf8(linep->line + c);
+          c -= linep->line + c - BLI_str_find_prev_char_utf8(linep->line + c, linep->line);
         }
       }
       if (endl) {
@@ -1511,7 +1531,7 @@ static void draw_brackets(const SpaceText *st, const TextDrawContext *tdc, ARegi
           fc = -1;
         }
         if (linep->len) {
-          c = BLI_str_prev_char_utf8(linep->line + linep->len) - linep->line;
+          c = BLI_str_find_prev_char_utf8(linep->line + linep->len, linep->line) - linep->line;
         }
         else {
           fc = -1;
@@ -1560,7 +1580,11 @@ static void draw_brackets(const SpaceText *st, const TextDrawContext *tdc, ARegi
   }
 }
 
-/*********************** main region drawing *************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Main Region Drawing
+ * \{ */
 
 void draw_text_main(SpaceText *st, ARegion *region)
 {
@@ -1579,7 +1603,7 @@ void draw_text_main(SpaceText *st, ARegion *region)
     return;
   }
 
-  /* dpi controlled line height and font size */
+  /* DPI controlled line height and font size. */
   st->runtime.lheight_px = (U.widget_unit * st->lheight) / 20;
 
   /* don't draw lines below this */
@@ -1639,7 +1663,7 @@ void draw_text_main(SpaceText *st, ARegion *region)
   if (st->showlinenrs) {
     uint pos = GPU_vertformat_attr_add(
         immVertexFormat(), "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
-    immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+    immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
     immUniformThemeColor(TH_GRID);
     immRecti(pos, 0, 0, TXT_NUMCOL_WIDTH(st), region->winy);
     immUnbindProgram();
@@ -1671,7 +1695,7 @@ void draw_text_main(SpaceText *st, ARegion *region)
 
     if (st->showlinenrs && !wrap_skip) {
       /* Draw line number. */
-      UI_FontThemeColor(tdc.font_id, (tmp == text->curl) ? TH_HILITE : TH_LINENUMBERS);
+      UI_FontThemeColor(tdc.font_id, (tmp == text->sell) ? TH_HILITE : TH_LINENUMBERS);
       BLI_snprintf(linenr,
                    sizeof(linenr),
                    "%*d",
@@ -1702,7 +1726,7 @@ void draw_text_main(SpaceText *st, ARegion *region)
     if (margin_column_x >= x) {
       uint pos = GPU_vertformat_attr_add(
           immVertexFormat(), "pos", GPU_COMP_I32, 2, GPU_FETCH_INT_TO_FLOAT);
-      immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+      immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
       float margin_color[4];
       UI_GetThemeColor4fv(TH_TEXT, margin_color);
       margin_color[3] = 0.2f;
@@ -1723,7 +1747,11 @@ void draw_text_main(SpaceText *st, ARegion *region)
   text_font_end(&tdc);
 }
 
-/************************** update ***************************/
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Update & Coordinate Conversion
+ * \{ */
 
 void text_update_character_width(SpaceText *st)
 {
@@ -1737,8 +1765,23 @@ void text_update_character_width(SpaceText *st)
   text_font_end(&tdc);
 }
 
-/* Moves the view to the cursor location,
- * also used to make sure the view isn't outside the file */
+bool ED_text_activate_in_screen(bContext *C, Text *text)
+{
+  ScrArea *area = BKE_screen_find_big_area(CTX_wm_screen(C), SPACE_TEXT, 0);
+  if (area) {
+    SpaceText *st = area->spacedata.first;
+    ARegion *region = BKE_area_find_region_type(area, RGN_TYPE_WINDOW);
+    st->text = text;
+    if (region) {
+      ED_text_scroll_to_cursor(st, region, true);
+    }
+    WM_event_add_notifier(C, NC_TEXT | ND_CURSOR, text);
+    return true;
+  }
+
+  return false;
+}
+
 void ED_text_scroll_to_cursor(SpaceText *st, ARegion *region, const bool center)
 {
   Text *text;
@@ -1806,7 +1849,6 @@ void ED_text_scroll_to_cursor(SpaceText *st, ARegion *region, const bool center)
   st->runtime.scroll_ofs_px[1] = 0;
 }
 
-/* takes an area instead of a region, use for listeners */
 void text_scroll_to_cursor__area(SpaceText *st, ScrArea *area, const bool center)
 {
   ARegion *region;
@@ -1830,9 +1872,6 @@ void text_update_cursor_moved(bContext *C)
   text_scroll_to_cursor__area(st, area, true);
 }
 
-/**
- * Takes a cursor (row, character) and returns x,y pixel coords.
- */
 bool ED_text_region_location_from_cursor(SpaceText *st,
                                          ARegion *region,
                                          const int cursor_co[2],
@@ -1866,3 +1905,5 @@ error:
   r_pixel_co[0] = r_pixel_co[1] = -1;
   return false;
 }
+
+/** \} */

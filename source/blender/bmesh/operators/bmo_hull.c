@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -30,7 +16,7 @@
 
 #  include "RBI_hull_api.h"
 
-/* XXX: using 128 for totelem and pchunk of mempool, no idea what good
+/* XXX: using 128 for totelem and `pchunk` of `mempool`, no idea what good
  * values would be though */
 
 #  include "bmesh.h"
@@ -278,7 +264,7 @@ static void hull_remove_overlapping(BMesh *bm,
         }
       }
 
-      /* Note: can't change ghash while iterating, so mark
+      /* NOTE: can't change ghash while iterating, so mark
        * with 'skip' flag rather than deleting triangles */
       if (BM_vert_in_face(t->v[1], f) && BM_vert_in_face(t->v[2], f) && f_on_hull) {
         t->skip = true;
@@ -465,7 +451,7 @@ static BMVert **hull_verts_from_bullet(plConvexHull hull,
       hull_verts[i] = input_verts[original_index];
     }
     else {
-      BLI_assert(!"Unexpected new vertex in hull output");
+      BLI_assert_msg(0, "Unexpected new vertex in hull output");
     }
   }
 
@@ -505,7 +491,7 @@ static void hull_from_bullet(BMesh *bm, BMOperator *op, BLI_mempool *hull_triang
       BLI_array_grow_items(fvi, len);
       plConvexHullGetFaceVertices(hull, i, fvi);
 
-      /* Note: here we throw away any NGons from Bullet and turn
+      /* NOTE: here we throw away any NGons from Bullet and turn
        * them into triangle fans. Would be nice to use these
        * directly, but will have to wait until HullTriangle goes
        * away (TODO) */
@@ -554,7 +540,7 @@ void bmo_convex_hull_exec(BMesh *bm, BMOperator *op)
 
   /* Verify that at least three verts in the input */
   if (!hull_num_input_verts_is_ok(op)) {
-    BMO_error_raise(bm, op, BMERR_CONVEX_HULL_FAILED, "Requires at least three vertices");
+    BMO_error_raise(bm, op, BMO_ERROR_CANCEL, "Requires at least three vertices");
     return;
   }
 
@@ -603,7 +589,7 @@ void bmo_convex_hull_exec(BMesh *bm, BMOperator *op)
       bm, op, op->slots_out, "geom_interior.out", BM_ALL_NOLOOP, HULL_FLAG_INTERIOR_ELE);
 
   /* Output slot of input elements that ended up inside the hull and
-   * are are unused by other geometry. */
+   * are unused by other geometry. */
   BMO_slot_buffer_from_enabled_flag(
       bm, op, op->slots_out, "geom_unused.out", BM_ALL_NOLOOP, HULL_FLAG_DEL);
 

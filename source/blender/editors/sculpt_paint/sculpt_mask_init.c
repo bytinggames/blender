@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2021 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2021 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edsculpt
@@ -23,27 +7,20 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_blenlib.h"
 #include "BLI_hash.h"
 #include "BLI_math.h"
 #include "BLI_task.h"
 
-#include "BLT_translation.h"
-
 #include "PIL_time.h"
 
 #include "DNA_brush_types.h"
-#include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
+#include "DNA_modifier_types.h"
 #include "DNA_object_types.h"
 
-#include "BKE_brush.h"
 #include "BKE_ccg.h"
 #include "BKE_context.h"
-#include "BKE_mesh.h"
 #include "BKE_multires.h"
-#include "BKE_node.h"
-#include "BKE_object.h"
 #include "BKE_paint.h"
 #include "BKE_pbvh.h"
 
@@ -55,8 +32,6 @@
 #include "RNA_access.h"
 #include "RNA_define.h"
 
-#include "ED_sculpt.h"
-#include "paint_intern.h"
 #include "sculpt_intern.h"
 
 #include "bmesh.h"
@@ -115,7 +90,7 @@ static void mask_init_task_cb(void *__restrict userdata,
         *vd.mask = BLI_hash_int_01(vd.index + seed);
         break;
       case SCULPT_MASK_INIT_RANDOM_PER_FACE_SET: {
-        const int face_set = SCULPT_vertex_face_set_get(ss, vd.index);
+        const int face_set = SCULPT_vertex_face_set_get(ss, vd.vertex);
         *vd.mask = BLI_hash_int_01(face_set + seed);
         break;
       }
@@ -136,6 +111,9 @@ static int sculpt_mask_init_exec(bContext *C, wmOperator *op)
 
   const int mode = RNA_enum_get(op->ptr, "mode");
 
+  MultiresModifierData *mmd = BKE_sculpt_multires_active(CTX_data_scene(C), ob);
+  BKE_sculpt_mask_layers_ensure(depsgraph, CTX_data_main(C), ob, mmd);
+
   BKE_sculpt_update_object_for_edit(depsgraph, ob, true, true, false);
 
   PBVH *pbvh = ob->sculpt->pbvh;
@@ -147,7 +125,7 @@ static int sculpt_mask_init_exec(bContext *C, wmOperator *op)
     return OPERATOR_CANCELLED;
   }
 
-  SCULPT_undo_push_begin(ob, "init mask");
+  SCULPT_undo_push_begin(ob, op);
 
   if (mode == SCULPT_MASK_INIT_RANDOM_PER_LOOSE_PART) {
     SCULPT_connected_components_ensure(ob);
@@ -166,7 +144,7 @@ static int sculpt_mask_init_exec(bContext *C, wmOperator *op)
 
   multires_stitch_grids(ob);
 
-  SCULPT_undo_push_end();
+  SCULPT_undo_push_end(ob);
 
   BKE_pbvh_update_vertex_data(ss->pbvh, PBVH_UpdateMask);
   MEM_SAFE_FREE(nodes);

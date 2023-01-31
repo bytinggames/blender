@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup balembic
@@ -59,7 +45,7 @@ Alembic::Abc::OCompoundProperty ABCInstanceWriter::abc_prop_for_custom_props()
 OObject ABCInstanceWriter::get_alembic_object() const
 {
   /* There is no OObject for an instance. */
-  BLI_assert(!"ABCInstanceWriter cannot return its Alembic OObject");
+  BLI_assert_msg(0, "ABCInstanceWriter cannot return its Alembic OObject");
   return OObject();
 }
 

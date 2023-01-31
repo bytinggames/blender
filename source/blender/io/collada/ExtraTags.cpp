@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup collada
@@ -63,7 +49,7 @@ float ExtraTags::asFloat(std::string tag, bool *ok)
     return -1.0f;
   }
   *ok = true;
-  return (float)atof(tags[tag].c_str());
+  return float(atof(tags[tag].c_str()));
 }
 
 std::string ExtraTags::asString(std::string tag, bool *ok)
@@ -81,7 +67,7 @@ bool ExtraTags::setData(std::string tag, short *data)
   bool ok = false;
   int tmp = asInt(tag, &ok);
   if (ok) {
-    *data = (short)tmp;
+    *data = short(tmp);
   }
   return ok;
 }
@@ -111,7 +97,7 @@ bool ExtraTags::setData(std::string tag, char *data)
   bool ok = false;
   int tmp = asInt(tag, &ok);
   if (ok) {
-    *data = (char)tmp;
+    *data = char(tmp);
   }
   return ok;
 }

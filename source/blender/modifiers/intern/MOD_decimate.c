@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2005 by the Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2005 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup modifiers
@@ -44,6 +28,7 @@
 #include "UI_resources.h"
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "DEG_depsgraph_query.h"
 
@@ -69,9 +54,7 @@ static void initData(ModifierData *md)
   MEMCPY_STRUCT_AFTER(dmd, DNA_struct_default_get(DecimateModifierData), modifier);
 }
 
-static void requiredDataMask(Object *UNUSED(ob),
-                             ModifierData *md,
-                             CustomData_MeshMasks *r_cddata_masks)
+static void requiredDataMask(ModifierData *md, CustomData_MeshMasks *r_cddata_masks)
 {
   DecimateModifierData *dmd = (DecimateModifierData *)md;
 
@@ -106,6 +89,7 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
   DecimateModifierData *dmd = (DecimateModifierData *)md;
   Mesh *mesh = meshData, *result = NULL;
   BMesh *bm;
+  bool calc_vert_normal;
   bool calc_face_normal;
   float *vweights = NULL;
 
@@ -122,18 +106,21 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
         return mesh;
       }
       calc_face_normal = true;
+      calc_vert_normal = true;
       break;
     case MOD_DECIM_MODE_UNSUBDIV:
       if (dmd->iter == 0) {
         return mesh;
       }
       calc_face_normal = false;
+      calc_vert_normal = false;
       break;
     case MOD_DECIM_MODE_DISSOLVE:
       if (dmd->angle == 0.0f) {
         return mesh;
       }
       calc_face_normal = true;
+      calc_vert_normal = false;
       break;
     default:
       return mesh;
@@ -146,7 +133,7 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
 
   if (dmd->mode == MOD_DECIM_MODE_COLLAPSE) {
     if (dmd->defgrp_name[0] && (dmd->defgrp_factor > 0.0f)) {
-      MDeformVert *dvert;
+      const MDeformVert *dvert;
       int defgrp_index;
 
       MOD_get_vgroup(ctx->object, mesh, dmd->defgrp_name, &dvert, &defgrp_index);
@@ -175,6 +162,7 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
                             &(struct BMeshCreateParams){0},
                             &(struct BMeshFromMeshParams){
                                 .calc_face_normal = calc_face_normal,
+                                .calc_vert_normal = calc_vert_normal,
                                 .cd_mask_extra = {.vmask = CD_MASK_ORIGINDEX,
                                                   .emask = CD_MASK_ORIGINDEX,
                                                   .pmask = CD_MASK_ORIGINDEX},
@@ -211,18 +199,16 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
 
   updateFaceCount(ctx, dmd, bm->totface);
 
-  result = BKE_mesh_from_bmesh_for_eval_nomain(bm, NULL, mesh);
   /* make sure we never alloc'd these */
   BLI_assert(bm->vtoolflagpool == NULL && bm->etoolflagpool == NULL && bm->ftoolflagpool == NULL);
-  BLI_assert(bm->vtable == NULL && bm->etable == NULL && bm->ftable == NULL);
+
+  result = BKE_mesh_from_bmesh_for_eval_nomain(bm, NULL, mesh);
 
   BM_mesh_free(bm);
 
 #ifdef USE_TIMEIT
   TIMEIT_END(decim);
 #endif
-
-  result->runtime.cd_dirty_vert |= CD_MASK_NORMAL;
 
   return result;
 }
@@ -236,8 +222,8 @@ static void panel_draw(const bContext *UNUSED(C), Panel *panel)
   PointerRNA *ptr = modifier_panel_get_property_pointers(panel, &ob_ptr);
 
   int decimate_type = RNA_enum_get(ptr, "decimate_type");
-  char count_info[32];
-  snprintf(count_info, 32, "%s: %d", IFACE_("Face Count"), RNA_int_get(ptr, "face_count"));
+  char count_info[64];
+  snprintf(count_info, 32, TIP_("Face Count: %d"), RNA_int_get(ptr, "face_count"));
 
   uiItemR(layout, ptr, "decimate_type", UI_ITEM_R_EXPAND, NULL, ICON_NONE);
 
@@ -283,7 +269,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 ModifierTypeInfo modifierType_Decimate = {
-    /* name */ "Decimate",
+    /* name */ N_("Decimate"),
     /* structName */ "DecimateModifierData",
     /* structSize */ sizeof(DecimateModifierData),
     /* srna */ &RNA_DecimateModifier,
@@ -298,7 +284,6 @@ ModifierTypeInfo modifierType_Decimate = {
     /* deformVertsEM */ NULL,
     /* deformMatricesEM */ NULL,
     /* modifyMesh */ modifyMesh,
-    /* modifyHair */ NULL,
     /* modifyGeometrySet */ NULL,
 
     /* initData */ initData,

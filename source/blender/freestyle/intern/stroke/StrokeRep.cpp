@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -374,7 +360,7 @@ void Strip::createStrip(const vector<StrokeVertex *> &iStrokeVertices)
     }
   }
 
-  if (i != 2 * (int)iStrokeVertices.size()) {
+  if (i != 2 * int(iStrokeVertices.size())) {
     if (G.debug & G_DEBUG_FREESTYLE) {
       cout << "Warning: problem with stripe size\n";
     }
@@ -851,11 +837,11 @@ void StrokeRep::create()
   bool first = true;
   bool end = false;
   while (v != vend) {
-    while ((v != vend) && (!(*v).attribute().isVisible())) {
+    while ((v != vend) && !(*v).attribute().isVisible()) {
       ++v;
       first = false;
     }
-    while ((v != vend) && ((*v).attribute().isVisible())) {
+    while ((v != vend) && (*v).attribute().isVisible()) {
       strip.push_back(&(*v));
       ++v;
     }
@@ -866,7 +852,7 @@ void StrokeRep::create()
     else {
       end = true;
     }
-    if ((!strip.empty()) && (strip.size() > 1)) {
+    if (!strip.empty() && (strip.size() > 1)) {
       _strips.push_back(new Strip(strip, _hasTex, first, end, _textureStep));
       strip.clear();
     }

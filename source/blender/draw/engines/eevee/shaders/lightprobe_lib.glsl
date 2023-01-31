@@ -192,7 +192,7 @@ vec3 probe_evaluate_planar(int id, PlanarData pd, vec3 P, vec3 N, vec3 V, float 
   vec3 point_on_plane = line_plane_intersect(P, V, pd.pl_plane_eq);
 
   /* How far the pixel is from the plane. */
-  float ref_depth = 1.0; /* TODO parameter */
+  float ref_depth = 1.0; /* TODO: parameter. */
 
   /* Compute distorded reflection vector based on the distance to the reflected object.
    * In other words find intersection between reflection vector and the sphere center
@@ -203,12 +203,12 @@ vec3 probe_evaluate_planar(int id, PlanarData pd, vec3 P, vec3 N, vec3 V, float 
   vec3 ref_pos = point_on_plane + proj_ref;
 
   /* Reproject to find texture coords. */
-  vec4 refco = ViewProjectionMatrix * vec4(ref_pos, 1.0);
+  vec4 refco = ProjectionMatrix * (ViewMatrix * vec4(ref_pos, 1.0));
   refco.xy /= refco.w;
 
-  /* TODO: If we support non-ssr planar reflection, we should blur them with gaussian
+  /* TODO: If we support non-SSR planar reflection, we should blur them with gaussian
    * and chose the right mip depending on the cone footprint after projection */
-  /* NOTE: X is inverted here to compensate inverted drawing.  */
+  /* NOTE: X is inverted here to compensate inverted drawing. */
   vec3 radiance = textureLod(probePlanars, vec3(refco.xy * vec2(-0.5, 0.5) + 0.5, id), 0.0).rgb;
 
   return radiance;
@@ -278,7 +278,7 @@ vec3 probe_evaluate_grid(GridData gd, vec3 P, vec3 N, vec3 localpos)
     float ws_dist_point_to_cell = length(ws_point_to_cell);
     vec3 ws_light = ws_point_to_cell / ws_dist_point_to_cell;
 
-    /* Smooth backface test */
+    /* Smooth back-face test. */
     float weight = saturate(dot(ws_light, N));
 
     /* Precomputed visibility */
@@ -289,7 +289,7 @@ vec3 probe_evaluate_grid(GridData gd, vec3 P, vec3 N, vec3 localpos)
     weight += prbIrradianceSmooth;
 
     /* Trilinear weights */
-    vec3 trilinear = mix(1.0 - trilinear_weight, trilinear_weight, offset);
+    vec3 trilinear = mix(1.0 - trilinear_weight, trilinear_weight, vec3(offset));
     weight *= trilinear.x * trilinear.y * trilinear.z;
 
     /* Avoid zero weight */

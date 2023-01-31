@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2004 by Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2004 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edmesh
@@ -52,6 +36,7 @@
 
 static int edbm_spin_exec(bContext *C, wmOperator *op)
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   float cent[3], axis[3];
   const float d[3] = {0.0f, 0.0f, 0.0f};
@@ -63,7 +48,7 @@ static int edbm_spin_exec(bContext *C, wmOperator *op)
   const bool use_normal_flip = RNA_boolean_get(op->ptr, "use_normal_flip");
   const bool dupli = RNA_boolean_get(op->ptr, "dupli");
   const bool use_auto_merge = (RNA_boolean_get(op->ptr, "use_auto_merge") && (dupli == false) &&
-                               (steps >= 3) && fabsf((fabsf(angle) - (float)(M_PI * 2))) <= 1e-6f);
+                               (steps >= 3) && fabsf(fabsf(angle) - (float)(M_PI * 2)) <= 1e-6f);
 
   if (is_zero_v3(axis)) {
     BKE_report(op->reports, RPT_ERROR, "Invalid/unset axis");
@@ -72,7 +57,7 @@ static int edbm_spin_exec(bContext *C, wmOperator *op)
 
   uint objects_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
 
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *obedit = objects[ob_index];
@@ -80,7 +65,7 @@ static int edbm_spin_exec(bContext *C, wmOperator *op)
     BMesh *bm = em->bm;
     BMOperator spinop;
 
-    /* keep the values in worldspace since we're passing the obmat */
+    /* Keep the values in world-space since we're passing the `obmat`. */
     if (!EDBM_op_init(em,
                       &spinop,
                       op,
@@ -92,7 +77,7 @@ static int edbm_spin_exec(bContext *C, wmOperator *op)
                       d,
                       steps,
                       -angle,
-                      obedit->obmat,
+                      obedit->object_to_world,
                       use_normal_flip,
                       dupli,
                       use_auto_merge)) {
@@ -108,7 +93,12 @@ static int edbm_spin_exec(bContext *C, wmOperator *op)
       continue;
     }
 
-    EDBM_update_generic(obedit->data, true, true);
+    EDBM_update(obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = false,
+                    .is_destructive = true,
+                });
   }
 
   MEM_freeN(objects);

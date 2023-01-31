@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2020 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2020 Blender Foundation. All rights reserved. */
 #include "abc_subdiv_disabler.h"
 
 #include <cstdio>
@@ -30,6 +14,7 @@
 #include "DNA_modifier_types.h"
 #include "DNA_object_types.h"
 
+#include "BKE_layer.h"
 #include "BKE_modifier.h"
 
 namespace blender::io::alembic {
@@ -50,7 +35,8 @@ void SubdivModifierDisabler::disable_modifiers()
   Scene *scene = DEG_get_input_scene(depsgraph_);
   ViewLayer *view_layer = DEG_get_input_view_layer(depsgraph_);
 
-  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  LISTBASE_FOREACH (Base *, base, BKE_view_layer_object_bases_get(view_layer)) {
     Object *object = base->object;
 
     if (object->type != OB_MESH) {
@@ -72,8 +58,6 @@ void SubdivModifierDisabler::disable_modifiers()
   }
 }
 
-/* Check if the mesh is a subsurf, ignoring disabled modifiers and
- * displace if it's after subsurf. */
 ModifierData *SubdivModifierDisabler::get_subdiv_modifier(Scene *scene, Object *ob)
 {
   ModifierData *md = static_cast<ModifierData *>(ob->modifiers.last);

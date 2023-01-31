@@ -15,11 +15,10 @@ def draw_callback_px(self, context):
     blf.draw(font_id, "Hello Word " + str(len(self.mouse_path)))
 
     # 50% alpha, 2 pixel width line
-    shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
     gpu.state.blend_set('ALPHA')
     gpu.state.line_width_set(2.0)
     batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": self.mouse_path})
-    shader.bind()
     shader.uniform_float("color", (0.0, 0.0, 0.0, 0.5))
     batch.draw(shader)
 
@@ -30,7 +29,7 @@ def draw_callback_px(self, context):
 
 class ModalDrawOperator(bpy.types.Operator):
     """Draw a line with the mouse"""
-    bl_idname = "view3d.modal_operator"
+    bl_idname = "view3d.modal_draw_operator"
     bl_label = "Simple Modal View3D Operator"
 
     def modal(self, context, event):
@@ -66,12 +65,19 @@ class ModalDrawOperator(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+def menu_func(self, context):
+    self.layout.operator(ModalDrawOperator.bl_idname, text="Modal Draw Operator")
+
+
+# Register and add to the "view" menu (required to also use F3 search "Modal Draw Operator" for quick access).
 def register():
     bpy.utils.register_class(ModalDrawOperator)
+    bpy.types.VIEW3D_MT_view.append(menu_func)
 
 
 def unregister():
     bpy.utils.unregister_class(ModalDrawOperator)
+    bpy.types.VIEW3D_MT_view.remove(menu_func)
 
 
 if __name__ == "__main__":

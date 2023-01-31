@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup balembic
@@ -91,11 +77,11 @@ void AbcCameraReader::readObjectData(Main *bmain, const ISampleSelector &sample_
     bcam->stereo.convergence_distance = convergence_plane.getValue(sample_sel);
   }
 
-  const float lens = static_cast<float>(cam_sample.getFocalLength());
-  const float apperture_x = static_cast<float>(cam_sample.getHorizontalAperture());
-  const float apperture_y = static_cast<float>(cam_sample.getVerticalAperture());
-  const float h_film_offset = static_cast<float>(cam_sample.getHorizontalFilmOffset());
-  const float v_film_offset = static_cast<float>(cam_sample.getVerticalFilmOffset());
+  const float lens = float(cam_sample.getFocalLength());
+  const float apperture_x = float(cam_sample.getHorizontalAperture());
+  const float apperture_y = float(cam_sample.getVerticalAperture());
+  const float h_film_offset = float(cam_sample.getHorizontalFilmOffset());
+  const float v_film_offset = float(cam_sample.getVerticalFilmOffset());
   const float film_aspect = apperture_x / apperture_y;
 
   bcam->lens = lens;
@@ -103,10 +89,10 @@ void AbcCameraReader::readObjectData(Main *bmain, const ISampleSelector &sample_
   bcam->sensor_y = apperture_y * 10;
   bcam->shiftx = h_film_offset / apperture_x;
   bcam->shifty = v_film_offset / apperture_y / film_aspect;
-  bcam->clip_start = max_ff(0.1f, static_cast<float>(cam_sample.getNearClippingPlane()));
-  bcam->clip_end = static_cast<float>(cam_sample.getFarClippingPlane());
-  bcam->dof.focus_distance = static_cast<float>(cam_sample.getFocusDistance());
-  bcam->dof.aperture_fstop = static_cast<float>(cam_sample.getFStop());
+  bcam->clip_start = max_ff(0.1f, float(cam_sample.getNearClippingPlane()));
+  bcam->clip_end = float(cam_sample.getFarClippingPlane());
+  bcam->dof.focus_distance = float(cam_sample.getFocusDistance());
+  bcam->dof.aperture_fstop = float(cam_sample.getFStop());
 
   m_object = BKE_object_add_only_object(bmain, OB_CAMERA, m_object_name.c_str());
   m_object->data = bcam;

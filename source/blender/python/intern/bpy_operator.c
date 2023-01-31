@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pythonintern
@@ -32,6 +18,7 @@
 #include "BLI_listbase.h"
 #include "BLI_utildefines.h"
 
+#include "../generic/py_capi_rna.h"
 #include "../generic/py_capi_utils.h"
 #include "../generic/python_utildefines.h"
 #include "BPY_extern.h"
@@ -42,6 +29,7 @@
 
 #include "RNA_access.h"
 #include "RNA_enum_types.h"
+#include "RNA_prototypes.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -72,6 +60,23 @@ static wmOperatorType *ot_lookup_from_py_string(PyObject *value, const char *py_
   return ot;
 }
 
+static void op_context_override_deprecated_warning(const char *action, const char *opname)
+{
+  if (PyErr_WarnFormat(
+          PyExc_DeprecationWarning,
+          /* Use stack level 2 as this call is wrapped by `release/scripts/modules/bpy/ops.py`,
+           * An extra stack level is needed to show the warning in the authors script. */
+          2,
+          "Passing in context overrides is deprecated in favor of "
+          "Context.temp_override(..), %s \"%s\"",
+          action,
+          opname) < 0) {
+    /* The function has no return value, the exception cannot
+     * be reported to the caller, so just log it. */
+    PyErr_WriteUnraisable(NULL);
+  }
+}
+
 static PyObject *pyop_poll(PyObject *UNUSED(self), PyObject *args)
 {
   wmOperatorType *ot;
@@ -80,14 +85,14 @@ static PyObject *pyop_poll(PyObject *UNUSED(self), PyObject *args)
   const char *context_str = NULL;
   PyObject *ret;
 
-  int context = WM_OP_EXEC_DEFAULT;
+  wmOperatorCallContext context = WM_OP_EXEC_DEFAULT;
 
-  /* XXX Todo, work out a better solution for passing on context,
-   * could make a tuple from self and pack the name and Context into it... */
+  /* XXX TODO: work out a better solution for passing on context,
+   * could make a tuple from self and pack the name and Context into it. */
   bContext *C = BPY_context_get();
 
   if (C == NULL) {
-    PyErr_SetString(PyExc_RuntimeError, "Context is None, cant poll any operators");
+    PyErr_SetString(PyExc_RuntimeError, "Context is None, can't poll any operators");
     return NULL;
   }
 
@@ -106,8 +111,10 @@ static PyObject *pyop_poll(PyObject *UNUSED(self), PyObject *args)
   }
 
   if (context_str) {
-    if (RNA_enum_value_from_id(rna_enum_operator_context_items, context_str, &context) == 0) {
-      char *enum_str = BPy_enum_as_string(rna_enum_operator_context_items);
+    int context_int = context;
+
+    if (RNA_enum_value_from_id(rna_enum_operator_context_items, context_str, &context_int) == 0) {
+      char *enum_str = pyrna_enum_repr(rna_enum_operator_context_items);
       PyErr_Format(PyExc_TypeError,
                    "Calling operator \"bpy.ops.%s.poll\" error, "
                    "expected a string enum in (%s)",
@@ -116,12 +123,17 @@ static PyObject *pyop_poll(PyObject *UNUSED(self), PyObject *args)
       MEM_freeN(enum_str);
       return NULL;
     }
+    /* Copy back to the properly typed enum. */
+    context = context_int;
   }
 
   if (ELEM(context_dict, NULL, Py_None)) {
     context_dict = NULL;
   }
-  else if (!PyDict_Check(context_dict)) {
+  else if (PyDict_Check(context_dict)) {
+    op_context_override_deprecated_warning("polling", opname);
+  }
+  else {
     PyErr_Format(PyExc_TypeError,
                  "Calling operator \"bpy.ops.%s.poll\" error, "
                  "custom context expected a dict or None, got a %.200s",
@@ -165,16 +177,15 @@ static PyObject *pyop_call(PyObject *UNUSED(self), PyObject *args)
   PyObject *kw = NULL;           /* optional args */
   PyObject *context_dict = NULL; /* optional args */
 
-  /* note that context is an int, python does the conversion in this case */
-  int context = WM_OP_EXEC_DEFAULT;
+  wmOperatorCallContext context = WM_OP_EXEC_DEFAULT;
   int is_undo = false;
 
-  /* XXX Todo, work out a better solution for passing on context,
-   * could make a tuple from self and pack the name and Context into it... */
+  /* XXX TODO: work out a better solution for passing on context,
+   * could make a tuple from self and pack the name and Context into it. */
   bContext *C = BPY_context_get();
 
   if (C == NULL) {
-    PyErr_SetString(PyExc_RuntimeError, "Context is None, cant poll any operators");
+    PyErr_SetString(PyExc_RuntimeError, "Context is None, can't poll any operators");
     return NULL;
   }
 
@@ -208,8 +219,10 @@ static PyObject *pyop_call(PyObject *UNUSED(self), PyObject *args)
   }
 
   if (context_str) {
-    if (RNA_enum_value_from_id(rna_enum_operator_context_items, context_str, &context) == 0) {
-      char *enum_str = BPy_enum_as_string(rna_enum_operator_context_items);
+    int context_int = context;
+
+    if (RNA_enum_value_from_id(rna_enum_operator_context_items, context_str, &context_int) == 0) {
+      char *enum_str = pyrna_enum_repr(rna_enum_operator_context_items);
       PyErr_Format(PyExc_TypeError,
                    "Calling operator \"bpy.ops.%s\" error, "
                    "expected a string enum in (%s)",
@@ -218,12 +231,17 @@ static PyObject *pyop_call(PyObject *UNUSED(self), PyObject *args)
       MEM_freeN(enum_str);
       return NULL;
     }
+    /* Copy back to the properly typed enum. */
+    context = context_int;
   }
 
   if (ELEM(context_dict, NULL, Py_None)) {
     context_dict = NULL;
   }
-  else if (!PyDict_Check(context_dict)) {
+  else if (PyDict_Check(context_dict)) {
+    op_context_override_deprecated_warning("calling", opname);
+  }
+  else {
     PyErr_Format(PyExc_TypeError,
                  "Calling operator \"bpy.ops.%s\" error, "
                  "custom context expected a dict or None, got a %.200s",
@@ -271,12 +289,12 @@ static PyObject *pyop_call(PyObject *UNUSED(self), PyObject *args)
       reports = MEM_mallocN(sizeof(ReportList), "wmOperatorReportList");
 
       /* Own so these don't move into global reports. */
-      BKE_reports_init(reports, RPT_STORE | RPT_OP_HOLD);
+      BKE_reports_init(reports, RPT_STORE | RPT_OP_HOLD | RPT_PRINT_HANDLED_BY_OWNER);
 
 #ifdef BPY_RELEASE_GIL
       /* release GIL, since a thread could be started from an operator
        * that updates a driver */
-      /* note: I have not seen any examples of code that does this
+      /* NOTE: I have not seen any examples of code that does this
        * so it may not be officially supported but seems to work ok. */
       {
         PyThreadState *ts = PyEval_SaveThread();
@@ -319,7 +337,7 @@ static PyObject *pyop_call(PyObject *UNUSED(self), PyObject *args)
         return NULL;
       }
 
-      WM_operator_name_call(C, opname, WM_OP_EXEC_DEFAULT, NULL);
+      WM_operator_name_call(C, opname, WM_OP_EXEC_DEFAULT, NULL, NULL);
     }
 #endif
   }
@@ -339,14 +357,14 @@ static PyObject *pyop_call(PyObject *UNUSED(self), PyObject *args)
     return NULL;
   }
 
-  /* When calling  bpy.ops.wm.read_factory_settings() bpy.data's main pointer
+  /* When calling `bpy.ops.wm.read_factory_settings()` `bpy.data's` main pointer
    * is freed by clear_globals(), further access will crash blender.
    * Setting context is not needed in this case, only calling because this
    * function corrects bpy.data (internal Main pointer) */
   BPY_modules_update();
 
   /* return operator_ret as a bpy enum */
-  return pyrna_enum_bitfield_to_py(rna_enum_operator_return_items, operator_ret);
+  return pyrna_enum_bitfield_as_set(rna_enum_operator_return_items, operator_ret);
 }
 
 static PyObject *pyop_as_string(PyObject *UNUSED(self), PyObject *args)
@@ -367,7 +385,7 @@ static PyObject *pyop_as_string(PyObject *UNUSED(self), PyObject *args)
 
   if (C == NULL) {
     PyErr_SetString(PyExc_RuntimeError,
-                    "Context is None, cant get the string representation of this object.");
+                    "Context is None, can't get the string representation of this object.");
     return NULL;
   }
 
@@ -393,7 +411,7 @@ static PyObject *pyop_as_string(PyObject *UNUSED(self), PyObject *args)
     return NULL;
   }
 
-  /* WM_operator_properties_create(&ptr, opname); */
+  // WM_operator_properties_create(&ptr, opname);
   /* Save another lookup */
   RNA_pointer_create(NULL, ot->srna, NULL, &ptr);
 
@@ -459,7 +477,7 @@ static PyObject *pyop_get_bl_options(PyObject *UNUSED(self), PyObject *value)
   if ((ot = ot_lookup_from_py_string(value, "get_bl_options")) == NULL) {
     return NULL;
   }
-  return pyrna_enum_bitfield_to_py(rna_enum_operator_type_flag_items, ot->flag);
+  return pyrna_enum_bitfield_as_set(rna_enum_operator_type_flag_items, ot->flag);
 }
 
 static struct PyMethodDef bpy_ops_methods[] = {

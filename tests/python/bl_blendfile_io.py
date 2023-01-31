@@ -1,4 +1,4 @@
-# Apache License, Version 2.0
+# SPDX-License-Identifier: Apache-2.0
 
 # ./blender.bin --background -noaudio --python tests/python/bl_blendfile_io.py
 import bpy
@@ -33,7 +33,7 @@ class TestBlendFileSaveLoadBasic(TestHelper):
         read_data = self.blender_data_to_tuple(bpy.data, "read_data 1")
 
         # We have orphaned data, which should be removed by file reading, so there should not be equality here.
-        assert(orig_data != read_data)
+        assert orig_data != read_data
 
         bpy.data.orphans_purge()
 
@@ -44,7 +44,7 @@ class TestBlendFileSaveLoadBasic(TestHelper):
 
         read_data = self.blender_data_to_tuple(bpy.data, "read_data 2")
 
-        assert(orig_data == read_data)
+        assert orig_data == read_data
 
 
 TESTS = (
@@ -73,7 +73,7 @@ def main():
     args = argparse_create().parse_args()
 
     # Don't write thumbnails into the home directory.
-    bpy.context.preferences.filepaths.use_save_preview_images = False
+    bpy.context.preferences.filepaths.file_preview_type = 'NONE'
 
     for Test in TESTS:
         Test(args).run_all_tests()

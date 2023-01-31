@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -545,7 +531,7 @@ static Mathutils_Callback StrokeAttribute_mathutils_cb = {
     StrokeAttribute_mathutils_set_index,
 };
 
-static unsigned char StrokeAttribute_mathutils_cb_index = -1;
+static uchar StrokeAttribute_mathutils_cb_index = -1;
 
 void StrokeAttribute_mathutils_register_callback()
 {
@@ -559,14 +545,14 @@ PyDoc_STRVAR(StrokeAttribute_alpha_doc,
              "\n"
              ":type: float");
 
-static PyObject *StrokeAttribute_alpha_get(BPy_StrokeAttribute *self, void *UNUSED(closure))
+static PyObject *StrokeAttribute_alpha_get(BPy_StrokeAttribute *self, void * /*closure*/)
 {
   return PyFloat_FromDouble(self->sa->getAlpha());
 }
 
 static int StrokeAttribute_alpha_set(BPy_StrokeAttribute *self,
                                      PyObject *value,
-                                     void *UNUSED(closure))
+                                     void * /*closure*/)
 {
   float scalar;
   if ((scalar = PyFloat_AsDouble(value)) == -1.0f && PyErr_Occurred()) {
@@ -583,7 +569,7 @@ PyDoc_STRVAR(StrokeAttribute_color_doc,
              "\n"
              ":type: :class:`mathutils.Color`");
 
-static PyObject *StrokeAttribute_color_get(BPy_StrokeAttribute *self, void *UNUSED(closure))
+static PyObject *StrokeAttribute_color_get(BPy_StrokeAttribute *self, void * /*closure*/)
 {
   return Color_CreatePyObject_cb(
       (PyObject *)self, StrokeAttribute_mathutils_cb_index, MATHUTILS_SUBTYPE_COLOR);
@@ -591,7 +577,7 @@ static PyObject *StrokeAttribute_color_get(BPy_StrokeAttribute *self, void *UNUS
 
 static int StrokeAttribute_color_set(BPy_StrokeAttribute *self,
                                      PyObject *value,
-                                     void *UNUSED(closure))
+                                     void * /*closure*/)
 {
   float v[3];
   if (mathutils_array_parse(v, 3, 3, value, "value must be a 3-dimensional vector") == -1) {
@@ -608,7 +594,7 @@ PyDoc_STRVAR(StrokeAttribute_thickness_doc,
              "\n"
              ":type: :class:`mathutils.Vector`");
 
-static PyObject *StrokeAttribute_thickness_get(BPy_StrokeAttribute *self, void *UNUSED(closure))
+static PyObject *StrokeAttribute_thickness_get(BPy_StrokeAttribute *self, void * /*closure*/)
 {
   return Vector_CreatePyObject_cb(
       (PyObject *)self, 2, StrokeAttribute_mathutils_cb_index, MATHUTILS_SUBTYPE_THICKNESS);
@@ -616,7 +602,7 @@ static PyObject *StrokeAttribute_thickness_get(BPy_StrokeAttribute *self, void *
 
 static int StrokeAttribute_thickness_set(BPy_StrokeAttribute *self,
                                          PyObject *value,
-                                         void *UNUSED(closure))
+                                         void * /*closure*/)
 {
   float v[2];
   if (mathutils_array_parse(v, 2, 2, value, "value must be a 2-dimensional vector") == -1) {
@@ -631,14 +617,14 @@ PyDoc_STRVAR(StrokeAttribute_visible_doc,
              "\n"
              ":type: bool");
 
-static PyObject *StrokeAttribute_visible_get(BPy_StrokeAttribute *self, void *UNUSED(closure))
+static PyObject *StrokeAttribute_visible_get(BPy_StrokeAttribute *self, void * /*closure*/)
 {
   return PyBool_from_bool(self->sa->isVisible());
 }
 
 static int StrokeAttribute_visible_set(BPy_StrokeAttribute *self,
                                        PyObject *value,
-                                       void *UNUSED(closure))
+                                       void * /*closure*/)
 {
   if (!PyBool_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be boolean");
@@ -687,7 +673,7 @@ PyTypeObject StrokeAttribute_Type = {
     nullptr,                                             /* tp_as_number */
     nullptr,                                             /* tp_as_sequence */
     nullptr,                                             /* tp_as_mapping */
-    nullptr,                                             /* tp_hash  */
+    nullptr,                                             /* tp_hash */
     nullptr,                                             /* tp_call */
     nullptr,                                             /* tp_str */
     nullptr,                                             /* tp_getattro */

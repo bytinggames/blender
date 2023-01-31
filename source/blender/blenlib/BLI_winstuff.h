@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 #pragma once
 
@@ -45,7 +29,7 @@
 
 #undef small
 
-// These definitions are also in BLI_math for simplicity
+/* These definitions are also in BLI_math for simplicity. */
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,15 +48,10 @@ extern "C" {
 #  define S_ISDIR(x) (((x)&_S_IFDIR) == _S_IFDIR)
 #endif
 
-/* Defines for using ISO C++ conferment names. */
-#if !defined(_MSC_VER) || _MSC_VER < 1900
-#  define snprintf _snprintf
-#endif
-
 #if defined(_MSC_VER)
 #  define R_OK 4
 #  define W_OK 2
-// not accepted by access() on windows
+/* Not accepted by `access()` on windows. */
 //#  define X_OK    1
 #  define F_OK 0
 #endif
@@ -88,7 +67,7 @@ typedef SSIZE_T ssize_t;
 #  endif
 #endif
 
-/* Directory reading compatibility with UNIX. */
+/** Directory reading compatibility with UNIX. */
 struct dirent {
   int d_ino;
   int d_off;
@@ -96,7 +75,7 @@ struct dirent {
   char *d_name;
 };
 
-/* intentionally opaque to users */
+/** Intentionally opaque to users. */
 typedef struct __dirstream DIR;
 
 DIR *opendir(const char *path);
@@ -105,8 +84,9 @@ int closedir(DIR *dp);
 const char *dirname(char *path);
 
 /* Windows utility functions. */
-void BLI_windows_register_blend_extension(const bool background);
-void BLI_windows_get_default_root_dir(char *root_dir);
+
+bool BLI_windows_register_blend_extension(bool background);
+void BLI_windows_get_default_root_dir(char root_dir[4]);
 int BLI_windows_get_executable_dir(char *str);
 
 #ifdef __cplusplus

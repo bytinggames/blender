@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2016, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Blender Foundation. */
 
 /** \file
  * \ingroup draw_engine
@@ -59,7 +44,7 @@ static struct {
 
 /* *********** FUNCTIONS *********** */
 
-/* TODO find a better way than this. This does not support dupli objects if
+/* TODO: find a better way than this. This does not support dupli objects if
  * the original object is hidden. */
 bool EEVEE_lightprobes_obj_visibility_cb(bool vis_in, void *user_data)
 {
@@ -94,11 +79,11 @@ static void planar_pool_ensure_alloc(EEVEE_Data *vedata, int num_planar_ref)
   EEVEE_StorageList *stl = vedata->stl;
   EEVEE_EffectsInfo *fx = stl->effects;
 
-  /* XXX TODO OPTIMIZATION: This is a complete waist of texture memory.
+  /* XXX TODO: OPTIMIZATION: This is a complete waist of texture memory.
    * Instead of allocating each planar probe for each viewport,
    * only alloc them once using the biggest viewport resolution. */
 
-  /* TODO get screen percentage from layer setting */
+  /* TODO: get screen percentage from layer setting. */
   // const DRWContextState *draw_ctx = DRW_context_state_get();
   // ViewLayer *view_layer = draw_ctx->view_layer;
   int screen_divider = 1;
@@ -202,7 +187,6 @@ void EEVEE_lightprobes_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
   }
 }
 
-/* Only init the passes useful for rendering the light cache. */
 void EEVEE_lightbake_cache_init(EEVEE_ViewLayerData *sldata,
                                 EEVEE_Data *vedata,
                                 GPUTexture *rt_color,
@@ -220,7 +204,7 @@ void EEVEE_lightbake_cache_init(EEVEE_ViewLayerData *sldata,
 
     DRW_shgroup_uniform_float(grp, "intensityFac", &pinfo->intensity_fac, 1);
     DRW_shgroup_uniform_float(grp, "sampleCount", &pinfo->samples_len, 1);
-    DRW_shgroup_uniform_float(grp, "roughness", &pinfo->roughness, 1);
+    DRW_shgroup_uniform_float(grp, "probe_roughness", &pinfo->roughness, 1);
     DRW_shgroup_uniform_float(grp, "lodFactor", &pinfo->lodfactor, 1);
     DRW_shgroup_uniform_float(grp, "lodMax", &pinfo->lod_rt_max, 1);
     DRW_shgroup_uniform_float(grp, "texelSize", &pinfo->texel_size, 1);
@@ -345,7 +329,6 @@ void EEVEE_lightprobes_cache_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedat
         DRW_shgroup_uniform_texture_ref(grp, "probeCubes", &lcache->cube_tx.tex);
         DRW_shgroup_uniform_block(grp, "probe_block", sldata->probe_ubo);
         DRW_shgroup_uniform_block(grp, "common_block", sldata->common_ubo);
-        DRW_shgroup_uniform_vec3(grp, "screen_vecs", DRW_viewport_screenvecs_get(), 2);
         DRW_shgroup_uniform_float_copy(
             grp, "sphere_size", scene_eval->eevee.gi_cubemap_draw_size * 0.5f);
         /* TODO(fclem): get rid of those UBO. */
@@ -369,7 +352,6 @@ void EEVEE_lightprobes_cache_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedat
           DRW_shgroup_uniform_vec3(shgrp, "increment_x", egrid->increment_x, 1);
           DRW_shgroup_uniform_vec3(shgrp, "increment_y", egrid->increment_y, 1);
           DRW_shgroup_uniform_vec3(shgrp, "increment_z", egrid->increment_z, 1);
-          DRW_shgroup_uniform_vec3(shgrp, "screen_vecs", DRW_viewport_screenvecs_get(), 2);
           DRW_shgroup_uniform_texture_ref(shgrp, "irradianceGrid", &lcache->grid_tx.tex);
           DRW_shgroup_uniform_float_copy(
               shgrp, "sphere_size", scene_eval->eevee.gi_irradiance_draw_size * 0.5f);
@@ -421,7 +403,7 @@ static bool eevee_lightprobes_culling_test(Object *ob)
       const float max[3] = {1.0f, 1.0f, 1.0f};
       BKE_boundbox_init_from_minmax(&bbox, min, max);
 
-      copy_m4_m4(tmp, ob->obmat);
+      copy_m4_m4(tmp, ob->object_to_world);
       normalize_v3(tmp[2]);
       mul_v3_fl(tmp[2], probe->distinf);
 
@@ -463,7 +445,7 @@ void EEVEE_lightprobes_cache_add(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata
     /* Debug Display */
     DRWCallBuffer *grp = vedata->stl->g_data->planar_display_shgrp;
     if (grp && (probe->flag & LIGHTPROBE_FLAG_SHOW_DATA)) {
-      DRW_buffer_add_entry(grp, &pinfo->num_planar, ob->obmat);
+      DRW_buffer_add_entry(grp, &pinfo->num_planar, ob->object_to_world);
     }
 
     pinfo->num_planar++;
@@ -506,30 +488,30 @@ void EEVEE_lightprobes_grid_data_from_object(Object *ob, EEVEE_LightGrid *egrid,
   mul_v3_v3fl(half_cell_dim, cell_dim, 0.5f);
 
   /* Matrix converting world space to cell ranges. */
-  invert_m4_m4(egrid->mat, ob->obmat);
+  invert_m4_m4(egrid->mat, ob->object_to_world);
 
   /* First cell. */
   copy_v3_fl(egrid->corner, -1.0f);
   add_v3_v3(egrid->corner, half_cell_dim);
-  mul_m4_v3(ob->obmat, egrid->corner);
+  mul_m4_v3(ob->object_to_world, egrid->corner);
 
   /* Opposite neighbor cell. */
   copy_v3_fl3(egrid->increment_x, cell_dim[0], 0.0f, 0.0f);
   add_v3_v3(egrid->increment_x, half_cell_dim);
   add_v3_fl(egrid->increment_x, -1.0f);
-  mul_m4_v3(ob->obmat, egrid->increment_x);
+  mul_m4_v3(ob->object_to_world, egrid->increment_x);
   sub_v3_v3(egrid->increment_x, egrid->corner);
 
   copy_v3_fl3(egrid->increment_y, 0.0f, cell_dim[1], 0.0f);
   add_v3_v3(egrid->increment_y, half_cell_dim);
   add_v3_fl(egrid->increment_y, -1.0f);
-  mul_m4_v3(ob->obmat, egrid->increment_y);
+  mul_m4_v3(ob->object_to_world, egrid->increment_y);
   sub_v3_v3(egrid->increment_y, egrid->corner);
 
   copy_v3_fl3(egrid->increment_z, 0.0f, 0.0f, cell_dim[2]);
   add_v3_v3(egrid->increment_z, half_cell_dim);
   add_v3_fl(egrid->increment_z, -1.0f);
-  mul_m4_v3(ob->obmat, egrid->increment_z);
+  mul_m4_v3(ob->object_to_world, egrid->increment_z);
   sub_v3_v3(egrid->increment_z, egrid->corner);
 
   /* Visibility bias */
@@ -545,7 +527,7 @@ void EEVEE_lightprobes_cube_data_from_object(Object *ob, EEVEE_LightProbe *eprob
   LightProbe *probe = (LightProbe *)ob->data;
 
   /* Update transforms */
-  copy_v3_v3(eprobe->position, ob->obmat[3]);
+  copy_v3_v3(eprobe->position, ob->object_to_world[3]);
 
   /* Attenuation */
   eprobe->attenuation_type = probe->attenuation_type;
@@ -553,7 +535,7 @@ void EEVEE_lightprobes_cube_data_from_object(Object *ob, EEVEE_LightProbe *eprob
 
   unit_m4(eprobe->attenuationmat);
   scale_m4_fl(eprobe->attenuationmat, probe->distinf);
-  mul_m4_m4m4(eprobe->attenuationmat, ob->obmat, eprobe->attenuationmat);
+  mul_m4_m4m4(eprobe->attenuationmat, ob->object_to_world, eprobe->attenuationmat);
   invert_m4(eprobe->attenuationmat);
 
   /* Parallax */
@@ -568,7 +550,7 @@ void EEVEE_lightprobes_cube_data_from_object(Object *ob, EEVEE_LightProbe *eprob
     scale_m4_fl(eprobe->parallaxmat, probe->distinf);
   }
 
-  mul_m4_m4m4(eprobe->parallaxmat, ob->obmat, eprobe->parallaxmat);
+  mul_m4_m4m4(eprobe->parallaxmat, ob->object_to_world, eprobe->parallaxmat);
   invert_m4(eprobe->parallaxmat);
 }
 
@@ -584,8 +566,8 @@ void EEVEE_lightprobes_planar_data_from_object(Object *ob,
   vis_test->cached = false;
 
   /* Computing mtx : matrix that mirror position around object's XY plane. */
-  normalize_m4_m4(normat, ob->obmat); /* object > world */
-  invert_m4_m4(imat, normat);         /* world > object */
+  normalize_m4_m4(normat, ob->object_to_world); /* object > world */
+  invert_m4_m4(imat, normat);                   /* world > object */
   /* XY reflection plane */
   imat[0][2] = -imat[0][2];
   imat[1][2] = -imat[1][2];
@@ -594,42 +576,42 @@ void EEVEE_lightprobes_planar_data_from_object(Object *ob,
   mul_m4_m4m4(eplanar->mtx, normat, imat); /* world > object > mirrored obj > world */
 
   /* Compute clip plane equation / normal. */
-  copy_v3_v3(eplanar->plane_equation, ob->obmat[2]);
+  copy_v3_v3(eplanar->plane_equation, ob->object_to_world[2]);
   normalize_v3(eplanar->plane_equation); /* plane normal */
-  eplanar->plane_equation[3] = -dot_v3v3(eplanar->plane_equation, ob->obmat[3]);
+  eplanar->plane_equation[3] = -dot_v3v3(eplanar->plane_equation, ob->object_to_world[3]);
   eplanar->clipsta = probe->clipsta;
 
   /* Compute XY clip planes. */
-  normalize_v3_v3(eplanar->clip_vec_x, ob->obmat[0]);
-  normalize_v3_v3(eplanar->clip_vec_y, ob->obmat[1]);
+  normalize_v3_v3(eplanar->clip_vec_x, ob->object_to_world[0]);
+  normalize_v3_v3(eplanar->clip_vec_y, ob->object_to_world[1]);
 
   float vec[3] = {0.0f, 0.0f, 0.0f};
   vec[0] = 1.0f;
   vec[1] = 0.0f;
   vec[2] = 0.0f;
-  mul_m4_v3(ob->obmat, vec); /* Point on the edge */
+  mul_m4_v3(ob->object_to_world, vec); /* Point on the edge */
   eplanar->clip_edge_x_pos = dot_v3v3(eplanar->clip_vec_x, vec);
 
   vec[0] = 0.0f;
   vec[1] = 1.0f;
   vec[2] = 0.0f;
-  mul_m4_v3(ob->obmat, vec); /* Point on the edge */
+  mul_m4_v3(ob->object_to_world, vec); /* Point on the edge */
   eplanar->clip_edge_y_pos = dot_v3v3(eplanar->clip_vec_y, vec);
 
   vec[0] = -1.0f;
   vec[1] = 0.0f;
   vec[2] = 0.0f;
-  mul_m4_v3(ob->obmat, vec); /* Point on the edge */
+  mul_m4_v3(ob->object_to_world, vec); /* Point on the edge */
   eplanar->clip_edge_x_neg = dot_v3v3(eplanar->clip_vec_x, vec);
 
   vec[0] = 0.0f;
   vec[1] = -1.0f;
   vec[2] = 0.0f;
-  mul_m4_v3(ob->obmat, vec); /* Point on the edge */
+  mul_m4_v3(ob->object_to_world, vec); /* Point on the edge */
   eplanar->clip_edge_y_neg = dot_v3v3(eplanar->clip_vec_y, vec);
 
   /* Facing factors */
-  float max_angle = max_ff(1e-2f, 1.0f - probe->falloff) * M_PI * 0.5f;
+  float max_angle = max_ff(1e-2f, 1.0f - probe->falloff) * M_PI_2;
   float min_angle = 0.0f;
   eplanar->facing_scale = 1.0f / max_ff(1e-8f, cosf(min_angle) - cosf(max_angle));
   eplanar->facing_bias = -min_ff(1.0f - 1e-8f, cosf(max_angle)) * eplanar->facing_scale;
@@ -812,6 +794,7 @@ static void render_reflections(void (*callback)(int face, EEVEE_BakeRenderData *
                                int ref_count)
 {
   EEVEE_StorageList *stl = user_data->vedata->stl;
+  EEVEE_ViewLayerData *sldata = user_data->sldata;
   DRWView *main_view = stl->effects->taa_view;
   DRWView **views = stl->g_data->planar_views;
   /* Prepare views at the same time for faster culling. */
@@ -820,6 +803,8 @@ static void render_reflections(void (*callback)(int face, EEVEE_BakeRenderData *
   }
 
   for (int i = 0; i < ref_count; i++) {
+    copy_v4_v4(sldata->common_data.planar_clip_plane, planar_data[i].plane_equation);
+    sldata->common_data.planar_clip_plane[3] += planar_data[i].clipsta;
     DRW_view_set_active(views[i]);
     callback(i, user_data);
   }
@@ -871,7 +856,6 @@ static void lightbake_render_scene_face(int face, EEVEE_BakeRenderData *user_dat
   DRW_draw_pass(psl->transparent_pass);
 }
 
-/* Render the scene to the probe_rt texture. */
 void EEVEE_lightbake_render_scene(EEVEE_ViewLayerData *sldata,
                                   EEVEE_Data *vedata,
                                   struct GPUFrameBuffer *face_fb[6],
@@ -969,13 +953,13 @@ static void eevee_lightbake_render_scene_to_planars(EEVEE_ViewLayerData *sldata,
                      sldata->probes->planar_data,
                      sldata->probes->num_planar);
 }
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
 /** \name Filtering
  * \{ */
 
-/* Glossy filter rt_color to light_cache->cube_tx.tex at index probe_idx */
 void EEVEE_lightbake_filter_glossy(EEVEE_ViewLayerData *sldata,
                                    EEVEE_Data *vedata,
                                    struct GPUTexture *rt_color,
@@ -1064,7 +1048,6 @@ void EEVEE_lightbake_filter_glossy(EEVEE_ViewLayerData *sldata,
   }
 }
 
-/* Diffuse filter rt_color to light_cache->grid_tx.tex at index grid_offset */
 void EEVEE_lightbake_filter_diffuse(EEVEE_ViewLayerData *sldata,
                                     EEVEE_Data *vedata,
                                     struct GPUTexture *rt_color,
@@ -1080,8 +1063,8 @@ void EEVEE_lightbake_filter_diffuse(EEVEE_ViewLayerData *sldata,
 
   pinfo->intensity_fac = intensity;
 
-  /* find cell position on the virtual 3D texture */
-  /* NOTE : Keep in sync with load_irradiance_cell() */
+  /* Find cell position on the virtual 3D texture. */
+  /* NOTE: Keep in sync with `load_irradiance_cell()`. */
 #if defined(IRRADIANCE_SH_L2)
   int size[2] = {3, 3};
 #elif defined(IRRADIANCE_HL2)
@@ -1117,7 +1100,6 @@ void EEVEE_lightbake_filter_diffuse(EEVEE_ViewLayerData *sldata,
   GPU_framebuffer_viewport_reset(fb);
 }
 
-/* Filter rt_depth to light_cache->grid_tx.tex at index grid_offset */
 void EEVEE_lightbake_filter_visibility(EEVEE_ViewLayerData *sldata,
                                        EEVEE_Data *vedata,
                                        struct GPUTexture *UNUSED(rt_depth),
@@ -1133,7 +1115,7 @@ void EEVEE_lightbake_filter_visibility(EEVEE_ViewLayerData *sldata,
   EEVEE_LightProbesInfo *pinfo = sldata->probes;
   LightCache *light_cache = vedata->stl->g_data->light_cache;
 
-  pinfo->samples_len = 512.0f; /* TODO refine */
+  pinfo->samples_len = 512.0f; /* TODO: refine. */
   pinfo->shres = vis_size;
   pinfo->visibility_range = vis_range;
   pinfo->visibility_blur = vis_blur;
@@ -1203,6 +1185,8 @@ void EEVEE_lightprobes_refresh_planar(EEVEE_ViewLayerData *sldata, EEVEE_Data *v
     return;
   }
 
+  float hiz_uv_scale_prev[2] = {UNPACK2(common_data->hiz_uv_scale)};
+
   /* Temporary Remove all planar reflections (avoid lag effect). */
   common_data->prb_num_planar = 0;
   /* Turn off ssr to avoid black specular */
@@ -1210,8 +1194,16 @@ void EEVEE_lightprobes_refresh_planar(EEVEE_ViewLayerData *sldata, EEVEE_Data *v
   common_data->ssrefract_toggle = false;
   common_data->sss_toggle = false;
 
+  if (vedata->stl->g_data->disable_ligthprobes) {
+    sldata->common_data.prb_num_render_cube = 1;
+    sldata->common_data.prb_num_render_grid = 1;
+  }
+
   common_data->ray_type = EEVEE_RAY_GLOSSY;
   common_data->ray_depth = 1.0f;
+  /* Planar reflections are rendered at the `hiz` resolution, so no need to scaling. */
+  copy_v2_fl(common_data->hiz_uv_scale, 1.0f);
+
   GPU_uniformbuf_update(sldata->common_ubo, &sldata->common_data);
 
   /* Rendering happens here! */
@@ -1227,6 +1219,7 @@ void EEVEE_lightprobes_refresh_planar(EEVEE_ViewLayerData *sldata, EEVEE_Data *v
   common_data->ssr_toggle = true;
   common_data->ssrefract_toggle = true;
   common_data->sss_toggle = true;
+  copy_v2_v2(common_data->hiz_uv_scale, hiz_uv_scale_prev);
 
   /* Prefilter for SSR */
   if ((vedata->stl->effects->enabled_effects & EFFECT_SSR) != 0) {
@@ -1234,7 +1227,7 @@ void EEVEE_lightprobes_refresh_planar(EEVEE_ViewLayerData *sldata, EEVEE_Data *v
   }
 
   if (DRW_state_is_image_render()) {
-    /* Sort transparents because planar reflections could have re-sorted them. */
+    /* Sort the transparent passes because planar reflections could have re-sorted them. */
     DRW_pass_sort_shgroup_z(vedata->psl->transparent_pass);
   }
 

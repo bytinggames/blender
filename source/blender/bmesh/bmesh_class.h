@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -23,8 +9,10 @@
  * that benefit from accessing connectivity information.
  */
 
+#include "BLI_assert.h"
+
 /* disable holes for now,
- * these are ifdef'd because they use more memory and cant be saved in DNA currently */
+ * these are ifdef'd because they use more memory and can't be saved in DNA currently */
 // #define USE_BMESH_HOLES
 
 struct BMEdge;
@@ -37,7 +25,7 @@ struct MLoopNorSpaceArray;
 
 struct BLI_mempool;
 
-/* note: it is very important for BMHeader to start with two
+/* NOTE: it is very important for BMHeader to start with two
  * pointers. this is a requirement of mempool's method of
  * iteration.
  *
@@ -89,9 +77,9 @@ typedef struct BMHeader {
 
 BLI_STATIC_ASSERT((sizeof(BMHeader) <= 16), "BMHeader size has grown!");
 
-/* note: need some way to specify custom locations for custom data layers.  so we can
+/* NOTE: need some way to specify custom locations for custom data layers.  so we can
  * make them point directly into structs.  and some way to make it only happen to the
- * active layer, and properly update when switching active layers.*/
+ * active layer, and properly update when switching active layers. */
 
 typedef struct BMVert {
   BMHeader head;
@@ -142,7 +130,7 @@ typedef struct BMEdge {
   /**
    * Disk Cycle Pointers
    *
-   * relative data: d1 indicates indicates the next/prev
+   * relative data: d1 indicates the next/prev
    * edge around vertex v1 and d2 does the same for v2.
    */
   BMDiskLink v1_disk_link, v2_disk_link;
@@ -183,7 +171,7 @@ typedef struct BMLoop {
   struct BMFace *f;
 
   /**
-   * Other loops connected to this edge,.
+   * Other loops connected to this edge.
    *
    * This is typically use for accessing an edges faces,
    * however this is done by stepping over it's loops.
@@ -267,7 +255,7 @@ typedef struct BMFace {
   BMHeader head;
 
 #ifdef USE_BMESH_HOLES
-  int totbounds; /*total boundaries, is one plus the number of holes in the face*/
+  int totbounds; /* Total boundaries, is one plus the number of holes in the face. */
   ListBase loops;
 #else
   BMLoop *l_first;
@@ -277,8 +265,20 @@ typedef struct BMFace {
    * (the length of #BMFace.l_first circular linked list).
    */
   int len;
-  float no[3];  /* face normal */
-  short mat_nr; /* material index */
+  /**
+   * Face normal, see #BM_face_calc_normal.
+   */
+  float no[3];
+  /**
+   * Material index, typically >= 0 and < #Mesh.totcol although this isn't enforced
+   * Python for e.g. can set this to any positive value since scripts may create
+   * mesh data first and setup material slots later.
+   *
+   * When using to index into a material array it's range should be checked first,
+   * values exceeding the range should be ignored or treated as zero
+   * (if a material slot needs to be used - when drawing for e.g.)
+   */
+  short mat_nr;
   //  short _pad[3];
 } BMFace;
 
@@ -346,7 +346,7 @@ typedef struct BMesh {
   /* Should be copy of scene select mode. */
   /* Stored in #BMEditMesh too, this is a bit confusing,
    * make sure they're in sync!
-   * Only use when the edit mesh cant be accessed - campbell */
+   * Only use when the edit mesh can't be accessed - campbell */
   short selectmode;
 
   /* ID of the shape key this bmesh came from */
@@ -518,6 +518,17 @@ typedef bool (*BMLoopPairFilterFunc)(const BMLoop *, const BMLoop *, void *user_
 #define BM_ELEM_CD_GET_INT(ele, offset) \
   (BLI_assert(offset != -1), *((int *)((char *)(ele)->head.data + (offset))))
 
+#define BM_ELEM_CD_SET_BOOL(ele, offset, f) \
+  { \
+    CHECK_TYPE_NONCONST(ele); \
+    BLI_assert(offset != -1); \
+    *((bool *)((char *)(ele)->head.data + (offset))) = (f); \
+  } \
+  (void)0
+
+#define BM_ELEM_CD_GET_BOOL(ele, offset) \
+  (BLI_assert(offset != -1), *((bool *)((char *)(ele)->head.data + (offset))))
+
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 #  define BM_ELEM_CD_GET_VOID_P(ele, offset) \
     (BLI_assert(offset != -1), \
@@ -542,10 +553,68 @@ typedef bool (*BMLoopPairFilterFunc)(const BMLoop *, const BMLoop *, void *user_
 #define BM_ELEM_CD_GET_FLOAT(ele, offset) \
   (BLI_assert(offset != -1), *((float *)((char *)(ele)->head.data + (offset))))
 
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+
+#  define BM_ELEM_CD_GET_FLOAT_P(ele, offset) \
+    (BLI_assert(offset != -1), \
+     _Generic(ele, \
+              GENERIC_TYPE_ANY((float *)POINTER_OFFSET((ele)->head.data, offset), \
+                               _BM_GENERIC_TYPE_ELEM_NONCONST), \
+              GENERIC_TYPE_ANY((const float *)POINTER_OFFSET((ele)->head.data, offset), \
+                               _BM_GENERIC_TYPE_ELEM_CONST)))
+
+#  define BM_ELEM_CD_GET_FLOAT2_P(ele, offset) \
+    (BLI_assert(offset != -1), \
+     _Generic(ele, \
+              GENERIC_TYPE_ANY((float(*)[2])POINTER_OFFSET((ele)->head.data, offset), \
+                               _BM_GENERIC_TYPE_ELEM_NONCONST), \
+              GENERIC_TYPE_ANY((const float(*)[2])POINTER_OFFSET((ele)->head.data, offset), \
+                               _BM_GENERIC_TYPE_ELEM_CONST)))
+
+#  define BM_ELEM_CD_GET_FLOAT3_P(ele, offset) \
+    (BLI_assert(offset != -1), \
+     _Generic(ele, \
+              GENERIC_TYPE_ANY((float(*)[3])POINTER_OFFSET((ele)->head.data, offset), \
+                               _BM_GENERIC_TYPE_ELEM_NONCONST), \
+              GENERIC_TYPE_ANY((const float(*)[3])POINTER_OFFSET((ele)->head.data, offset), \
+                               _BM_GENERIC_TYPE_ELEM_CONST)))
+
+#else
+
+#  define BM_ELEM_CD_GET_FLOAT_P(ele, offset) \
+    (BLI_assert(offset != -1), (float *)((char *)(ele)->head.data + (offset)))
+
+#  define BM_ELEM_CD_GET_FLOAT2_P(ele, offset) \
+    (BLI_assert(offset != -1), (float(*)[2])((char *)(ele)->head.data + (offset)))
+
+#  define BM_ELEM_CD_GET_FLOAT3_P(ele, offset) \
+    (BLI_assert(offset != -1), (float(*)[3])((char *)(ele)->head.data + (offset)))
+
+#endif
+
+#define BM_ELEM_CD_SET_FLOAT2(ele, offset, f) \
+  { \
+    CHECK_TYPE_NONCONST(ele); \
+    BLI_assert(offset != -1); \
+    ((float *)((char *)(ele)->head.data + (offset)))[0] = (f)[0]; \
+    ((float *)((char *)(ele)->head.data + (offset)))[1] = (f)[1]; \
+  } \
+  (void)0
+
+#define BM_ELEM_CD_SET_FLOAT3(ele, offset, f) \
+  { \
+    CHECK_TYPE_NONCONST(ele); \
+    BLI_assert(offset != -1); \
+    ((float *)((char *)(ele)->head.data + (offset)))[0] = (f)[0]; \
+    ((float *)((char *)(ele)->head.data + (offset)))[1] = (f)[1]; \
+    ((float *)((char *)(ele)->head.data + (offset)))[2] = (f)[2]; \
+  } \
+  (void)0
+
 #define BM_ELEM_CD_GET_FLOAT_AS_UCHAR(ele, offset) \
   (BLI_assert(offset != -1), (uchar)(BM_ELEM_CD_GET_FLOAT(ele, offset) * 255.0f))
 
-/*forward declarations*/
+/* Forward declarations. */
 
 #ifdef USE_BMESH_HOLES
 #  define BM_FACE_FIRST_LOOP(p) (((BMLoopList *)((p)->loops.first))->first)

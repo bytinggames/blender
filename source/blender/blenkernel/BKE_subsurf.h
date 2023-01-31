@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 #pragma once
 
 /** \file
@@ -25,8 +9,9 @@
 /* struct DerivedMesh is used directly */
 #include "BKE_DerivedMesh.h"
 
-/* Thread sync primitives used directly.  */
+/* Thread sync primitives used directly. */
 #include "BLI_threads.h"
+#include "BLI_utildefines.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,7 +33,7 @@ struct SubsurfModifierData;
 
 /**************************** External *****************************/
 
-typedef enum {
+typedef enum SubsurfFlags {
   SUBSURF_USE_RENDER_PARAMS = 1,
   SUBSURF_IS_FINAL_CALC = 2,
   SUBSURF_FOR_EDIT_MODE = 4,
@@ -57,6 +42,7 @@ typedef enum {
   SUBSURF_USE_GPU_BACKEND = 32,
   SUBSURF_IGNORE_SIMPLIFY = 64,
 } SubsurfFlags;
+ENUM_OPERATORS(SubsurfFlags, SUBSURF_IGNORE_SIMPLIFY);
 
 struct DerivedMesh *subsurf_make_derived_from_derived(struct DerivedMesh *dm,
                                                       struct SubsurfModifierData *smd,
@@ -66,25 +52,16 @@ struct DerivedMesh *subsurf_make_derived_from_derived(struct DerivedMesh *dm,
 
 void subsurf_calculate_limit_positions(struct Mesh *me, float (*r_positions)[3]);
 
-/* get gridsize from 'level', level must be greater than zero */
+/**
+ * Get grid-size from 'level', level must be greater than zero.
+ */
 int BKE_ccg_gridsize(int level);
 
-/* x/y grid coordinates at 'low_level' can be multiplied by the result
- * of this function to convert to grid coordinates at 'high_level' */
+/**
+ * X/Y grid coordinates at 'low_level' can be multiplied by the result
+ * of this function to convert to grid coordinates at 'high_level'.
+ */
 int BKE_ccg_factor(int low_level, int high_level);
-
-void subsurf_copy_grid_hidden(struct DerivedMesh *dm,
-                              const struct MPoly *mpoly,
-                              struct MVert *mvert,
-                              const struct MDisps *mdisps);
-
-void subsurf_copy_grid_paint_mask(struct DerivedMesh *dm,
-                                  const struct MPoly *mpoly,
-                                  float *paint_mask,
-                                  const struct GridPaintMask *grid_paint_mask);
-
-bool subsurf_has_edges(struct DerivedMesh *dm);
-bool subsurf_has_faces(struct DerivedMesh *dm);
 
 typedef enum MultiresModifiedFlags {
   /* indicates the grids have been sculpted on, so MDisps

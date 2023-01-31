@@ -1,38 +1,18 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2011, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2011 Blender Foundation. */
 
 #include "COM_OutputFileOperation.h"
-
-#include "COM_MetaData.h"
-
-#include <cstring>
 
 #include "BLI_listbase.h"
 #include "BLI_path_util.h"
 #include "BLI_string.h"
 
-#include "BKE_global.h"
 #include "BKE_image.h"
+#include "BKE_image_format.h"
 #include "BKE_main.h"
 #include "BKE_scene.h"
 
 #include "DNA_color_types.h"
-#include "MEM_guardedalloc.h"
 
 #include "IMB_colormanagement.h"
 #include "IMB_imbuf.h"
@@ -43,9 +23,9 @@
 namespace blender::compositor {
 
 void add_exr_channels(void *exrhandle,
-                      const char *layerName,
+                      const char *layer_name,
                       const DataType datatype,
-                      const char *viewName,
+                      const char *view_name,
                       const size_t width,
                       bool use_half_float,
                       float *buf)
@@ -54,51 +34,63 @@ void add_exr_channels(void *exrhandle,
   switch (datatype) {
     case DataType::Value:
       IMB_exr_add_channel(
-          exrhandle, layerName, "V", viewName, 1, width, buf ? buf : nullptr, use_half_float);
+          exrhandle, layer_name, "V", view_name, 1, width, buf ? buf : nullptr, use_half_float);
       break;
     case DataType::Vector:
-      IMB_exr_add_channel(
-          exrhandle, layerName, "X", viewName, 3, 3 * width, buf ? buf : nullptr, use_half_float);
       IMB_exr_add_channel(exrhandle,
-                          layerName,
+                          layer_name,
+                          "X",
+                          view_name,
+                          3,
+                          3 * width,
+                          buf ? buf : nullptr,
+                          use_half_float);
+      IMB_exr_add_channel(exrhandle,
+                          layer_name,
                           "Y",
-                          viewName,
+                          view_name,
                           3,
                           3 * width,
                           buf ? buf + 1 : nullptr,
                           use_half_float);
       IMB_exr_add_channel(exrhandle,
-                          layerName,
+                          layer_name,
                           "Z",
-                          viewName,
+                          view_name,
                           3,
                           3 * width,
                           buf ? buf + 2 : nullptr,
                           use_half_float);
       break;
     case DataType::Color:
-      IMB_exr_add_channel(
-          exrhandle, layerName, "R", viewName, 4, 4 * width, buf ? buf : nullptr, use_half_float);
       IMB_exr_add_channel(exrhandle,
-                          layerName,
+                          layer_name,
+                          "R",
+                          view_name,
+                          4,
+                          4 * width,
+                          buf ? buf : nullptr,
+                          use_half_float);
+      IMB_exr_add_channel(exrhandle,
+                          layer_name,
                           "G",
-                          viewName,
+                          view_name,
                           4,
                           4 * width,
                           buf ? buf + 1 : nullptr,
                           use_half_float);
       IMB_exr_add_channel(exrhandle,
-                          layerName,
+                          layer_name,
                           "B",
-                          viewName,
+                          view_name,
                           4,
                           4 * width,
                           buf ? buf + 2 : nullptr,
                           use_half_float);
       IMB_exr_add_channel(exrhandle,
-                          layerName,
+                          layer_name,
                           "A",
-                          viewName,
+                          view_name,
                           4,
                           4 * width,
                           buf ? buf + 3 : nullptr,
@@ -111,7 +103,7 @@ void add_exr_channels(void *exrhandle,
 
 void free_exr_channels(void *exrhandle,
                        const RenderData *rd,
-                       const char *layerName,
+                       const char *layer_name,
                        const DataType datatype)
 {
   SceneRenderView *srv;
@@ -127,13 +119,13 @@ void free_exr_channels(void *exrhandle,
     /* the pointer is stored in the first channel of each datatype */
     switch (datatype) {
       case DataType::Value:
-        rect = IMB_exr_channel_rect(exrhandle, layerName, "V", srv->name);
+        rect = IMB_exr_channel_rect(exrhandle, layer_name, "V", srv->name);
         break;
       case DataType::Vector:
-        rect = IMB_exr_channel_rect(exrhandle, layerName, "X", srv->name);
+        rect = IMB_exr_channel_rect(exrhandle, layer_name, "X", srv->name);
         break;
       case DataType::Color:
-        rect = IMB_exr_channel_rect(exrhandle, layerName, "R", srv->name);
+        rect = IMB_exr_channel_rect(exrhandle, layer_name, "R", srv->name);
         break;
       default:
         break;
@@ -158,9 +150,9 @@ int get_datatype_size(DataType datatype)
   }
 }
 
-static float *init_buffer(unsigned int width, unsigned int height, DataType datatype)
+static float *init_buffer(uint width, uint height, DataType datatype)
 {
-  // When initializing the tree during initial load the width and height can be zero.
+  /* When initializing the tree during initial load the width and height can be zero. */
   if (width != 0 && height != 0) {
     int size = get_datatype_size(datatype);
     return (float *)MEM_callocN(width * height * size * sizeof(float), "OutputFile buffer");
@@ -173,7 +165,7 @@ static void write_buffer_rect(rcti *rect,
                               const bNodeTree *tree,
                               SocketReader *reader,
                               float *buffer,
-                              unsigned int width,
+                              uint width,
                               DataType datatype)
 {
   float color[4];
@@ -193,7 +185,7 @@ static void write_buffer_rect(rcti *rect,
 
   for (y = y1; y < y2 && (!breaked); y++) {
     for (x = x1; x < x2 && (!breaked); x++) {
-      reader->readSampled(color, x, y, PixelSampler::Nearest);
+      reader->read_sampled(color, x, y, PixelSampler::Nearest);
 
       for (i = 0; i < size; i++) {
         buffer[offset + i] = color[i];
@@ -208,80 +200,81 @@ static void write_buffer_rect(rcti *rect,
   }
 }
 
-OutputSingleLayerOperation::OutputSingleLayerOperation(
-    const RenderData *rd,
-    const bNodeTree *tree,
-    DataType datatype,
-    ImageFormatData *format,
-    const char *path,
-    const ColorManagedViewSettings *viewSettings,
-    const ColorManagedDisplaySettings *displaySettings,
-    const char *viewName,
-    const bool saveAsRender)
+OutputSingleLayerOperation::OutputSingleLayerOperation(const Scene *scene,
+                                                       const RenderData *rd,
+                                                       const bNodeTree *tree,
+                                                       DataType datatype,
+                                                       const ImageFormatData *format,
+                                                       const char *path,
+                                                       const char *view_name,
+                                                       const bool save_as_render)
 {
-  this->m_rd = rd;
-  this->m_tree = tree;
+  rd_ = rd;
+  tree_ = tree;
 
-  this->addInputSocket(datatype);
+  this->add_input_socket(datatype);
 
-  this->m_outputBuffer = nullptr;
-  this->m_datatype = datatype;
-  this->m_imageInput = nullptr;
+  output_buffer_ = nullptr;
+  datatype_ = datatype;
+  image_input_ = nullptr;
 
-  this->m_format = format;
-  BLI_strncpy(this->m_path, path, sizeof(this->m_path));
+  BKE_image_format_init_for_write(&format_, scene, format);
+  if (!save_as_render) {
+    /* If not saving as render, stop IMB_colormanagement_imbuf_for_write using this
+     * colorspace for conversion. */
+    format_.linear_colorspace_settings.name[0] = '\0';
+  }
 
-  this->m_viewSettings = viewSettings;
-  this->m_displaySettings = displaySettings;
-  this->m_viewName = viewName;
-  this->m_saveAsRender = saveAsRender;
+  BLI_strncpy(path_, path, sizeof(path_));
+
+  view_name_ = view_name;
+  save_as_render_ = save_as_render;
 }
 
-void OutputSingleLayerOperation::initExecution()
+OutputSingleLayerOperation::~OutputSingleLayerOperation()
 {
-  this->m_imageInput = getInputSocketReader(0);
-  this->m_outputBuffer = init_buffer(this->getWidth(), this->getHeight(), this->m_datatype);
+  BKE_image_format_free(&format_);
 }
 
-void OutputSingleLayerOperation::executeRegion(rcti *rect, unsigned int /*tileNumber*/)
+void OutputSingleLayerOperation::init_execution()
 {
-  write_buffer_rect(rect,
-                    this->m_tree,
-                    this->m_imageInput,
-                    this->m_outputBuffer,
-                    this->getWidth(),
-                    this->m_datatype);
+  image_input_ = get_input_socket_reader(0);
+  output_buffer_ = init_buffer(this->get_width(), this->get_height(), datatype_);
 }
 
-void OutputSingleLayerOperation::deinitExecution()
+void OutputSingleLayerOperation::execute_region(rcti *rect, uint /*tile_number*/)
 {
-  if (this->getWidth() * this->getHeight() != 0) {
+  write_buffer_rect(rect, tree_, image_input_, output_buffer_, this->get_width(), datatype_);
+}
 
-    int size = get_datatype_size(this->m_datatype);
-    ImBuf *ibuf = IMB_allocImBuf(this->getWidth(), this->getHeight(), this->m_format->planes, 0);
+void OutputSingleLayerOperation::deinit_execution()
+{
+  if (this->get_width() * this->get_height() != 0) {
+
+    int size = get_datatype_size(datatype_);
+    ImBuf *ibuf = IMB_allocImBuf(this->get_width(), this->get_height(), format_.planes, 0);
     char filename[FILE_MAX];
     const char *suffix;
 
     ibuf->channels = size;
-    ibuf->rect_float = this->m_outputBuffer;
+    ibuf->rect_float = output_buffer_;
     ibuf->mall |= IB_rectfloat;
-    ibuf->dither = this->m_rd->dither_intensity;
+    ibuf->dither = rd_->dither_intensity;
 
-    IMB_colormanagement_imbuf_for_write(
-        ibuf, m_saveAsRender, false, m_viewSettings, m_displaySettings, this->m_format);
+    IMB_colormanagement_imbuf_for_write(ibuf, save_as_render_, false, &format_);
 
-    suffix = BKE_scene_multiview_view_suffix_get(this->m_rd, this->m_viewName);
+    suffix = BKE_scene_multiview_view_suffix_get(rd_, view_name_);
 
     BKE_image_path_from_imformat(filename,
-                                 this->m_path,
+                                 path_,
                                  BKE_main_blendfile_path_from_global(),
-                                 this->m_rd->cfra,
-                                 this->m_format,
-                                 (this->m_rd->scemode & R_EXTENSION) != 0,
+                                 rd_->cfra,
+                                 &format_,
+                                 (rd_->scemode & R_EXTENSION) != 0,
                                  true,
                                  suffix);
 
-    if (0 == BKE_imbuf_write(ibuf, filename, this->m_format)) {
+    if (0 == BKE_imbuf_write(ibuf, filename, &format_)) {
       printf("Cannot save Node File Output to %s\n", filename);
     }
     else {
@@ -290,8 +283,24 @@ void OutputSingleLayerOperation::deinitExecution()
 
     IMB_freeImBuf(ibuf);
   }
-  this->m_outputBuffer = nullptr;
-  this->m_imageInput = nullptr;
+  output_buffer_ = nullptr;
+  image_input_ = nullptr;
+}
+
+void OutputSingleLayerOperation::update_memory_buffer_partial(MemoryBuffer * /*output*/,
+                                                              const rcti &area,
+                                                              Span<MemoryBuffer *> inputs)
+{
+  if (!output_buffer_) {
+    return;
+  }
+
+  MemoryBuffer output_buf(output_buffer_,
+                          COM_data_type_num_channels(datatype_),
+                          this->get_width(),
+                          this->get_height());
+  const MemoryBuffer *input_image = inputs[0];
+  output_buf.copy_from(input_image, area);
 }
 
 /******************************* MultiLayer *******************************/
@@ -302,9 +311,9 @@ OutputOpenExrLayer::OutputOpenExrLayer(const char *name_, DataType datatype_, bo
   this->datatype = datatype_;
   this->use_layer = use_layer_;
 
-  /* these are created in initExecution */
-  this->outputBuffer = nullptr;
-  this->imageInput = nullptr;
+  /* these are created in init_execution */
+  this->output_buffer = nullptr;
+  this->image_input = nullptr;
 }
 
 OutputOpenExrMultiLayerOperation::OutputOpenExrMultiLayerOperation(const Scene *scene,
@@ -313,134 +322,147 @@ OutputOpenExrMultiLayerOperation::OutputOpenExrMultiLayerOperation(const Scene *
                                                                    const char *path,
                                                                    char exr_codec,
                                                                    bool exr_half_float,
-                                                                   const char *viewName)
+                                                                   const char *view_name)
 {
-  this->m_scene = scene;
-  this->m_rd = rd;
-  this->m_tree = tree;
+  scene_ = scene;
+  rd_ = rd;
+  tree_ = tree;
 
-  BLI_strncpy(this->m_path, path, sizeof(this->m_path));
-  this->m_exr_codec = exr_codec;
-  this->m_exr_half_float = exr_half_float;
-  this->m_viewName = viewName;
-  this->setResolutionInputSocketIndex(RESOLUTION_INPUT_ANY);
+  BLI_strncpy(path_, path, sizeof(path_));
+  exr_codec_ = exr_codec;
+  exr_half_float_ = exr_half_float;
+  view_name_ = view_name;
+  this->set_canvas_input_index(RESOLUTION_INPUT_ANY);
 }
 
 void OutputOpenExrMultiLayerOperation::add_layer(const char *name,
                                                  DataType datatype,
                                                  bool use_layer)
 {
-  this->addInputSocket(datatype);
-  this->m_layers.append(OutputOpenExrLayer(name, datatype, use_layer));
+  this->add_input_socket(datatype);
+  layers_.append(OutputOpenExrLayer(name, datatype, use_layer));
 }
 
-StampData *OutputOpenExrMultiLayerOperation::createStampData() const
+StampData *OutputOpenExrMultiLayerOperation::create_stamp_data() const
 {
   /* StampData API doesn't provide functions to modify an instance without having a RenderResult.
    */
   RenderResult render_result;
-  StampData *stamp_data = BKE_stamp_info_from_scene_static(m_scene);
+  StampData *stamp_data = BKE_stamp_info_from_scene_static(scene_);
   render_result.stamp_data = stamp_data;
-  for (const OutputOpenExrLayer &layer : m_layers) {
+  for (const OutputOpenExrLayer &layer : layers_) {
     /* Skip unconnected sockets. */
-    if (layer.imageInput == nullptr) {
+    if (layer.image_input == nullptr) {
       continue;
     }
-    std::unique_ptr<MetaData> meta_data = layer.imageInput->getMetaData();
+    std::unique_ptr<MetaData> meta_data = layer.image_input->get_meta_data();
     if (meta_data) {
       blender::StringRef layer_name =
           blender::bke::cryptomatte::BKE_cryptomatte_extract_layer_name(
               blender::StringRef(layer.name, BLI_strnlen(layer.name, sizeof(layer.name))));
-      meta_data->replaceHashNeutralCryptomatteKeys(layer_name);
-      meta_data->addToRenderResult(&render_result);
+      meta_data->replace_hash_neutral_cryptomatte_keys(layer_name);
+      meta_data->add_to_render_result(&render_result);
     }
   }
   return stamp_data;
 }
 
-void OutputOpenExrMultiLayerOperation::initExecution()
+void OutputOpenExrMultiLayerOperation::init_execution()
 {
-  for (unsigned int i = 0; i < this->m_layers.size(); i++) {
-    if (this->m_layers[i].use_layer) {
-      SocketReader *reader = getInputSocketReader(i);
-      this->m_layers[i].imageInput = reader;
-      this->m_layers[i].outputBuffer = init_buffer(
-          this->getWidth(), this->getHeight(), this->m_layers[i].datatype);
+  for (uint i = 0; i < layers_.size(); i++) {
+    if (layers_[i].use_layer) {
+      SocketReader *reader = get_input_socket_reader(i);
+      layers_[i].image_input = reader;
+      layers_[i].output_buffer = init_buffer(
+          this->get_width(), this->get_height(), layers_[i].datatype);
     }
   }
 }
 
-void OutputOpenExrMultiLayerOperation::executeRegion(rcti *rect, unsigned int /*tileNumber*/)
+void OutputOpenExrMultiLayerOperation::execute_region(rcti *rect, uint /*tile_number*/)
 {
-  for (unsigned int i = 0; i < this->m_layers.size(); i++) {
-    OutputOpenExrLayer &layer = this->m_layers[i];
-    if (layer.imageInput) {
-      write_buffer_rect(rect,
-                        this->m_tree,
-                        layer.imageInput,
-                        layer.outputBuffer,
-                        this->getWidth(),
-                        layer.datatype);
+  for (uint i = 0; i < layers_.size(); i++) {
+    OutputOpenExrLayer &layer = layers_[i];
+    if (layer.image_input) {
+      write_buffer_rect(
+          rect, tree_, layer.image_input, layer.output_buffer, this->get_width(), layer.datatype);
     }
   }
 }
 
-void OutputOpenExrMultiLayerOperation::deinitExecution()
+void OutputOpenExrMultiLayerOperation::deinit_execution()
 {
-  unsigned int width = this->getWidth();
-  unsigned int height = this->getHeight();
+  uint width = this->get_width();
+  uint height = this->get_height();
   if (width != 0 && height != 0) {
     char filename[FILE_MAX];
     const char *suffix;
     void *exrhandle = IMB_exr_get_handle();
 
-    suffix = BKE_scene_multiview_view_suffix_get(this->m_rd, this->m_viewName);
+    suffix = BKE_scene_multiview_view_suffix_get(rd_, view_name_);
     BKE_image_path_from_imtype(filename,
-                               this->m_path,
+                               path_,
                                BKE_main_blendfile_path_from_global(),
-                               this->m_rd->cfra,
+                               rd_->cfra,
                                R_IMF_IMTYPE_MULTILAYER,
-                               (this->m_rd->scemode & R_EXTENSION) != 0,
+                               (rd_->scemode & R_EXTENSION) != 0,
                                true,
                                suffix);
     BLI_make_existing_file(filename);
 
-    for (unsigned int i = 0; i < this->m_layers.size(); i++) {
-      OutputOpenExrLayer &layer = this->m_layers[i];
-      if (!layer.imageInput) {
+    for (uint i = 0; i < layers_.size(); i++) {
+      OutputOpenExrLayer &layer = layers_[i];
+      if (!layer.image_input) {
         continue; /* skip unconnected sockets */
       }
 
       add_exr_channels(exrhandle,
-                       this->m_layers[i].name,
-                       this->m_layers[i].datatype,
+                       layers_[i].name,
+                       layers_[i].datatype,
                        "",
                        width,
-                       this->m_exr_half_float,
-                       this->m_layers[i].outputBuffer);
+                       exr_half_float_,
+                       layers_[i].output_buffer);
     }
 
     /* when the filename has no permissions, this can fail */
-    StampData *stamp_data = createStampData();
-    if (IMB_exr_begin_write(exrhandle, filename, width, height, this->m_exr_codec, stamp_data)) {
+    StampData *stamp_data = create_stamp_data();
+    if (IMB_exr_begin_write(exrhandle, filename, width, height, exr_codec_, stamp_data)) {
       IMB_exr_write_channels(exrhandle);
     }
     else {
-      /* TODO, get the error from openexr's exception */
-      /* XXX nice way to do report? */
+      /* TODO: get the error from openexr's exception. */
+      /* XXX: nice way to do report? */
       printf("Error Writing Render Result, see console\n");
     }
 
     IMB_exr_close(exrhandle);
-    for (unsigned int i = 0; i < this->m_layers.size(); i++) {
-      if (this->m_layers[i].outputBuffer) {
-        MEM_freeN(this->m_layers[i].outputBuffer);
-        this->m_layers[i].outputBuffer = nullptr;
+    for (uint i = 0; i < layers_.size(); i++) {
+      if (layers_[i].output_buffer) {
+        MEM_freeN(layers_[i].output_buffer);
+        layers_[i].output_buffer = nullptr;
       }
 
-      this->m_layers[i].imageInput = nullptr;
+      layers_[i].image_input = nullptr;
     }
     BKE_stamp_data_free(stamp_data);
+  }
+}
+
+void OutputOpenExrMultiLayerOperation::update_memory_buffer_partial(MemoryBuffer * /*output*/,
+                                                                    const rcti &area,
+                                                                    Span<MemoryBuffer *> inputs)
+{
+  const MemoryBuffer *input_image = inputs[0];
+  for (int i = 0; i < layers_.size(); i++) {
+    OutputOpenExrLayer &layer = layers_[i];
+    if (layer.output_buffer) {
+      MemoryBuffer output_buf(layer.output_buffer,
+                              COM_data_type_num_channels(layer.datatype),
+                              this->get_width(),
+                              this->get_height());
+      output_buf.copy_from(input_image, area);
+    }
   }
 }
 

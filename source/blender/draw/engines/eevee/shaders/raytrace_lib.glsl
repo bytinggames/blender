@@ -51,7 +51,8 @@ void raytrace_screenspace_ray_finalize(inout ScreenSpaceRay ray)
   }
   float ray_len_sqr = len_squared(ray.direction.xyz);
   /* Make ray.direction cover one pixel. */
-  bool is_more_vertical = abs(ray.direction.x) < abs(ray.direction.y);
+  bool is_more_vertical = abs(ray.direction.x / ssrPixelSize.x) <
+                          abs(ray.direction.y / ssrPixelSize.y);
   ray.direction /= (is_more_vertical) ? abs(ray.direction.y) : abs(ray.direction.x);
   ray.direction *= (is_more_vertical) ? ssrPixelSize.y : ssrPixelSize.x;
   /* Clip to segment's end. */
@@ -90,7 +91,7 @@ ScreenSpaceRay raytrace_screenspace_ray_create(Ray ray, float thickness)
 }
 
 struct RayTraceParameters {
-  /** ViewSpace thickness the objects  */
+  /** ViewSpace thickness the objects. */
   float thickness;
   /** Jitter along the ray to avoid banding artifact when steps are too large. */
   float jitter;
@@ -101,7 +102,7 @@ struct RayTraceParameters {
 };
 
 /* Returns true on hit. */
-/* TODO fclem remove the backface check and do it the SSR resolve code. */
+/* TODO(fclem): remove the back-face check and do it the SSR resolve code. */
 bool raytrace(Ray ray,
               RayTraceParameters params,
               const bool discard_backface,
@@ -151,7 +152,7 @@ bool raytrace(Ray ray,
     /* ... and above it with the added thickness. */
     hit = hit && (delta > ss_p.z - ss_p.w || abs(delta) < abs(ssray.direction.z * stride * 2.0));
   }
-  /* Discard backface hits. */
+  /* Discard back-face hits. */
   hit = hit && !(discard_backface && prev_delta < 0.0);
   /* Reject hit if background. */
   hit = hit && (depth_sample != 1.0);

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -88,7 +74,7 @@ static short plane_point_test_v3(const float plane[4],
  *
  * Hide flag access
  * (for more readable code since same flag is used differently for vert/edge-face).
- */
+ * \{ */
 
 /** Enable when vertex is in the center and its faces have been added to the stack. */
 BLI_INLINE void vert_is_center_enable(BMVert *v)
@@ -184,7 +170,7 @@ static void bm_face_bisect_verts(
       BLI_assert(BM_VERT_DIR(l_iter->v) == 0);
 
       /* If both are -1 or 1, or both are zero: don't flip 'inside' var while walking. */
-      BM_VERT_SKIP(l_iter->v) = (((BM_VERT_DIR(l_iter->prev->v) ^ BM_VERT_DIR(l_iter->next->v))) ==
+      BM_VERT_SKIP(l_iter->v) = ((BM_VERT_DIR(l_iter->prev->v) ^ BM_VERT_DIR(l_iter->next->v)) ==
                                  0);
 
       STACK_PUSH(vert_split_arr, l_iter->v);
@@ -368,7 +354,7 @@ static void bm_face_bisect_verts(
             }
           }
 
-          /* Ideally wont happen, but it can for self intersecting faces. */
+          /* Ideally won't happen, but it can for self-intersecting faces. */
           // BLI_assert(found == true);
 
           /* In fact this simple test is good enough, test if the loops are adjacent. */
@@ -411,11 +397,6 @@ finally:
 /** \name Public BMesh Bisect Function
  * \{ */
 
-/**
- * \param use_snap_center: Snap verts onto the plane.
- * \param use_tag: Only bisect tagged edges and faces.
- * \param oflag_center: Operator flag, enabled for geometry on the axis (existing and created)
- */
 void BM_mesh_bisect_plane(BMesh *bm,
                           const float plane[4],
                           const bool use_snap_center,
@@ -482,7 +463,7 @@ void BM_mesh_bisect_plane(BMesh *bm,
     }
 
     vert_is_center_disable(v);
-    BM_VERT_DIR(v) = plane_point_test_v3(plane, v->co, eps, &(BM_VERT_DIST(v)));
+    BM_VERT_DIR(v) = plane_point_test_v3(plane, v->co, eps, &BM_VERT_DIST(v));
 
     if (BM_VERT_DIR(v) == 0) {
       if (oflag_center) {

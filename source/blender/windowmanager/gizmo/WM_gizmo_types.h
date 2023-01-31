@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2016 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup wm
@@ -29,6 +13,7 @@
 #pragma once
 
 #include "BLI_compiler_attrs.h"
+#include "BLI_utildefines.h"
 
 struct wmGizmo;
 struct wmGizmoGroup;
@@ -99,6 +84,8 @@ typedef enum eWM_GizmoFlag {
   WM_GIZMO_NO_TOOLTIP = (1 << 12),
 } eWM_GizmoFlag;
 
+ENUM_OPERATORS(eWM_GizmoFlag, WM_GIZMO_NO_TOOLTIP);
+
 /**
  * #wmGizmoGroupType.flag
  * Flags that influence the behavior of all gizmos in the group.
@@ -107,7 +94,7 @@ typedef enum eWM_GizmoFlagGroupTypeFlag {
   /** Mark gizmo-group as being 3D */
   WM_GIZMOGROUPTYPE_3D = (1 << 0),
   /** Scale gizmos as 3D object that respects zoom (otherwise zoom independent draw size).
-   * note: currently only for 3D views, 2D support needs adding. */
+   * NOTE: currently only for 3D views, 2D support needs adding. */
   WM_GIZMOGROUPTYPE_SCALE = (1 << 1),
   /** Gizmos can be depth culled with scene objects (covered by other geometry - TODO) */
   WM_GIZMOGROUPTYPE_DEPTH_3D = (1 << 2),
@@ -115,8 +102,15 @@ typedef enum eWM_GizmoFlagGroupTypeFlag {
   WM_GIZMOGROUPTYPE_SELECT = (1 << 3),
   /** The gizmo group is to be kept (not removed on loading a new file for eg). */
   WM_GIZMOGROUPTYPE_PERSISTENT = (1 << 4),
-  /** Show all other gizmos when interacting. */
+  /**
+   * Show all other gizmos when interacting.
+   * Also show this group when another group is being interacted with.
+   */
   WM_GIZMOGROUPTYPE_DRAW_MODAL_ALL = (1 << 5),
+
+  /** Don't draw this gizmo group when it is modal. */
+  WM_GIZMOGROUPTYPE_DRAW_MODAL_EXCLUDE = (1 << 6),
+
   /**
    * When used with tool, only run when activating the tool,
    * instead of linking the gizmo while the tool is active.
@@ -127,7 +121,7 @@ typedef enum eWM_GizmoFlagGroupTypeFlag {
    * when a tool can activate multiple operators based on the key-map.
    * We could even move the options into the key-map item.
    * ~ campbell. */
-  WM_GIZMOGROUPTYPE_TOOL_INIT = (1 << 6),
+  WM_GIZMOGROUPTYPE_TOOL_INIT = (1 << 7),
 
   /**
    * This gizmo type supports using the fallback tools keymap.
@@ -135,7 +129,7 @@ typedef enum eWM_GizmoFlagGroupTypeFlag {
    *
    * Often useful in combination with #WM_GIZMOGROUPTYPE_DELAY_REFRESH_FOR_TWEAK
    */
-  WM_GIZMOGROUPTYPE_TOOL_FALLBACK_KEYMAP = (1 << 7),
+  WM_GIZMOGROUPTYPE_TOOL_FALLBACK_KEYMAP = (1 << 8),
 
   /**
    * Use this from a gizmos refresh callback so we can postpone the refresh operation
@@ -144,17 +138,19 @@ typedef enum eWM_GizmoFlagGroupTypeFlag {
    *
    * The result for the user is tweak events delay the gizmo from flashing under the users cursor,
    * for selection operations. This means gizmos that use this check don't interfere
-   * with click drag events by popping up under the cursor and catching the tweak event.
+   * with click-drag events by popping up under the cursor and catching the drag-drag event.
    */
-  WM_GIZMOGROUPTYPE_DELAY_REFRESH_FOR_TWEAK = (1 << 8),
+  WM_GIZMOGROUPTYPE_DELAY_REFRESH_FOR_TWEAK = (1 << 9),
 
   /**
    * Cause continuous redraws, i.e. set the region redraw flag on every main loop iteration. This
    * should really be avoided by using proper region redraw tagging, notifiers and the message-bus,
    * however for VR it's sometimes needed.
    */
-  WM_GIZMOGROUPTYPE_VR_REDRAWS = (1 << 9),
+  WM_GIZMOGROUPTYPE_VR_REDRAWS = (1 << 10),
 } eWM_GizmoFlagGroupTypeFlag;
+
+ENUM_OPERATORS(eWM_GizmoFlagGroupTypeFlag, WM_GIZMOGROUPTYPE_VR_REDRAWS);
 
 /**
  * #wmGizmoGroup.init_flag
@@ -184,14 +180,14 @@ typedef enum eWM_GizmoFlagMapTypeUpdateFlag {
 
 /**
  * \brief Gizmo tweak flag.
- * Bitflag passed to gizmo while tweaking.
+ * Bit-flag passed to gizmo while tweaking.
  *
- * \note Gizmos are responsible for handling this #wmGizmo.modal callback!.
+ * \note Gizmos are responsible for handling this #wmGizmo.modal callback.
  */
 typedef enum {
   /* Drag with extra precision (Shift). */
   WM_GIZMO_TWEAK_PRECISE = (1 << 0),
-  /* Drag with snap enabled (Ctrl).  */
+  /* Drag with snap enabled (Ctrl). */
   WM_GIZMO_TWEAK_SNAP = (1 << 1),
 } eWM_GizmoFlagTweak;
 
@@ -301,7 +297,7 @@ typedef struct wmGizmoProperty {
   PropertyRNA *prop;
   int index;
 
-  /* Optional functions for converting to/from RNA  */
+  /* Optional functions for converting to/from RNA. */
   struct {
     wmGizmoPropertyFnGet value_get_fn;
     wmGizmoPropertyFnSet value_set_fn;
@@ -341,7 +337,7 @@ typedef struct wmGizmoType {
   const char *idname; /* MAX_NAME */
 
   /** Set to 'sizeof(wmGizmo)' or larger for instances of this type,
-   * use so we can cant to other types without the hassle of a custom-data pointer. */
+   * use so we can cast to other types without the hassle of a custom-data pointer. */
   uint struct_size;
 
   /** Initialize struct (calloc'd 'struct_size' region). */
@@ -373,7 +369,7 @@ typedef struct wmGizmoType {
 
   /**
    * Returns screen-space bounding box in the window space
-   * (compatible with #wmEvent.x #wmEvent.y).
+   * (compatible with #wmEvent.xy).
    *
    * Used for tool-tip placement (otherwise the cursor location is used).
    */
@@ -445,7 +441,7 @@ typedef struct wmGizmoGroupType {
   /** Only for convenient removal. */
   struct wmKeyConfig *keyconf;
 
-  /* Note: currently gizmo-group instances don't store properties,
+  /* NOTE: currently gizmo-group instances don't store properties,
    * they're kept in the tool properties. */
 
   /** RNA for properties. */
@@ -494,8 +490,6 @@ typedef struct wmGizmoGroup {
   } hide;
 
   bool tag_remove;
-
-  bool use_fallback_keymap;
 
   void *customdata;
   /** For freeing customdata from above. */

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edmesh
@@ -220,8 +206,8 @@ static void gizmo_mesh_placement_modal_from_setup(const bContext *C, wmGizmoGrou
       float location[3];
       calc_initial_placement_point_from_view((bContext *)C,
                                              (float[2]){
-                                                 win->eventstate->x - region->winrct.xmin,
-                                                 win->eventstate->y - region->winrct.ymin,
+                                                 win->eventstate->xy[0] - region->winrct.xmin,
+                                                 win->eventstate->xy[1] - region->winrct.ymin,
                                              },
                                              location,
                                              mat3);
@@ -330,8 +316,8 @@ static int add_primitive_cube_gizmo_exec(bContext *C, wmOperator *op)
     PropertyRNA *prop_matrix = RNA_struct_find_property(op->ptr, "matrix");
     if (RNA_property_is_set(op->ptr, prop_matrix)) {
       RNA_property_float_get_array(op->ptr, prop_matrix, &matrix[0][0]);
-      invert_m4_m4(obedit->imat, obedit->obmat);
-      mul_m4_m4m4(matrix, obedit->imat, matrix);
+      invert_m4_m4(obedit->world_to_object, obedit->object_to_world);
+      mul_m4_m4m4(matrix, obedit->world_to_object, matrix);
     }
     else {
       /* For the first update the widget may not set the matrix. */
@@ -342,7 +328,7 @@ static int add_primitive_cube_gizmo_exec(bContext *C, wmOperator *op)
   const bool calc_uvs = RNA_boolean_get(op->ptr, "calc_uvs");
 
   if (calc_uvs) {
-    ED_mesh_uv_texture_ensure(obedit->data, NULL);
+    ED_mesh_uv_ensure(obedit->data, NULL);
   }
 
   if (!EDBM_op_call_and_selectf(em,
@@ -357,7 +343,12 @@ static int add_primitive_cube_gizmo_exec(bContext *C, wmOperator *op)
   }
 
   EDBM_selectmode_flush_ex(em, SCE_SELECT_VERTEX);
-  EDBM_update_generic(obedit->data, true, true);
+  EDBM_update(obedit->data,
+              &(const struct EDBMUpdate_Params){
+                  .calc_looptri = true,
+                  .calc_normals = false,
+                  .is_destructive = true,
+              });
 
   return OPERATOR_FINISHED;
 }

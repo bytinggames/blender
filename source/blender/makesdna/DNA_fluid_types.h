@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2006 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2006 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup DNA
@@ -198,11 +182,6 @@ enum {
   FLUID_DOMAIN_TYPE_LIQUID = 1,
 };
 
-/* Smoke noise types. */
-enum {
-  FLUID_NOISE_TYPE_WAVELET = (1 << 0),
-};
-
 /* Mesh levelset generator types. */
 enum {
   FLUID_DOMAIN_MESH_IMPROVED = 0,
@@ -289,7 +268,7 @@ enum {
 #define FLUID_NAME_PARTICLES "fluid_particles"
 #define FLUID_NAME_GUIDING "fluid_guiding"
 
-/* Fluid object names.*/
+/* Fluid object names. */
 #define FLUID_NAME_FLAGS "flags"       /* == OpenVDB grid attribute name. */
 #define FLUID_NAME_VELOCITY "velocity" /* == OpenVDB grid attribute name. */
 #define FLUID_NAME_VEL "vel"
@@ -485,10 +464,6 @@ enum {
   SM_HRES_FULLSAMPLE = 2,
 };
 
-typedef struct FluidDomainVertexVelocity {
-  float vel[3];
-} FluidDomainVertexVelocity;
-
 typedef struct FluidDomainSettings {
 
   /* -- Runtime-only fields (from here on). -- */
@@ -514,8 +489,6 @@ typedef struct FluidDomainSettings {
   struct GPUTexture *tex_flags;
   struct GPUTexture *tex_range_field;
   struct Object *guide_parent;
-  /** Vertex velocities of simulated fluid mesh. */
-  struct FluidDomainVertexVelocity *mesh_velocities;
   struct EffectorWeights *effector_weights;
 
   /* Domain object data. */
@@ -524,7 +497,7 @@ typedef struct FluidDomainSettings {
   float p1[3];          /* End point of BB in local space. */
   float dp0[3];         /* Difference from object center to grid start point. */
   float cell_size[3];   /* Size of simulation cell in local space. */
-  float global_size[3]; /* Global size of domain axises. */
+  float global_size[3]; /* Global size of domain axes. */
   float prev_loc[3];
   int shift[3];         /* Current domain shift in simulation cells. */
   float shift_f[3];     /* Exact domain shift. */
@@ -544,7 +517,7 @@ typedef struct FluidDomainSettings {
   int boundary_width;     /* Usually this is just 1. */
   float gravity_final[3]; /* Scene or domain gravity multiplied with gravity weight. */
 
-  /* -- User-accesible fields (from here on). -- */
+  /* -- User-accessible fields (from here on). -- */
 
   /* Adaptive domain options. */
   int adapt_margin;
@@ -580,8 +553,7 @@ typedef struct FluidDomainSettings {
   float noise_time_anim;
   int res_noise[3];
   int noise_scale;
-  short noise_type; /* Noise type: wave, curl, anisotropic. */
-  char _pad3[2];    /* Unused. */
+  char _pad3[4]; /* Unused. */
 
   /* Liquid domain options. */
   float particle_randomness;
@@ -613,9 +585,8 @@ typedef struct FluidDomainSettings {
   int mesh_smoothen_pos;
   int mesh_smoothen_neg;
   int mesh_scale;
-  int totvert;
   short mesh_generator;
-  char _pad6[6]; /* Unused. */
+  char _pad6[2]; /* Unused. */
 
   /* Secondary particle options. */
   int particle_type;
@@ -699,7 +670,10 @@ typedef struct FluidDomainSettings {
   char interp_method;
   char gridlines_color_field; /* Simulation field used to color map onto gridlines. */
   char gridlines_cell_filter;
-  char _pad10[7]; /* Unused. */
+  char _pad10[3]; /* Unused. */
+
+  /* Velocity factor for motion blur rendering. */
+  float velocity_scale;
 
   /* OpenVDB cache options. */
   int openvdb_compression;
@@ -707,7 +681,7 @@ typedef struct FluidDomainSettings {
   char openvdb_data_depth;
   char _pad11[7]; /* Unused. */
 
-  /* -- Deprecated / unsed options (below). -- */
+  /* -- Deprecated / unused options (below). -- */
 
   /* View options. */
   int viewsettings;
@@ -790,7 +764,7 @@ typedef struct FluidFlowSettings {
   float vel_coord[3];
   char _pad1[4];
 
-  /* -- User-accesible fields (from here on). -- */
+  /* -- User-accessible fields (from here on). -- */
 
   /* Emission. */
   float density;
@@ -813,8 +787,8 @@ typedef struct FluidFlowSettings {
   char uvlayer_name[64];
   short vgroup_density;
 
-  short type;     /* Smoke, flames, both, outflow, liquid.  */
-  short behavior; /* Inflow, outflow, static.  */
+  short type;     /* Smoke, flames, both, outflow, liquid. */
+  short behavior; /* Inflow, outflow, static. */
   short source;
   short texture_type;
   short _pad3[3];
@@ -856,7 +830,7 @@ typedef struct FluidEffectorSettings {
   float *verts_old;
   int numverts;
 
-  /* -- User-accesible fields (from here on). -- */
+  /* -- User-accessible fields (from here on). -- */
 
   float surface_distance; /* Thickness of mesh surface, used in obstacle sdf. */
   int flags;

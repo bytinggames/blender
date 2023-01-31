@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2017, Blender Foundation
- * This is a new part of Blender
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2017 Blender Foundation. */
 
 /** \file
  * \ingroup modifiers
@@ -25,14 +9,11 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "BLI_utildefines.h"
-
 #include "BLI_hash.h"
+#include "BLI_listbase.h"
+#include "BLI_math_vector.h"
 #include "BLI_rand.h"
-
-#include "BLI_blenlib.h"
-#include "BLI_math.h"
-#include "BLI_rand.h"
+#include "BLI_utildefines.h"
 
 #include "BLT_translation.h"
 
@@ -120,17 +101,57 @@ static void BKE_gpencil_instance_modifier_instance_tfm(Object *ob,
     float obinv[4][4];
 
     unit_m4(mat_offset);
-    add_v3_v3(mat_offset[3], mmd->offset);
-    invert_m4_m4(obinv, ob->obmat);
+    if (mmd->flag & GP_ARRAY_USE_OFFSET) {
+      add_v3_v3(mat_offset[3], mmd->offset);
+    }
+    invert_m4_m4(obinv, ob->object_to_world);
 
-    mul_m4_series(r_offset, mat_offset, obinv, mmd->object->obmat);
+    mul_m4_series(r_offset, mat_offset, obinv, mmd->object->object_to_world);
     copy_m4_m4(mat_offset, r_offset);
 
     /* clear r_mat locations to avoid double transform */
     zero_v3(r_mat[3]);
   }
 }
+static bool gpencil_data_selected_minmax(ArrayGpencilModifierData *mmd,
+                                         Object *ob,
+                                         float r_min[3],
+                                         float r_max[3])
+{
+  bGPdata *gpd = (bGPdata *)ob->data;
+  bool changed = false;
 
+  INIT_MINMAX(r_min, r_max);
+
+  if (gpd == NULL) {
+    return changed;
+  }
+
+  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
+    bGPDframe *gpf = gpl->actframe;
+
+    if (gpf != NULL) {
+      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
+        if (is_stroke_affected_by_modifier(ob,
+                                           mmd->layername,
+                                           mmd->material,
+                                           mmd->pass_index,
+                                           mmd->layer_pass,
+                                           1,
+                                           gpl,
+                                           gps,
+                                           mmd->flag & GP_ARRAY_INVERT_LAYER,
+                                           mmd->flag & GP_ARRAY_INVERT_PASS,
+                                           mmd->flag & GP_ARRAY_INVERT_LAYERPASS,
+                                           mmd->flag & GP_ARRAY_INVERT_MATERIAL)) {
+          changed |= BKE_gpencil_stroke_minmax(gps, false, r_min, r_max);
+        }
+      }
+    }
+  }
+
+  return changed;
+}
 /* array modifier - generate geometry callback (for viewport/rendering) */
 static void generate_geometry(GpencilModifierData *md,
                               Depsgraph *depsgraph,
@@ -146,13 +167,13 @@ static void generate_geometry(GpencilModifierData *md,
   /* Get bounbox for relative offset. */
   float size[3] = {0.0f, 0.0f, 0.0f};
   if (mmd->flag & GP_ARRAY_USE_RELATIVE) {
-    BoundBox *bb = BKE_object_boundbox_get(ob);
-    const float min[3] = {-1.0f, -1.0f, -1.0f}, max[3] = {1.0f, 1.0f, 1.0f};
-    BKE_boundbox_init_from_minmax(bb, min, max);
-    BKE_boundbox_calc_size_aabb(bb, size);
-    mul_v3_fl(size, 2.0f);
-    /* Need a minimum size (for flat drawings). */
-    CLAMP3_MIN(size, 0.01f);
+    float min[3];
+    float max[3];
+    if (gpencil_data_selected_minmax(mmd, ob, min, max)) {
+      sub_v3_v3v3(size, max, min);
+      /* Need a minimum size (for flat drawings). */
+      CLAMP3_MIN(size, 0.01f);
+    }
   }
 
   int seed = mmd->seed;
@@ -464,7 +485,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 GpencilModifierTypeInfo modifierType_Gpencil_Array = {
-    /* name */ "Array",
+    /* name */ N_("Array"),
     /* structName */ "ArrayGpencilModifierData",
     /* structSize */ sizeof(ArrayGpencilModifierData),
     /* type */ eGpencilModifierTypeType_Gpencil,

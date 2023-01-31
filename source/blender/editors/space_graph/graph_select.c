@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. */
 
 /** \file
  * \ingroup spgraph
@@ -56,8 +41,9 @@
 
 #include "graph_intern.h"
 
-/* ************************************************************************** */
-/* KEYFRAMES STUFF */
+/* -------------------------------------------------------------------- */
+/** \name Internal Keyframe Utilities
+ * \{ */
 
 /* temp info for caching handle vertices close */
 typedef struct tNearestVertInfo {
@@ -167,7 +153,7 @@ static void nearest_fcurve_vert_store(ListBase *matches,
     }
   }
   else if (fpt) {
-    /* TODO... */
+    /* TODO: support #FPoint. */
   }
 }
 
@@ -186,7 +172,8 @@ static void get_nearest_fcurve_verts_list(bAnimContext *ac, const int mval[2], L
    * - if the option to only show keyframes that belong to selected F-Curves is enabled,
    *   include the 'only selected' flag...
    */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+            ANIMFILTER_NODUPLIS | ANIMFILTER_FCURVESONLY);
   if (sipo->flag &
       SIPO_SELCUVERTSONLY) { /* FIXME: this should really be check for by the filtering code... */
     filter |= ANIMFILTER_SEL;
@@ -257,7 +244,7 @@ static void get_nearest_fcurve_verts_list(bAnimContext *ac, const int mval[2], L
       }
     }
     else if (fcu->fpt) {
-      /* TODO; do this for samples too */
+      /* TODO: do this for samples too. */
     }
 
     /* un-apply NLA mapping from all the keyframes */
@@ -334,23 +321,17 @@ static tNearestVertInfo *find_nearest_fcurve_vert(bAnimContext *ac, const int mv
   return nvi;
 }
 
-/* ******************** Deselect All Operator ***************************** */
-/* This operator works in one of three ways:
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Deselect All Operator
+ *
+ * This operator works in one of three ways:
  * 1) (de)select all (AKEY) - test if select all or deselect all
  * 2) invert all (CTRL-IKEY) - invert selection of all keyframes
  * 3) (de)select all - no testing is done; only for use internal tools as normal function...
- */
+ * \{ */
 
-/* Deselects keyframes in the Graph Editor
- * - This is called by the deselect all operator, as well as other ones!
- *
- * - test: check if select or deselect all
- * - sel: how to select keyframes
- *   0 = deselect
- *   1 = select
- *   2 = invert
- * - do_channels: whether to affect selection status of channels
- */
 void deselect_graph_keys(bAnimContext *ac, bool test, short sel, bool do_channels)
 {
   ListBase anim_data = {NULL, NULL};
@@ -362,7 +343,8 @@ void deselect_graph_keys(bAnimContext *ac, bool test, short sel, bool do_channel
   KeyframeEditFunc test_cb, sel_cb;
 
   /* determine type-based settings */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+            ANIMFILTER_NODUPLIS);
 
   /* filter data */
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
@@ -490,8 +472,12 @@ void GRAPH_OT_select_all(wmOperatorType *ot)
   WM_operator_properties_select_all(ot);
 }
 
-/* ******************** Box Select Operator **************************** */
-/* This operator currently works in one of three ways:
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Box Select Operator
+ *
+ * This operator currently works in one of three ways:
  * -> BKEY     - 1) all keyframes within region are selected (validation with BEZT_OK_REGION)
  * -> ALT-BKEY - depending on which axis of the region was larger...
  *    -> 2) x-axis, so select all frames within frame range (validation with BEZT_OK_FRAMERANGE)
@@ -499,7 +485,7 @@ void GRAPH_OT_select_all(wmOperatorType *ot)
  *          (validation with BEZT_OK_VALUERANGE).
  *
  * The selection backend is also reused for the Lasso and Circle select operators.
- */
+ * \{ */
 
 static rctf initialize_box_select_coords(const bAnimContext *ac, const rctf *rectf_view)
 {
@@ -512,16 +498,20 @@ static rctf initialize_box_select_coords(const bAnimContext *ac, const rctf *rec
   return rectf;
 }
 
-static ListBase initialize_box_select_anim_data(const SpaceGraph *sipo, bAnimContext *ac)
+static int initialize_animdata_selection_filter(const SpaceGraph *sipo)
 {
-  ListBase anim_data = {NULL, NULL};
-
-  int filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+  int filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+                ANIMFILTER_NODUPLIS);
   if (sipo->flag & SIPO_SELCUVERTSONLY) {
     filter |= ANIMFILTER_FOREDIT | ANIMFILTER_SELEDIT;
   }
-  ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
+  return filter;
+}
 
+static ListBase initialize_box_select_anim_data(const int filter, bAnimContext *ac)
+{
+  ListBase anim_data = {NULL, NULL};
+  ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
   return anim_data;
 }
 
@@ -569,12 +559,16 @@ static void initialize_box_select_key_editing_data(const SpaceGraph *sipo,
   *r_mapping_flag |= ANIM_get_normalization_flags(ac);
 }
 
-/* Box Select only selects keyframes, as overshooting handles often get caught too,
+/**
+ * Box Select only selects keyframes, as overshooting handles often get caught too,
  * which means that they may be inadvertently moved as well. However, incl_handles overrides
  * this, and allow handles to be considered independently too.
  * Also, for convenience, handles should get same status as keyframe (if it was within bounds).
+ *
+ * This function returns true if there was any change in the selection of a key (selecting or
+ * deselecting any key returns true, otherwise it returns false).
  */
-static void box_select_graphkeys(bAnimContext *ac,
+static bool box_select_graphkeys(bAnimContext *ac,
                                  const rctf *rectf_view,
                                  short mode,
                                  short selectmode,
@@ -583,19 +577,23 @@ static void box_select_graphkeys(bAnimContext *ac,
 {
   const rctf rectf = initialize_box_select_coords(ac, rectf_view);
   SpaceGraph *sipo = (SpaceGraph *)ac->sl;
-  ListBase anim_data = initialize_box_select_anim_data(sipo, ac);
+  const int filter = initialize_animdata_selection_filter(sipo);
+  ListBase anim_data = initialize_box_select_anim_data(filter, ac);
   rctf scaled_rectf;
   KeyframeEditData ked;
   int mapping_flag;
   initialize_box_select_key_editing_data(
       sipo, incl_handles, mode, ac, data, &scaled_rectf, &ked, &mapping_flag);
 
-  /* Get beztriple editing/validation funcs.  */
+  /* Get beztriple editing/validation functions. */
   const KeyframeEditFunc select_cb = ANIM_editkeyframes_select(selectmode);
   const KeyframeEditFunc ok_cb = ANIM_editkeyframes_ok(mode);
 
   /* Try selecting the keyframes. */
   bAnimListElem *ale = NULL;
+
+  /* This variable will be set to true if any key is selected or deselected. */
+  bool any_key_selection_changed = false;
 
   /* First loop over data, doing box select. try selecting keys only. */
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -634,7 +632,7 @@ static void box_select_graphkeys(bAnimContext *ac,
     if (ANIM_fcurve_keyframes_loop(&ked, fcu, NULL, ok_cb, NULL)) {
       /* select keyframes that are in the appropriate places */
       ANIM_fcurve_keyframes_loop(&ked, fcu, ok_cb, select_cb, NULL);
-
+      any_key_selection_changed = true;
       /* Only change selection of channel when the visibility of keyframes
        * doesn't depend on this. */
       if ((sipo->flag & SIPO_SELCUVERTSONLY) == 0) {
@@ -653,6 +651,145 @@ static void box_select_graphkeys(bAnimContext *ac,
 
   /* Cleanup. */
   ANIM_animdata_freelist(&anim_data);
+
+  return any_key_selection_changed;
+}
+
+/**
+ * This function is used to set all the keyframes of a given curve as selectable
+ * by the "select_cb" function inside of "box_select_graphcurves".
+ */
+static short ok_bezier_always_ok(KeyframeEditData *UNUSED(ked), BezTriple *UNUSED(bezt))
+{
+  return KEYFRAME_OK_KEY | KEYFRAME_OK_H1 | KEYFRAME_OK_H2;
+}
+
+#define ABOVE 1
+#define INSIDE 0
+#define BELOW -1
+static int rectf_curve_zone_y(
+    FCurve *fcu, const rctf *rectf, const float offset, const float unit_scale, const float eval_x)
+{
+  const float fcurve_y = (evaluate_fcurve(fcu, eval_x) + offset) * unit_scale;
+  return fcurve_y < rectf->ymin ? BELOW : fcurve_y <= rectf->ymax ? INSIDE : ABOVE;
+}
+
+/* Checks whether the given rectangle intersects the given fcurve's calculated curve (i.e. not
+ * only keyframes, but also all the interpolated values). This is done by sampling the curve at
+ * different points between the xmin and the xmax of the rectangle.
+ */
+static bool rectf_curve_intersection(
+    const float offset, const float unit_scale, const rctf *rectf, AnimData *adt, FCurve *fcu)
+{
+  /* 30 sampling points. This worked well in tests. */
+  int num_steps = 30;
+
+  /* Remap the range at which to evaluate the fcurves. This enables us to avoid remapping
+   * the keys themselves. */
+  const float mapped_max = BKE_nla_tweakedit_remap(adt, rectf->xmax, NLATIME_CONVERT_UNMAP);
+  const float mapped_min = BKE_nla_tweakedit_remap(adt, rectf->xmin, NLATIME_CONVERT_UNMAP);
+  const float eval_step = (mapped_max - mapped_min) / num_steps;
+
+  /* Sample points on the given fcurve in the interval defined by the
+   * mapped_min and mapped_max of the selected rectangle.
+   * For each point, check if it is inside of the selection box. If it is, then select
+   * all the keyframes of the curve, the curve, and stop the loop.
+   */
+  struct {
+    float eval_x;
+    int zone;
+  } cur, prev;
+
+  prev.eval_x = mapped_min;
+  prev.zone = rectf_curve_zone_y(fcu, rectf, offset, unit_scale, prev.eval_x);
+  if (prev.zone == INSIDE) {
+    return true;
+  }
+
+  while (num_steps--) {
+    cur.eval_x = prev.eval_x + eval_step;
+    cur.zone = rectf_curve_zone_y(fcu, rectf, offset, unit_scale, cur.eval_x);
+    if (cur.zone != prev.zone) {
+      return true;
+    }
+
+    prev = cur;
+  }
+  return false;
+}
+#undef ABOVE
+#undef INSIDE
+#undef BELOW
+
+/**
+ * Perform a box selection of the curves themselves. This means this function tries
+ * to select a curve by sampling it at various points instead of trying to select the
+ * keyframes directly.
+ * The selection actions done to a curve are actually done on all the keyframes of the curve.
+ * \note This function is only called if no keyframe is in the selection area.
+ */
+static void box_select_graphcurves(bAnimContext *ac,
+                                   const rctf *rectf_view,
+                                   const short mode,
+                                   const short selectmode,
+                                   const bool incl_handles,
+                                   void *data)
+{
+  const SpaceGraph *sipo = (SpaceGraph *)ac->sl;
+  const int filter = initialize_animdata_selection_filter(sipo);
+  ListBase anim_data = initialize_box_select_anim_data(filter, ac);
+  rctf scaled_rectf;
+  KeyframeEditData ked;
+  int mapping_flag;
+  initialize_box_select_key_editing_data(
+      sipo, incl_handles, mode, ac, data, &scaled_rectf, &ked, &mapping_flag);
+
+  FCurve *last_selected_curve = NULL;
+
+  /* Go through all the curves and try selecting them. This function is only called
+   * if no keyframe is in the selection area, so we only have to check if the curve
+   * intersects the area in order to check if the selection/deselection must happen.
+   */
+
+  LISTBASE_FOREACH (bAnimListElem *, ale, &anim_data) {
+    AnimData *adt = ANIM_nla_mapping_get(ac, ale);
+    FCurve *fcu = (FCurve *)ale->key_data;
+    float offset;
+    const float unit_scale = ANIM_unit_mapping_get_factor(
+        ac->scene, ale->id, fcu, mapping_flag, &offset);
+
+    const rctf rectf = initialize_box_select_coords(ac, rectf_view);
+
+    /* scaled_rectf is declared at the top of the block because it is required by the
+     * initialize_box_select_key_editing_data function (which does
+     * data_xxx->rectf_scaled = scaled_rectf). The below assignment therefore modifies the
+     * data we use to iterate over the curves (ked).
+     */
+    scaled_rectf.xmin = rectf.xmin;
+    scaled_rectf.xmax = rectf.xmax;
+    scaled_rectf.ymin = rectf.ymin / unit_scale - offset;
+    scaled_rectf.ymax = rectf.ymax / unit_scale - offset;
+
+    const KeyframeEditFunc select_cb = ANIM_editkeyframes_select(selectmode);
+    if (rectf_curve_intersection(offset, unit_scale, &rectf, adt, fcu)) {
+      if ((selectmode & SELECT_ADD) || (selectmode & SELECT_REPLACE)) {
+        fcu->flag |= FCURVE_SELECTED;
+        last_selected_curve = fcu;
+      }
+      else {
+        fcu->flag &= ~FCURVE_SELECTED;
+      }
+      ANIM_fcurve_keyframes_loop(&ked, fcu, ok_bezier_always_ok, select_cb, NULL);
+    }
+  }
+
+  /* Make sure that one of the selected curves is active in the end. */
+  if (last_selected_curve != NULL) {
+    ANIM_set_active_channel(
+        ac, ac->data, ac->datatype, filter, last_selected_curve, ANIMTYPE_FCURVE);
+  }
+
+  ANIM_animdata_freelist(&anim_data);
 }
 
 /* ------------------- */
@@ -665,7 +802,9 @@ static int graphkeys_box_select_invoke(bContext *C, wmOperator *op, const wmEven
   }
 
   if (RNA_boolean_get(op->ptr, "tweak")) {
-    tNearestVertInfo *under_mouse = find_nearest_fcurve_vert(&ac, event->mval);
+    int mval[2];
+    WM_event_drag_start_mval(event, ac.region, mval);
+    tNearestVertInfo *under_mouse = find_nearest_fcurve_vert(&ac, mval);
     bool mouse_is_over_element = under_mouse != NULL;
     if (under_mouse) {
       MEM_freeN(under_mouse);
@@ -712,7 +851,7 @@ static int graphkeys_box_select_exec(bContext *C, wmOperator *op)
      *   as frame-range one is often used for tweaking timing when "blocking",
      *   while channels is not that useful.
      */
-    if ((BLI_rcti_size_x(&rect)) >= (BLI_rcti_size_y(&rect))) {
+    if (BLI_rcti_size_x(&rect) >= BLI_rcti_size_y(&rect)) {
       mode = BEZT_OK_FRAMERANGE;
     }
     else {
@@ -726,7 +865,12 @@ static int graphkeys_box_select_exec(bContext *C, wmOperator *op)
   BLI_rctf_rcti_copy(&rect_fl, &rect);
 
   /* Apply box_select action. */
-  box_select_graphkeys(&ac, &rect_fl, mode, selectmode, incl_handles, NULL);
+  const bool any_key_selection_changed = box_select_graphkeys(
+      &ac, &rect_fl, mode, selectmode, incl_handles, NULL);
+  const bool use_curve_selection = RNA_boolean_get(op->ptr, "use_curve_selection");
+  if (use_curve_selection && !any_key_selection_changed) {
+    box_select_graphcurves(&ac, &rect_fl, mode, selectmode, incl_handles, NULL);
+  }
   /* Send notifier that keyframe selection has changed. */
   WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME | NA_SELECTED, NULL);
 
@@ -749,7 +893,7 @@ void GRAPH_OT_select_box(wmOperatorType *ot)
   ot->poll = graphop_visible_keyframes_poll;
 
   /* Flags. */
-  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+  ot->flag = OPTYPE_UNDO;
 
   /* Properties. */
   ot->prop = RNA_def_boolean(ot->srna, "axis_range", 0, "Axis Range", "");
@@ -764,7 +908,15 @@ void GRAPH_OT_select_box(wmOperatorType *ot)
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
   prop = RNA_def_boolean(
-      ot->srna, "tweak", 0, "Tweak", "Operator has been activated using a tweak event");
+      ot->srna, "tweak", 0, "Tweak", "Operator has been activated using a click-drag event");
+  RNA_def_property_flag(prop, PROP_SKIP_SAVE);
+
+  prop = RNA_def_boolean(
+      ot->srna,
+      "use_curve_selection",
+      1,
+      "Select Curves",
+      "Allow selecting all the keyframes of a curve by selecting the calculated fcurve");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
   WM_operator_properties_gesture_box(ot);
@@ -815,7 +967,13 @@ static int graphkeys_lassoselect_exec(bContext *C, wmOperator *op)
   BLI_rctf_rcti_copy(&rect_fl, &rect);
 
   /* Apply box_select action. */
-  box_select_graphkeys(&ac, &rect_fl, BEZT_OK_REGION_LASSO, selectmode, incl_handles, &data_lasso);
+  const bool any_key_selection_changed = box_select_graphkeys(
+      &ac, &rect_fl, BEZT_OK_REGION_LASSO, selectmode, incl_handles, &data_lasso);
+  const bool use_curve_selection = RNA_boolean_get(op->ptr, "use_curve_selection");
+  if (use_curve_selection && !any_key_selection_changed) {
+    box_select_graphcurves(
+        &ac, &rect_fl, BEZT_OK_REGION_LASSO, selectmode, incl_handles, &data_lasso);
+  }
 
   MEM_freeN((void *)data_lasso.mcoords);
 
@@ -840,11 +998,18 @@ void GRAPH_OT_select_lasso(wmOperatorType *ot)
   ot->cancel = WM_gesture_lasso_cancel;
 
   /* Flags. */
-  ot->flag = OPTYPE_UNDO;
+  ot->flag = OPTYPE_UNDO | OPTYPE_DEPENDS_ON_CURSOR;
 
   /* Properties. */
   WM_operator_properties_gesture_lasso(ot);
   WM_operator_properties_select_operation_simple(ot);
+  PropertyRNA *prop = RNA_def_boolean(
+      ot->srna,
+      "use_curve_selection",
+      1,
+      "Select Curves",
+      "Allow selecting all the keyframes of a curve by selecting the curve itself");
+  RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
 
 /* ------------------- */
@@ -894,7 +1059,18 @@ static int graph_circle_select_exec(bContext *C, wmOperator *op)
   }
 
   /* Apply box_select action. */
-  box_select_graphkeys(&ac, &rect_fl, BEZT_OK_REGION_CIRCLE, selectmode, incl_handles, &data);
+  const bool any_key_selection_changed = box_select_graphkeys(
+      &ac, &rect_fl, BEZT_OK_REGION_CIRCLE, selectmode, incl_handles, &data);
+  if (any_key_selection_changed) {
+    /* If any key was selected at any time during this process, the entire-curve selection should
+     * be disabled. Otherwise, sliding over any keyless part of the curve will immediately cause
+     * the entire curve to be selected. */
+    RNA_boolean_set(op->ptr, "use_curve_selection", false);
+  }
+  const bool use_curve_selection = RNA_boolean_get(op->ptr, "use_curve_selection");
+  if (use_curve_selection && !any_key_selection_changed) {
+    box_select_graphcurves(&ac, &rect_fl, BEZT_OK_REGION_CIRCLE, selectmode, incl_handles, &data);
+  }
 
   /* Send notifier that keyframe selection has changed. */
   WM_event_add_notifier(C, NC_ANIMATION | ND_KEYFRAME | NA_SELECTED, NULL);
@@ -913,6 +1089,7 @@ void GRAPH_OT_select_circle(wmOperatorType *ot)
   ot->exec = graph_circle_select_exec;
   ot->poll = graphop_visible_keyframes_poll;
   ot->cancel = WM_gesture_circle_cancel;
+  ot->get_name = ED_select_circle_get_name;
 
   /* flags */
   ot->flag = OPTYPE_UNDO;
@@ -920,15 +1097,26 @@ void GRAPH_OT_select_circle(wmOperatorType *ot)
   /* properties */
   WM_operator_properties_gesture_circle(ot);
   WM_operator_properties_select_operation_simple(ot);
+  PropertyRNA *prop = RNA_def_boolean(
+      ot->srna,
+      "use_curve_selection",
+      1,
+      "Select Curves",
+      "Allow selecting all the keyframes of a curve by selecting the curve itself");
+  RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
 
-/* ******************** Column Select Operator **************************** */
-/* This operator works in one of four ways:
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Column Select Operator
+ *
+ * This operator works in one of four ways:
  * - 1) select all keyframes in the same frame as a selected one  (KKEY)
  * - 2) select all keyframes in the same frame as the current frame marker (CTRL-KKEY)
  * - 3) select all keyframes in the same frame as a selected markers (SHIFT-KKEY)
  * - 4) select all keyframes that occur between selected markers (ALT-KKEY)
- */
+ * \{ */
 
 /* defines for column-select mode */
 static const EnumPropertyItem prop_column_select_types[] = {
@@ -946,8 +1134,8 @@ static const EnumPropertyItem prop_column_select_types[] = {
 /* ------------------- */
 
 /* Selects all visible keyframes between the specified markers */
-/* TODO, this is almost an _exact_ duplicate of a function of the same name in action_select.c
- * should de-duplicate - campbell */
+/* TODO(@campbellbarton): this is almost an _exact_ duplicate of a function of the same name in
+ * action_select.c should de-duplicate. */
 static void markers_selectkeys_between(bAnimContext *ac)
 {
   ListBase anim_data = {NULL, NULL};
@@ -963,7 +1151,7 @@ static void markers_selectkeys_between(bAnimContext *ac)
   min -= 0.5f;
   max += 0.5f;
 
-  /* get editing funcs + data */
+  /* Get editing functions + data. */
   ok_cb = ANIM_editkeyframes_ok(BEZT_OK_FRAMERANGE);
   select_cb = ANIM_editkeyframes_select(SELECT_ADD);
 
@@ -971,7 +1159,8 @@ static void markers_selectkeys_between(bAnimContext *ac)
   ked.f2 = max;
 
   /* filter data */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+            ANIMFILTER_NODUPLIS);
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   /* select keys in-between */
@@ -1010,7 +1199,8 @@ static void columnselect_graph_keys(bAnimContext *ac, short mode)
   /* build list of columns */
   switch (mode) {
     case GRAPHKEYS_COLUMNSEL_KEYS: /* list of selected keys */
-      filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+      filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+                ANIMFILTER_NODUPLIS);
       ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
       for (ale = anim_data.first; ale; ale = ale->next) {
@@ -1025,7 +1215,7 @@ static void columnselect_graph_keys(bAnimContext *ac, short mode)
       ce = MEM_callocN(sizeof(CfraElem), "cfraElem");
       BLI_addtail(&ked.list, ce);
 
-      ce->cfra = (float)CFRA;
+      ce->cfra = (float)scene->r.cfra;
       break;
 
     case GRAPHKEYS_COLUMNSEL_MARKERS_COLUMN: /* list of selected markers */
@@ -1043,7 +1233,8 @@ static void columnselect_graph_keys(bAnimContext *ac, short mode)
   /* loop through all of the keys and select additional keyframes
    * based on the keys found to be selected above
    */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+            ANIMFILTER_NODUPLIS);
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -1110,9 +1301,14 @@ void GRAPH_OT_select_column(wmOperatorType *ot)
 
   /* props */
   ot->prop = RNA_def_enum(ot->srna, "mode", prop_column_select_types, 0, "Mode", "");
+  RNA_def_property_flag(ot->prop, PROP_HIDDEN);
 }
 
-/* ******************** Select Linked Operator *********************** */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Select Linked Operator
+ * \{ */
 
 static int graphkeys_select_linked_exec(bContext *C, wmOperator *UNUSED(op))
 {
@@ -1131,7 +1327,8 @@ static int graphkeys_select_linked_exec(bContext *C, wmOperator *UNUSED(op))
   }
 
   /* loop through all of the keys and select additional keyframes based on these */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+            ANIMFILTER_NODUPLIS);
   ANIM_animdata_filter(&ac, &anim_data, filter, ac.data, ac.datatype);
 
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -1168,7 +1365,11 @@ void GRAPH_OT_select_linked(wmOperatorType *ot)
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
 
-/* ******************** Select More/Less Operators *********************** */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Select More/Less Operators
+ * \{ */
 
 /* Common code to perform selection */
 static void select_moreless_graph_keys(bAnimContext *ac, short mode)
@@ -1185,7 +1386,8 @@ static void select_moreless_graph_keys(bAnimContext *ac, short mode)
   memset(&ked, 0, sizeof(KeyframeEditData));
 
   /* loop through all of the keys and select additional keyframes based on these */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+            ANIMFILTER_NODUPLIS);
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -1282,8 +1484,13 @@ void GRAPH_OT_select_less(wmOperatorType *ot)
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 }
 
-/* ******************** Select Left/Right Operator ************************* */
-/* Select keyframes left/right of the current frame indicator */
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Select Left/Right Operator
+ *
+ * Select keyframes left/right of the current frame indicator.
+ * \{ */
 
 /* defines for left-right select tool */
 static const EnumPropertyItem prop_graphkeys_leftright_select_types[] = {
@@ -1321,15 +1528,15 @@ static void graphkeys_select_leftright(bAnimContext *ac, short leftright, short 
 
   if (leftright == GRAPHKEYS_LRSEL_LEFT) {
     ked.f1 = MINAFRAMEF;
-    ked.f2 = (float)(CFRA + 0.1f);
+    ked.f2 = (float)(scene->r.cfra + 0.1f);
   }
   else {
-    ked.f1 = (float)(CFRA - 0.1f);
+    ked.f1 = (float)(scene->r.cfra - 0.1f);
     ked.f2 = MAXFRAMEF;
   }
 
   /* filter data */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_NODUPLIS | ANIMFILTER_FCURVESONLY);
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   /* select keys */
@@ -1405,7 +1612,7 @@ static int graphkeys_select_leftright_invoke(bContext *C, wmOperator *op, const 
 
     /* determine which side of the current frame mouse is on */
     x = UI_view2d_region_to_view_x(v2d, event->mval[0]);
-    if (x < CFRA) {
+    if (x < scene->r.cfra) {
       RNA_enum_set(op->ptr, "mode", GRAPHKEYS_LRSEL_LEFT);
     }
     else {
@@ -1426,7 +1633,7 @@ void GRAPH_OT_select_leftright(wmOperatorType *ot)
   ot->idname = "GRAPH_OT_select_leftright";
   ot->description = "Select keyframes to the left or the right of the current frame";
 
-  /* api callbacks  */
+  /* api callbacks */
   ot->invoke = graphkeys_select_leftright_invoke;
   ot->exec = graphkeys_select_leftright_exec;
   ot->poll = graphop_visible_keyframes_poll;
@@ -1443,15 +1650,19 @@ void GRAPH_OT_select_leftright(wmOperatorType *ot)
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
 
-/* ******************** Mouse-Click Select Operator *********************** */
-/* This operator works in one of three ways:
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Mouse-Click Select Operator
+ *
+ * This operator works in one of three ways:
  * - 1) keyframe under mouse - no special modifiers
  * - 2) all keyframes on the same side of current frame indicator as mouse - ALT modifier
  * - 3) column select all keyframes in frame under mouse - CTRL modifier
  *
  * In addition to these basic options, the SHIFT modifier can be used to toggle the
  * selection mode between replacing the selection (without) and inverting the selection (with).
- */
+ * \{ */
 
 /* option 1) select keyframe directly under mouse */
 static int mouse_graph_keys(bAnimContext *ac,
@@ -1496,10 +1707,8 @@ static int mouse_graph_keys(bAnimContext *ac,
     /* deselect all other keyframes (+ F-Curves too) */
     deselect_graph_keys(ac, 0, SELECT_SUBTRACT, true);
 
-    /* deselect other channels too, but only only do this if
-     * selection of channel when the visibility of keyframes
-     * doesn't depend on this
-     */
+    /* Deselect other channels too, but only do this if selection of channel
+     * when the visibility of keyframes doesn't depend on this. */
     if ((sipo->flag & SIPO_SELCUVERTSONLY) == 0) {
       ANIM_anim_channels_select_set(ac, ACHANNEL_SETFLAG_CLEAR);
     }
@@ -1603,7 +1812,8 @@ static int mouse_graph_keys(bAnimContext *ac,
    * otherwise the active flag won't be set T26452. */
   if (!run_modal && (nvi->fcu->flag & FCURVE_SELECTED) && something_was_selected) {
     /* NOTE: Sync the filter flags with findnearest_fcurve_vert. */
-    int filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+    int filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+                  ANIMFILTER_NODUPLIS);
     ANIM_set_active_channel(ac, ac->data, ac->datatype, filter, nvi->fcu, nvi->ctype);
   }
 
@@ -1638,7 +1848,6 @@ static int graphkeys_mselect_column(bAnimContext *ac,
   KeyframeEditFunc select_cb, ok_cb;
   KeyframeEditData ked;
   tNearestVertInfo *nvi;
-  float selx = (float)ac->scene->r.cfra;
 
   /* find the beztriple that we're selecting, and the handle that was clicked on */
   nvi = find_nearest_fcurve_vert(ac, mval);
@@ -1650,7 +1859,7 @@ static int graphkeys_mselect_column(bAnimContext *ac,
 
   /* get frame number on which elements should be selected */
   /* TODO: should we restrict to integer frames only? */
-  selx = nvi->frame;
+  const float selx = nvi->frame;
 
   if (select_mode != SELECT_REPLACE) {
     /* Doesn't need to deselect anything -> Pass. */
@@ -1680,7 +1889,8 @@ static int graphkeys_mselect_column(bAnimContext *ac,
   /* loop through all of the keys and select additional keyframes
    * based on the keys found to be selected above
    */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_NODUPLIS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY |
+            ANIMFILTER_NODUPLIS);
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -1706,9 +1916,12 @@ static int graphkeys_mselect_column(bAnimContext *ac,
   return run_modal ? OPERATOR_RUNNING_MODAL : OPERATOR_FINISHED;
 }
 
-/* ------------------- */
+/** \} */
 
-/* handle clicking */
+/* -------------------------------------------------------------------- */
+/** \name Click Select Operator
+ * \{ */
+
 static int graphkeys_clickselect_exec(bContext *C, wmOperator *op)
 {
   bAnimContext ac;
@@ -1774,12 +1987,14 @@ void GRAPH_OT_clickselect(wmOperatorType *ot)
 
   /* properties */
   WM_operator_properties_generic_select(ot);
+
+  /* Key-map: Enable with `Shift`. */
   prop = RNA_def_boolean(ot->srna,
                          "extend",
                          0,
                          "Extend Select",
                          "Toggle keyframe selection instead of leaving newly selected "
-                         "keyframes only"); /* SHIFTKEY */
+                         "keyframes only");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
   prop = RNA_def_boolean(ot->srna,
@@ -1789,20 +2004,19 @@ void GRAPH_OT_clickselect(wmOperatorType *ot)
                          "Deselect all when nothing under the cursor");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
+  /* Key-map: Enable with `Alt`. */
   prop = RNA_def_boolean(ot->srna,
                          "column",
                          0,
                          "Column Select",
                          "Select all keyframes that occur on the same frame as the one under "
-                         "the mouse"); /* ALTKEY */
+                         "the mouse");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 
-  prop = RNA_def_boolean(ot->srna,
-                         "curves",
-                         0,
-                         "Only Curves",
-                         "Select all the keyframes in the curve"); /* CTRLKEY + ALTKEY */
+  /* Key-map: Enable with `Ctrl-Atl`. */
+  prop = RNA_def_boolean(
+      ot->srna, "curves", 0, "Only Curves", "Select all the keyframes in the curve");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
 
-/* ************************************************************************** */
+/** \} */

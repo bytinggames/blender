@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup GHOST
@@ -67,8 +53,8 @@ GHOST_XrSwapchain::GHOST_XrSwapchain(GHOST_IXrGraphicsBinding &gpu_binding,
            "Failed to get swapchain image formats.");
   assert(swapchain_formats.size() == format_count);
 
-  std::optional chosen_format = gpu_binding.chooseSwapchainFormat(swapchain_formats,
-                                                                  m_is_srgb_buffer);
+  std::optional chosen_format = gpu_binding.chooseSwapchainFormat(
+      swapchain_formats, m_format, m_is_srgb_buffer);
   if (!chosen_format) {
     throw GHOST_XrException(
         "Error: No format matching OpenXR runtime supported swapchain formats found.");
@@ -97,6 +83,7 @@ GHOST_XrSwapchain::GHOST_XrSwapchain(GHOST_XrSwapchain &&other)
     : m_oxr(std::move(other.m_oxr)),
       m_image_width(other.m_image_width),
       m_image_height(other.m_image_height),
+      m_format(other.m_format),
       m_is_srgb_buffer(other.m_is_srgb_buffer)
 {
   /* Prevent xrDestroySwapchain call for the moved out item. */
@@ -134,7 +121,12 @@ void GHOST_XrSwapchain::updateCompositionLayerProjectViewSubImage(XrSwapchainSub
   r_sub_image.imageRect.extent = {m_image_width, m_image_height};
 }
 
-bool GHOST_XrSwapchain::isBufferSRGB()
+GHOST_TXrSwapchainFormat GHOST_XrSwapchain::getFormat() const
+{
+  return m_format;
+}
+
+bool GHOST_XrSwapchain::isBufferSRGB() const
 {
   return m_is_srgb_buffer;
 }

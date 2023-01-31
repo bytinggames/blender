@@ -1,22 +1,5 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# The Original Code is Copyright (C) 2006, Blender Foundation
-# All rights reserved.
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright 2006 Blender Foundation. All rights reserved.
 
 set(INC
   .
@@ -42,7 +25,6 @@ set(INC
   ../simulation
   ../../../intern/eigen
   ../../../intern/ghost
-  ../../../intern/glew-mx
   ../../../intern/guardedalloc
   ../../../intern/iksolver/extern
   ../../../intern/atomic
@@ -56,10 +38,15 @@ set(INC
 
   # dna_type_offsets.h
   ${CMAKE_CURRENT_BINARY_DIR}/../makesdna/intern
+  # RNA_prototypes.h
+  ${CMAKE_BINARY_DIR}/source/blender/makesrna
 )
 
 set(INC_SYS
   ${ZLIB_INCLUDE_DIRS}
+
+  # For `vfontdata_freetype.c`.
+  ${FREETYPE_INCLUDE_DIRS}
 )
 
 set(SRC
@@ -69,19 +56,26 @@ set(SRC
   intern/CCGSubSurf_util.c
   intern/DerivedMesh.cc
   intern/action.c
+  intern/action_bones.cc
   intern/action_mirror.c
   intern/addon.c
   intern/anim_data.c
   intern/anim_path.c
   intern/anim_sys.c
   intern/anim_visualization.c
+  intern/anonymous_attribute.cc
   intern/appdir.c
   intern/armature.c
   intern/armature_deform.c
   intern/armature_pose.cc
+  intern/armature_selection.cc
   intern/armature_update.c
   intern/asset.cc
-  intern/attribute.c
+  intern/asset_catalog.cc
+  intern/asset_catalog_path.cc
+  intern/asset_library.cc
+  intern/asset_library_service.cc
+  intern/attribute.cc
   intern/attribute_access.cc
   intern/attribute_math.cc
   intern/autoexec.c
@@ -90,10 +84,11 @@ set(SRC
   intern/blender_undo.c
   intern/blender_user_menu.c
   intern/blendfile.c
+  intern/blendfile_link_append.c
   intern/boids.c
   intern/bpath.c
-  intern/brush.c
-  intern/bvhutils.c
+  intern/brush.cc
+  intern/bvhutils.cc
   intern/cachefile.c
   intern/callbacks.c
   intern/camera.c
@@ -103,58 +98,72 @@ set(SRC
   intern/collision.c
   intern/colorband.c
   intern/colortools.c
+  intern/compute_contexts.cc
   intern/constraint.c
   intern/context.c
-  intern/crazyspace.c
+  intern/crazyspace.cc
   intern/cryptomatte.cc
-  intern/curve.c
+  intern/curve.cc
   intern/curve_bevel.c
+  intern/curve_bezier.cc
+  intern/curve_catmull_rom.cc
   intern/curve_convert.c
   intern/curve_decimate.c
   intern/curve_deform.c
-  intern/curve_eval.cc  
-  intern/curveprofile.c
-  intern/customdata.c
+  intern/curve_legacy_convert.cc
+  intern/curve_nurbs.cc
+  intern/curve_poly.cc
+  intern/curve_to_mesh_convert.cc
+  intern/curveprofile.cc
+  intern/curves.cc
+  intern/curves_geometry.cc
+  intern/curves_utils.cc
+  intern/customdata.cc
   intern/customdata_file.c
   intern/data_transfer.c
   intern/deform.c
   intern/displist.cc
-  intern/displist_tangent.c
   intern/dynamicpaint.c
   intern/editlattice.c
-  intern/editmesh.c
+  intern/editmesh.cc
   intern/editmesh_bvh.c
-  intern/editmesh_cache.c
-  intern/editmesh_tangent.c
+  intern/editmesh_cache.cc
+  intern/editmesh_tangent.cc
   intern/effect.c
   intern/fcurve.c
   intern/fcurve_cache.c
   intern/fcurve_driver.c
   intern/fluid.c
   intern/fmodifier.c
-  intern/font.c
   intern/freestyle.c
-  intern/geometry_component_curve.cc
+  intern/geometry_component_curves.cc
+  intern/geometry_component_edit_data.cc
   intern/geometry_component_instances.cc
   intern/geometry_component_mesh.cc
   intern/geometry_component_pointcloud.cc
   intern/geometry_component_volume.cc
+  intern/geometry_fields.cc
   intern/geometry_set.cc
   intern/geometry_set_instances.cc
   intern/gpencil.c
   intern/gpencil_curve.c
-  intern/gpencil_geom.c
+  intern/gpencil_geom.cc
   intern/gpencil_modifier.c
-  intern/hair.c
+  intern/gpencil_update_cache.c
   intern/icons.cc
   intern/icons_rasterize.c
   intern/idprop.c
+  intern/idprop_create.cc
+  intern/idprop_serialize.cc
   intern/idprop_utils.c
   intern/idtype.c
-  intern/image.c
+  intern/image.cc
+  intern/image_format.cc
   intern/image_gen.c
-  intern/image_gpu.c
-  intern/image_save.c
+  intern/image_gpu.cc
+  intern/image_partial_update.cc
+  intern/image_save.cc
+  intern/instances.cc
   intern/ipo.c
   intern/kelvinlet.c
   intern/key.c
@@ -165,7 +174,10 @@ set(SRC
   intern/layer_utils.c
   intern/lib_id.c
   intern/lib_id_delete.c
-  intern/lib_override.c
+  intern/lib_id_eval.c
+  intern/lib_id_remapper.cc
+  intern/lib_override.cc
+  intern/lib_override_proxy_conversion.c
   intern/lib_query.c
   intern/lib_remap.c
   intern/library.c
@@ -174,32 +186,38 @@ set(SRC
   intern/linestyle.c
   intern/main.c
   intern/main_idmap.c
+  intern/main_namemap.cc
   intern/mask.c
   intern/mask_evaluate.c
   intern/mask_rasterize.c
   intern/material.c
-  intern/mball.c
-  intern/mball_tessellate.c
-  intern/mesh.c
+  intern/mball.cc
+  intern/mball_tessellate.cc
+  intern/mesh.cc
   intern/mesh_boolean_convert.cc
-  intern/mesh_convert.c
-  intern/mesh_evaluate.c
+  intern/mesh_calc_edges.cc
+  intern/mesh_convert.cc
+  intern/mesh_debug.cc
+  intern/mesh_evaluate.cc
   intern/mesh_fair.cc
-  intern/mesh_iterators.c
-  intern/mesh_mapping.c
+  intern/mesh_iterators.cc
+  intern/mesh_legacy_convert.cc
+  intern/mesh_mapping.cc
   intern/mesh_merge.c
+  intern/mesh_merge_customdata.cc
   intern/mesh_mirror.c
+  intern/mesh_normals.cc
   intern/mesh_remap.c
-  intern/mesh_remesh_voxel.c
-  intern/mesh_runtime.c
+  intern/mesh_remesh_voxel.cc
+  intern/mesh_runtime.cc
   intern/mesh_sample.cc
-  intern/mesh_tangent.c
-  intern/mesh_validate.c
+  intern/mesh_tangent.cc
+  intern/mesh_tessellate.cc
   intern/mesh_validate.cc
-  intern/mesh_wrapper.c
-  intern/modifier.c
+  intern/mesh_wrapper.cc
+  intern/modifier.cc
   intern/movieclip.c
-  intern/multires.c
+  intern/multires.cc
   intern/multires_reshape.c
   intern/multires_reshape_apply_base.c
   intern/multires_reshape_ccg.c
@@ -212,44 +230,44 @@ set(SRC
   intern/multires_versioning.c
   intern/nla.c
   intern/node.cc
-  intern/node_ui_storage.cc
-  intern/object.c
+  intern/node_runtime.cc
+  intern/node_tree_update.cc
+  intern/object.cc
   intern/object_deform.c
   intern/object_dupli.cc
   intern/object_facemap.c
-  intern/object_update.c
+  intern/object_update.cc
   intern/ocean.c
   intern/ocean_spectrum.c
-  intern/outliner_treehash.c
+  intern/outliner_treehash.cc
   intern/packedFile.c
-  intern/paint.c
+  intern/paint.cc
+  intern/paint_canvas.cc
   intern/paint_toolslots.c
   intern/particle.c
   intern/particle_child.c
   intern/particle_distribute.c
   intern/particle_system.c
   intern/pbvh.c
+  intern/pbvh.cc
   intern/pbvh_bmesh.c
+  intern/pbvh_pixels.cc
   intern/pointcache.c
   intern/pointcloud.cc
   intern/preferences.c
   intern/report.c
   intern/rigidbody.c
-  intern/scene.c
+  intern/scene.cc
   intern/screen.c
   intern/shader_fx.c
-  intern/shrinkwrap.c
+  intern/shrinkwrap.cc
   intern/simulation.cc
   intern/softbody.c
   intern/sound.c
   intern/speaker.c
-  intern/spline_base.cc
-  intern/spline_bezier.cc
-  intern/spline_nurbs.cc
-  intern/spline_poly.cc
   intern/studiolight.c
   intern/subdiv.c
-  intern/subdiv_ccg.c
+  intern/subdiv_ccg.cc
   intern/subdiv_ccg_mask.c
   intern/subdiv_ccg_material.c
   intern/subdiv_converter.c
@@ -259,7 +277,8 @@ set(SRC
   intern/subdiv_displacement_multires.c
   intern/subdiv_eval.c
   intern/subdiv_foreach.c
-  intern/subdiv_mesh.c
+  intern/subdiv_mesh.cc
+  intern/subdiv_modifier.cc
   intern/subdiv_stats.c
   intern/subdiv_topology.c
   intern/subsurf_ccg.c
@@ -274,27 +293,39 @@ set(SRC
   intern/tracking_solver.c
   intern/tracking_stabilize.c
   intern/tracking_util.c
+  intern/type_conversions.cc
   intern/undo_system.c
   intern/unit.c
+  intern/vfont.c
+  intern/vfontdata_freetype.c
+  intern/viewer_path.cc
   intern/volume.cc
   intern/volume_render.cc
   intern/volume_to_mesh.cc
-  intern/workspace.c
+  intern/workspace.cc
   intern/world.c
   intern/writeavi.c
 
   BKE_DerivedMesh.h
   BKE_action.h
+  BKE_action.hh
   BKE_addon.h
   BKE_anim_data.h
   BKE_anim_path.h
   BKE_anim_visualization.h
   BKE_animsys.h
+  BKE_anonymous_attribute.h
+  BKE_anonymous_attribute.hh
   BKE_appdir.h
   BKE_armature.h
+  BKE_armature.hh
   BKE_asset.h
+  BKE_asset_catalog.hh
+  BKE_asset_catalog_path.hh
+  BKE_asset_library.h
+  BKE_asset_library.hh
   BKE_attribute.h
-  BKE_attribute_access.hh
+  BKE_attribute.hh
   BKE_attribute_math.hh
   BKE_autoexec.h
   BKE_blender.h
@@ -303,6 +334,7 @@ set(SRC
   BKE_blender_user_menu.h
   BKE_blender_version.h
   BKE_blendfile.h
+  BKE_blendfile_link_append.h
   BKE_boids.h
   BKE_bpath.h
   BKE_brush.h
@@ -317,20 +349,25 @@ set(SRC
   BKE_collision.h
   BKE_colorband.h
   BKE_colortools.h
+  BKE_compute_contexts.hh
   BKE_constraint.h
   BKE_context.h
   BKE_crazyspace.h
+  BKE_crazyspace.hh
   BKE_cryptomatte.h
   BKE_cryptomatte.hh
   BKE_curve.h
+  BKE_curve_legacy_convert.hh
+  BKE_curve_to_mesh.hh
   BKE_curveprofile.h
+  BKE_curves.h
+  BKE_curves.hh
+  BKE_curves_utils.hh
   BKE_customdata.h
   BKE_customdata_file.h
   BKE_data_transfer.h
   BKE_deform.h
-  BKE_spline.hh
   BKE_displist.h
-  BKE_displist_tangent.h
   BKE_duplilist.h
   BKE_dynamicpaint.h
   BKE_editlattice.h
@@ -342,8 +379,8 @@ set(SRC
   BKE_fcurve.h
   BKE_fcurve_driver.h
   BKE_fluid.h
-  BKE_font.h
   BKE_freestyle.h
+  BKE_geometry_fields.hh
   BKE_geometry_set.h
   BKE_geometry_set.hh
   BKE_geometry_set_instances.hh
@@ -352,12 +389,17 @@ set(SRC
   BKE_gpencil_curve.h
   BKE_gpencil_geom.h
   BKE_gpencil_modifier.h
-  BKE_hair.h
+  BKE_gpencil_update_cache.h
   BKE_icons.h
   BKE_idprop.h
+  BKE_idprop.hh
   BKE_idtype.h
   BKE_image.h
+  BKE_image_format.h
+  BKE_image_partial_update.hh
   BKE_image_save.h
+  BKE_image_wrappers.hh
+  BKE_instances.hh
   BKE_ipo.h
   BKE_kelvinlet.h
   BKE_key.h
@@ -374,6 +416,7 @@ set(SRC
   BKE_linestyle.h
   BKE_main.h
   BKE_main_idmap.h
+  BKE_main_namemap.h
   BKE_mask.h
   BKE_material.h
   BKE_mball.h
@@ -382,6 +425,7 @@ set(SRC
   BKE_mesh_boolean_convert.hh
   BKE_mesh_fair.h
   BKE_mesh_iterators.h
+  BKE_mesh_legacy_convert.h
   BKE_mesh_mapping.h
   BKE_mesh_mirror.h
   BKE_mesh_remap.h
@@ -396,17 +440,18 @@ set(SRC
   BKE_multires.h
   BKE_nla.h
   BKE_node.h
-  BKE_node_ui_storage.hh
+  BKE_node_runtime.hh
+  BKE_node_tree_update.h
   BKE_object.h
   BKE_object_deform.h
   BKE_object_facemap.h
   BKE_ocean.h
-  BKE_outliner_treehash.h
+  BKE_outliner_treehash.hh
   BKE_packedFile.h
   BKE_paint.h
   BKE_particle.h
   BKE_pbvh.h
-  BKE_persistent_data_handle.hh
+  BKE_pbvh_pixels.hh
   BKE_pointcache.h
   BKE_pointcloud.h
   BKE_preferences.h
@@ -428,14 +473,19 @@ set(SRC
   BKE_subdiv_eval.h
   BKE_subdiv_foreach.h
   BKE_subdiv_mesh.h
+  BKE_subdiv_modifier.h
   BKE_subdiv_topology.h
   BKE_subsurf.h
   BKE_text.h
   BKE_text_suggestions.h
   BKE_texture.h
   BKE_tracking.h
+  BKE_type_conversions.hh
   BKE_undo_system.h
   BKE_unit.h
+  BKE_vfont.h
+  BKE_vfontdata.h
+  BKE_viewer_path.h
   BKE_volume.h
   BKE_volume_render.h
   BKE_volume_to_mesh.hh
@@ -449,6 +499,7 @@ set(SRC
   intern/CCGSubSurf.h
   intern/CCGSubSurf_inline.h
   intern/CCGSubSurf_intern.h
+  intern/asset_library_service.hh
   intern/attribute_access_intern.hh
   intern/data_transfer_intern.h
   intern/lib_intern.h
@@ -485,6 +536,9 @@ set(LIB
   bf_rna
   bf_shader_fx
   bf_simulation
+
+  # For `vfontdata_freetype.c`.
+  ${FREETYPE_LIBRARIES} ${BROTLI_LIBRARIES}
 )
 
 if(WITH_BINRELOC)
@@ -562,12 +616,12 @@ if(WITH_IMAGE_CINEON)
   add_definitions(-DWITH_CINEON)
 endif()
 
-if(WITH_IMAGE_FRAMESERVER)
-  add_definitions(-DWITH_FRAMESERVER)
-endif()
-
 if(WITH_IMAGE_HDR)
   add_definitions(-DWITH_HDR)
+endif()
+
+if(WITH_IMAGE_WEBP)
+  add_definitions(-DWITH_WEBP)
 endif()
 
 if(WITH_CODEC_AVI)
@@ -592,10 +646,6 @@ if(WITH_CODEC_FFMPEG)
     ${FFMPEG_LIBRARIES}
   )
   add_definitions(-DWITH_FFMPEG)
-
-  remove_strict_c_flags_file(
-    intern/writeffmpeg.c
-  )
 endif()
 
 if(WITH_PYTHON)
@@ -607,6 +657,10 @@ if(WITH_PYTHON)
     bf_python_bmesh
   )
   add_definitions(-DWITH_PYTHON)
+
+  if(WITH_PYTHON_MODULE)
+    add_definitions(-DWITH_PYTHON_MODULE)
+  endif()
 
   if(WITH_PYTHON_SAFETY)
     add_definitions(-DWITH_PYTHON_SAFETY)
@@ -683,10 +737,6 @@ if(WITH_FFTW3)
   add_definitions(-DFFTW3=1)
 endif()
 
-if(WITH_INTERNATIONAL)
-  add_definitions(-DWITH_INTERNATIONAL)
-endif()
-
 if(WITH_FREESTYLE)
   add_definitions(-DWITH_FREESTYLE)
 endif()
@@ -696,6 +746,13 @@ if(WITH_ALEMBIC)
     ../io/alembic
   )
   add_definitions(-DWITH_ALEMBIC)
+endif()
+
+if(WITH_USD)
+  list(APPEND INC
+    ../io/usd
+  )
+  add_definitions(-DWITH_USD)
 endif()
 
 if(WITH_OPENSUBDIV)
@@ -765,15 +822,31 @@ blender_add_lib(bf_blenkernel "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
 
 # Needed so we can use dna_type_offsets.h for defaults initialization.
 add_dependencies(bf_blenkernel bf_dna)
+# RNA_prototypes.h
+add_dependencies(bf_blenkernel bf_rna)
 
 
 if(WITH_GTESTS)
   set(TEST_SRC
+    intern/action_test.cc
     intern/armature_test.cc
+    intern/asset_catalog_path_test.cc
+    intern/asset_catalog_test.cc
+    intern/asset_library_service_test.cc
+    intern/asset_library_test.cc
+    intern/asset_test.cc
+    intern/bpath_test.cc
     intern/cryptomatte_test.cc
+    intern/curves_geometry_test.cc
     intern/fcurve_test.cc
+    intern/idprop_serialize_test.cc
+    intern/image_partial_update_test.cc
+    intern/image_test.cc
     intern/lattice_deform_test.cc
     intern/layer_test.cc
+    intern/lib_id_remapper_test.cc
+    intern/lib_id_test.cc
+    intern/lib_remap_test.cc
     intern/tracking_test.cc
   )
   set(TEST_INC
@@ -781,4 +854,7 @@ if(WITH_GTESTS)
   )
   include(GTestTesting)
   blender_add_test_lib(bf_blenkernel_tests "${TEST_SRC}" "${INC};${TEST_INC}" "${INC_SYS}" "${LIB}")
+
+  # RNA_prototypes.h
+  add_dependencies(bf_blenkernel_tests bf_rna)
 endif()

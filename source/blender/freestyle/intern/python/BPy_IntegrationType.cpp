@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -25,6 +11,8 @@
 #include "UnaryFunction0D/BPy_UnaryFunction0DDouble.h"
 #include "UnaryFunction0D/BPy_UnaryFunction0DFloat.h"
 #include "UnaryFunction0D/BPy_UnaryFunction0DUnsigned.h"
+
+#include "BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -96,8 +84,8 @@ static PyObject *Integrator_integrate(PyObject * /*self*/, PyObject *args, PyObj
     return PyFloat_FromDouble(res);
   }
   if (BPy_UnaryFunction0DUnsigned_Check(obj1)) {
-    UnaryFunction0D<unsigned int> *fun = ((BPy_UnaryFunction0DUnsigned *)obj1)->uf0D_unsigned;
-    unsigned int res = integrate(*fun, it, it_end, t);
+    UnaryFunction0D<uint> *fun = ((BPy_UnaryFunction0DUnsigned *)obj1)->uf0D_unsigned;
+    uint res = integrate(*fun, it, it_end, t);
     return PyLong_FromLong(res);
   }
 
@@ -163,7 +151,7 @@ PyTypeObject IntegrationType_Type = {
     nullptr,                                             /* tp_as_number */
     nullptr,                                             /* tp_as_sequence */
     nullptr,                                             /* tp_as_mapping */
-    nullptr,                                             /* tp_hash  */
+    nullptr,                                             /* tp_hash */
     nullptr,                                             /* tp_call */
     nullptr,                                             /* tp_str */
     nullptr,                                             /* tp_getattro */

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup bli
@@ -28,9 +12,9 @@
 
 #include "BLI_lasso_2d.h" /* own include */
 
-void BLI_lasso_boundbox(rcti *rect, const int mcoords[][2], const unsigned int mcoords_len)
+void BLI_lasso_boundbox(rcti *rect, const int mcoords[][2], const uint mcoords_len)
 {
-  unsigned int a;
+  uint a;
 
   rect->xmin = rect->xmax = mcoords[0][0];
   rect->ymin = rect->ymax = mcoords[0][1];
@@ -52,7 +36,7 @@ void BLI_lasso_boundbox(rcti *rect, const int mcoords[][2], const unsigned int m
 }
 
 bool BLI_lasso_is_point_inside(const int mcoords[][2],
-                               const unsigned int mcoords_len,
+                               const uint mcoords_len,
                                const int sx,
                                const int sy,
                                const int error_value)
@@ -65,9 +49,8 @@ bool BLI_lasso_is_point_inside(const int mcoords[][2],
   return isect_point_poly_v2_int(pt, mcoords, mcoords_len, true);
 }
 
-/* edge version for lasso select. we assume boundbox check was done */
 bool BLI_lasso_is_edge_inside(const int mcoords[][2],
-                              const unsigned int mcoords_len,
+                              const uint mcoords_len,
                               int x0,
                               int y0,
                               int x1,
@@ -94,7 +77,7 @@ bool BLI_lasso_is_edge_inside(const int mcoords[][2],
   if (isect_seg_seg_v2_int(mcoords[0], mcoords[mcoords_len - 1], v1, v2) > 0) {
     return true;
   }
-  for (unsigned int a = 0; a < mcoords_len - 1; a++) {
+  for (uint a = 0; a < mcoords_len - 1; a++) {
     if (isect_seg_seg_v2_int(mcoords[a], mcoords[a + 1], v1, v2) > 0) {
       return true;
     }

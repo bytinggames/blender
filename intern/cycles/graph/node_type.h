@@ -1,27 +1,14 @@
-/*
- * Copyright 2011-2016 Blender Foundation
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/* SPDX-License-Identifier: Apache-2.0
+ * Copyright 2011-2022 Blender Foundation */
 
 #pragma once
 
 #include "graph/node_enum.h"
-#include "util/util_array.h"
-#include "util/util_map.h"
-#include "util/util_param.h"
-#include "util/util_string.h"
-#include "util/util_vector.h"
+#include "util/array.h"
+#include "util/map.h"
+#include "util/param.h"
+#include "util/string.h"
+#include "util/vector.h"
 
 CCL_NAMESPACE_BEGIN
 
@@ -79,7 +66,9 @@ struct SocketType {
     LINK_NORMAL = (1 << 8),
     LINK_POSITION = (1 << 9),
     LINK_TANGENT = (1 << 10),
-    DEFAULT_LINK_MASK = (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10)
+    LINK_OSL_INITIALIZER = (1 << 11),
+    DEFAULT_LINK_MASK = (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 9) |
+                        (1 << 10) | (1 << 11)
   };
 
   ustring name;
@@ -184,7 +173,7 @@ struct NodeType {
 #define SOCKET_DEFINE(name, ui_name, default_value, datatype, TYPE, flags, ...) \
   { \
     static datatype defval = default_value; \
-    CHECK_TYPE(T::name, datatype); \
+    static_assert(std::is_same_v<decltype(T::name), datatype>); \
     type->register_input(ustring(#name), \
                          ustring(ui_name), \
                          TYPE, \

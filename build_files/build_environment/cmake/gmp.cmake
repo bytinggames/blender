@@ -1,20 +1,4 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 set(GMP_EXTRA_ARGS -enable-cxx)
 
@@ -38,18 +22,12 @@ elseif(UNIX AND NOT APPLE)
   )
 endif()
 
-if(BLENDER_PLATFORM_ARM)
-  set(GMP_OPTIONS
-    ${GMP_OPTIONS}
-    --disable-assembly
-  )
-endif()
-
 ExternalProject_Add(external_gmp
   URL file://${PACKAGE_DIR}/${GMP_FILE}
   DOWNLOAD_DIR ${DOWNLOAD_DIR}
   URL_HASH ${GMP_HASH_TYPE}=${GMP_HASH}
   PREFIX ${BUILD_DIR}/gmp
+  PATCH_COMMAND ${PATCH_CMD} -p 1 -d ${BUILD_DIR}/gmp/src/external_gmp < ${PATCH_DIR}/gmp.diff
   CONFIGURE_COMMAND ${CONFIGURE_ENV_NO_PERL} && cd ${BUILD_DIR}/gmp/src/external_gmp/ && ${CONFIGURE_COMMAND} --prefix=${LIBDIR}/gmp ${GMP_OPTIONS} ${GMP_EXTRA_ARGS}
   BUILD_COMMAND ${CONFIGURE_ENV_NO_PERL} && cd ${BUILD_DIR}/gmp/src/external_gmp/ && make -j${MAKE_THREADS}
   INSTALL_COMMAND ${CONFIGURE_ENV_NO_PERL} && cd ${BUILD_DIR}/gmp/src/external_gmp/ && make install

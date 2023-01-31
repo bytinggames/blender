@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -245,7 +231,7 @@ static BMOpDefine bmo_region_extend_def = {
  * Edge Rotate.
  *
  * Rotates edges topologically.  Also known as "spin edge" to some people.
- * Simple example: ``[/] becomes [|] then [\]``.
+ * Simple example: `[/] becomes [|] then [\]`.
  */
 static BMOpDefine bmo_rotate_edges_def = {
   "rotate_edges",
@@ -567,7 +553,7 @@ static BMOpDefine bmo_contextual_create_def = {
   },
   /* slots_out */
   {{"faces.out", BMO_OP_SLOT_ELEMENT_BUF, {BM_FACE}}, /* newly-made face(s) */
-  /* note, this is for stand-alone edges only, not edges which are a part of newly created faces */
+  /* NOTE: this is for stand-alone edges only, not edges which are a part of newly created faces. */
    {"edges.out", BMO_OP_SLOT_ELEMENT_BUF, {BM_EDGE}}, /* newly-made edge(s) */
    {{'\0'}},
   },
@@ -724,7 +710,7 @@ static BMOpDefine bmo_edgenet_fill_def = {
 };
 
 /*
- * Edgenet Prepare.
+ * Edge-net Prepare.
  *
  * Identifies several useful edge loop cases and modifies them so
  * they'll become a face when edgenet_fill is called.  The cases covered are:
@@ -1186,6 +1172,7 @@ static BMO_FlagSet bmo_enum_triangulate_quad_method[] = {
   {MOD_TRIANGULATE_QUAD_FIXED, "FIXED"},
   {MOD_TRIANGULATE_QUAD_ALTERNATE, "ALTERNATE"},
   {MOD_TRIANGULATE_QUAD_SHORTEDGE, "SHORT_EDGE"},
+  {MOD_TRIANGULATE_QUAD_LONGEDGE, "LONG_EDGE"},
   {0, NULL},
 };
 
@@ -1337,7 +1324,7 @@ static BMOpDefine bmo_bisect_plane_def = {
    {{'\0'}},
   },
   {{"geom_cut.out", BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT | BM_EDGE}},  /* output geometry aligned with the plane (new and existing) */
-   {"geom.out",     BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT | BM_EDGE | BM_FACE}},  /* input and output geometry (result of cut)  */
+   {"geom.out",     BMO_OP_SLOT_ELEMENT_BUF, {BM_VERT | BM_EDGE | BM_FACE}},  /* input and output geometry (result of cut). */
    {{'\0'}}},
   bmo_bisect_plane_exec,
   (BMO_OPTYPE_FLAG_UNTAN_MULTIRES |
@@ -1506,6 +1493,7 @@ static BMOpDefine bmo_rotate_colors_def = {
   /* slots_in */
   {{"faces", BMO_OP_SLOT_ELEMENT_BUF, {BM_FACE}},    /* input faces */
    {"use_ccw", BMO_OP_SLOT_BOOL},         /* rotate counter-clockwise if true, otherwise clockwise */
+   {"color_index", BMO_OP_SLOT_INT}, /* index into color attribute list */
    {{'\0'}},
   },
   {{{'\0'}}},  /* no output */
@@ -1522,6 +1510,7 @@ static BMOpDefine bmo_reverse_colors_def = {
   "reverse_colors",
   /* slots_in */
   {{"faces", BMO_OP_SLOT_ELEMENT_BUF, {BM_FACE}},    /* input faces */
+   {"color_index", BMO_OP_SLOT_INT}, /* index into color attribute list */
    {{'\0'}},
   },
   {{{'\0'}}},  /* no output */
@@ -1587,7 +1576,7 @@ static BMOpDefine bmo_create_uvsphere_def = {
   /* slots_in */
   {{"u_segments",      BMO_OP_SLOT_INT}, /* number of u segments */
    {"v_segments",      BMO_OP_SLOT_INT}, /* number of v segment */
-   {"diameter",        BMO_OP_SLOT_FLT}, /* diameter */
+   {"radius",          BMO_OP_SLOT_FLT}, /* radius */
    {"matrix",          BMO_OP_SLOT_MAT}, /* matrix to multiply the new geometry with */
    {"calc_uvs",        BMO_OP_SLOT_BOOL}, /* calculate default UVs */
    {{'\0'}},
@@ -1610,7 +1599,7 @@ static BMOpDefine bmo_create_icosphere_def = {
   "create_icosphere",
   /* slots_in */
   {{"subdivisions",    BMO_OP_SLOT_INT}, /* how many times to recursively subdivide the sphere */
-   {"diameter",        BMO_OP_SLOT_FLT}, /* diameter */
+   {"radius",          BMO_OP_SLOT_FLT}, /* radius */
    {"matrix",          BMO_OP_SLOT_MAT}, /* matrix to multiply the new geometry with */
    {"calc_uvs",        BMO_OP_SLOT_BOOL}, /* calculate default UVs */
    {{'\0'}},
@@ -1656,8 +1645,8 @@ static BMOpDefine bmo_create_cone_def = {
   {{"cap_ends",        BMO_OP_SLOT_BOOL},  /* whether or not to fill in the ends with faces */
    {"cap_tris",        BMO_OP_SLOT_BOOL},  /* fill ends with triangles instead of ngons */
    {"segments",        BMO_OP_SLOT_INT},  /* number of vertices in the base circle */
-   {"diameter1",       BMO_OP_SLOT_FLT},  /* diameter of one end */
-   {"diameter2",       BMO_OP_SLOT_FLT},  /* diameter of the opposite */
+   {"radius1",         BMO_OP_SLOT_FLT},  /* radius of one end */
+   {"radius2",         BMO_OP_SLOT_FLT},  /* radius of the opposite */
    {"depth",           BMO_OP_SLOT_FLT},  /* distance between ends */
    {"matrix",          BMO_OP_SLOT_MAT},  /* matrix to multiply the new geometry with */
    {"calc_uvs",        BMO_OP_SLOT_BOOL}, /* calculate default UVs */
@@ -1942,7 +1931,7 @@ static BMOpDefine bmo_inset_region_def = {
 };
 
 /*
- * Edgeloop Offset.
+ * Edge-loop Offset.
  *
  * Creates edge loops based on simple edge-outset method.
  */

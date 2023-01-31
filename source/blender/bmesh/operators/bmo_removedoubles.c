@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -327,7 +313,6 @@ void bmo_weld_verts_exec(BMesh *bm, BMOperator *op)
 }
 
 #define VERT_KEEP 8
-#define VERT_IN 32
 
 #define EDGE_MARK 1
 
@@ -578,7 +563,7 @@ static void bmo_collapsecon_do_layer(BMesh *bm, const int layer, const short ofl
           CustomData_data_multiply(type, &max, 0.5f);
           CustomData_data_add(type, &min, &max);
 
-          /* snap CD (uv, vcol) points to their centroid */
+          /* Snap custom-data (UV, vertex-colors) points to their centroid. */
           while (!BLI_stack_is_empty(block_stack)) {
             void *block;
             BLI_stack_pop(block_stack, &block);
@@ -672,10 +657,10 @@ static void bmesh_find_doubles_common(BMesh *bm,
     for (int i = 0; i < verts_len; i++) {
       BMVert *v_check = verts[i];
       if (duplicates[i] == -1) {
-        /* nop (others can use as target) */
+        /* NOP (others can use as target). */
       }
       else if (duplicates[i] == i) {
-        /* keep (others can use as target) */
+        /* Keep (others can use as target). */
       }
       else {
         BMVert *v_other = verts[duplicates[i]];

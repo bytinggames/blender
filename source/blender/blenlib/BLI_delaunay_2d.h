@@ -1,26 +1,12 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
 /** \file
  * \ingroup bli
  *
- *  This header file contains both a C interface and a C++ interface
- *  to the 2D Constrained Delaunay Triangulation library routine.
+ * This header file contains both a C interface and a C++ interface
+ * to the 2D Constrained Delaunay Triangulation library routine.
  */
 
 #ifdef __cplusplus
@@ -110,6 +96,10 @@ extern "C" {
  * If zero is supplied for epsilon, an internal value of 1e-8 used
  * instead, since this code will not work correctly if it is not allowed
  * to merge "too near" vertices.
+ *
+ * Normally the output will contain mappings from outputs to inputs.
+ * If this is not needed, set need_ids to false and the execution may be much
+ * faster in some circumstances.
  */
 typedef struct CDT_input {
   int verts_len;
@@ -121,6 +111,7 @@ typedef struct CDT_input {
   int *faces_start_table;
   int *faces_len_table;
   float epsilon;
+  bool need_ids;
 } CDT_input;
 
 /**
@@ -140,6 +131,7 @@ typedef struct CDT_input {
  * a run-together array and a "start" and "len" extra array,
  * similar triples are used to represent the output to input
  * mapping of vertices, edges, and faces.
+ * These are only set if need_ids is true in the input.
  *
  * Those triples are:
  * - verts_orig, verts_orig_start_table, verts_orig_len_table
@@ -178,6 +170,8 @@ typedef enum CDT_output_type {
   CDT_FULL,
   /** All triangles fully enclosed by constraint edges or faces. */
   CDT_INSIDE,
+  /** Like previous, but detect holes and omit those from output. */
+  CDT_INSIDE_WITH_HOLES,
   /** Only point, edge, and face constraints, and their intersections. */
   CDT_CONSTRAINTS,
   /**
@@ -186,7 +180,9 @@ typedef enum CDT_output_type {
    * #BMesh faces in Blender: that is,
    * no vertex appears more than once and no isolated holes in faces.
    */
-  CDT_CONSTRAINTS_VALID_BMESH
+  CDT_CONSTRAINTS_VALID_BMESH,
+  /** Like previous, but detect holes and omit those from output. */
+  CDT_CONSTRAINTS_VALID_BMESH_WITH_HOLES,
 } CDT_output_type;
 
 /**
@@ -205,14 +201,14 @@ void BLI_delaunay_2d_cdt_free(CDT_result *result);
 /* C++ Interface. */
 
 #  include "BLI_array.hh"
-#  include "BLI_double2.hh"
 #  include "BLI_math_mpq.hh"
-#  include "BLI_mpq2.hh"
+#  include "BLI_math_vec_mpq_types.hh"
+#  include "BLI_math_vec_types.hh"
 #  include "BLI_vector.hh"
 
 namespace blender::meshintersect {
 
-/* vec2<Arith_t> is a 2d vector with Arith_t as the type for coordinates. */
+/** #vec2<Arith_t> is a 2d vector with #Arith_t as the type for coordinates. */
 template<typename Arith_t> struct vec2_impl;
 template<> struct vec2_impl<double> {
   typedef double2 type;
@@ -232,6 +228,7 @@ template<typename Arith_t> class CDT_input {
   Array<std::pair<int, int>> edge;
   Array<Vector<int>> face;
   Arith_t epsilon{0};
+  bool need_ids{true};
 };
 
 template<typename Arith_t> class CDT_result {
@@ -239,6 +236,7 @@ template<typename Arith_t> class CDT_result {
   Array<vec2<Arith_t>> vert;
   Array<std::pair<int, int>> edge;
   Array<Vector<int>> face;
+  /* The orig vectors are only populated if the need_ids input field is true. */
   /** For each output vert, which input verts correspond to it? */
   Array<Vector<int>> vert_orig;
   /**

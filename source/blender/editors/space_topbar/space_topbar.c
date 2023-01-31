@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2017 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2017 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup sptopbar
@@ -35,6 +19,7 @@
 #include "BKE_context.h"
 #include "BKE_global.h"
 #include "BKE_screen.h"
+#include "BKE_undo_system.h"
 
 #include "ED_screen.h"
 #include "ED_space_api.h"
@@ -42,6 +27,8 @@
 #include "UI_interface.h"
 #include "UI_resources.h"
 #include "UI_view2d.h"
+
+#include "BLO_read_write.h"
 
 #include "RNA_access.h"
 
@@ -131,7 +118,7 @@ static void topbar_header_region_init(wmWindowManager *UNUSED(wm), ARegion *regi
 static void topbar_main_region_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -161,7 +148,7 @@ static void topbar_main_region_listener(const wmRegionListenerParams *params)
 static void topbar_header_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -169,6 +156,9 @@ static void topbar_header_listener(const wmRegionListenerParams *params)
       if (wmn->data == ND_JOB) {
         ED_region_tag_redraw(region);
       }
+      break;
+    case NC_WORKSPACE:
+      ED_region_tag_redraw(region);
       break;
     case NC_SPACE:
       if (wmn->data == ND_SPACE_INFO) {
@@ -236,14 +226,76 @@ static void recent_files_menu_register(void)
   WM_menutype_add(mt);
 }
 
-/* only called once, from space/spacetypes.c */
+static void undo_history_draw_menu(const bContext *C, Menu *menu)
+{
+  wmWindowManager *wm = CTX_wm_manager(C);
+  if (wm->undo_stack == NULL) {
+    return;
+  }
+
+  int undo_step_count = 0;
+  int undo_step_count_all = 0;
+  for (UndoStep *us = wm->undo_stack->steps.last; us; us = us->prev) {
+    undo_step_count_all += 1;
+    if (us->skip) {
+      continue;
+    }
+    undo_step_count += 1;
+  }
+
+  uiLayout *split = uiLayoutSplit(menu->layout, 0.0f, false);
+  uiLayout *column = NULL;
+
+  const int col_size = 20 + (undo_step_count / 12);
+
+  undo_step_count = 0;
+
+  /* Reverse the order so the most recent state is first in the menu. */
+  int i = undo_step_count_all - 1;
+  for (UndoStep *us = wm->undo_stack->steps.last; us; us = us->prev, i--) {
+    if (us->skip) {
+      continue;
+    }
+    if (!(undo_step_count % col_size)) {
+      column = uiLayoutColumn(split, false);
+    }
+    const bool is_active = (us == wm->undo_stack->step_active);
+    uiLayout *row = uiLayoutRow(column, false);
+    uiLayoutSetEnabled(row, !is_active);
+    uiItemIntO(row,
+               IFACE_(us->name),
+               is_active ? ICON_LAYER_ACTIVE : ICON_NONE,
+               "ED_OT_undo_history",
+               "item",
+               i);
+    undo_step_count += 1;
+  }
+}
+
+static void undo_history_menu_register(void)
+{
+  MenuType *mt;
+
+  mt = MEM_callocN(sizeof(MenuType), __func__);
+  strcpy(mt->idname, "TOPBAR_MT_undo_history");
+  strcpy(mt->label, N_("Undo History"));
+  strcpy(mt->translation_context, BLT_I18NCONTEXT_DEFAULT_BPYRNA);
+  mt->draw = undo_history_draw_menu;
+  WM_menutype_add(mt);
+}
+
+static void topbar_blend_write(BlendWriter *writer, SpaceLink *sl)
+{
+  BLO_write_struct(writer, SpaceTopBar, sl);
+}
+
 void ED_spacetype_topbar(void)
 {
   SpaceType *st = MEM_callocN(sizeof(SpaceType), "spacetype topbar");
   ARegionType *art;
 
   st->spaceid = SPACE_TOPBAR;
-  strncpy(st->name, "Top Bar", BKE_ST_MAXNAME);
+  STRNCPY(st->name, "Top Bar");
 
   st->create = topbar_create;
   st->free = topbar_free;
@@ -251,6 +303,7 @@ void ED_spacetype_topbar(void)
   st->duplicate = topbar_duplicate;
   st->operatortypes = topbar_operatortypes;
   st->keymap = topbar_keymap;
+  st->blend_write = topbar_blend_write;
 
   /* regions: main window */
   art = MEM_callocN(sizeof(ARegionType), "spacetype topbar main region");
@@ -279,6 +332,7 @@ void ED_spacetype_topbar(void)
   BLI_addhead(&st->regiontypes, art);
 
   recent_files_menu_register();
+  undo_history_menu_register();
 
   BKE_spacetype_register(st);
 }

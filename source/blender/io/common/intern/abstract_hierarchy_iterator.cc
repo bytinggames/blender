@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2019 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2019 Blender Foundation. All rights reserved. */
 #include "IO_abstract_hierarchy_iterator.h"
 #include "dupli_parent_finder.hh"
 
@@ -139,7 +123,7 @@ AbstractHierarchyWriter *EnsuredWriter::operator->()
 
 bool AbstractHierarchyWriter::check_is_animated(const HierarchyContext &context) const
 {
-  const Object *object = context.object;
+  Object *object = context.object;
 
   if (BKE_animdata_id_is_animated(static_cast<ID *>(object->data))) {
     return true;
@@ -177,8 +161,8 @@ bool AbstractHierarchyWriter::check_has_deforming_physics(const HierarchyContext
   return rbo != nullptr && rbo->type == RBO_TYPE_ACTIVE && (rbo->flag & RBO_FLAG_USE_DEFORM) != 0;
 }
 
-AbstractHierarchyIterator::AbstractHierarchyIterator(Depsgraph *depsgraph)
-    : depsgraph_(depsgraph), export_subset_({true, true})
+AbstractHierarchyIterator::AbstractHierarchyIterator(Main *bmain, Depsgraph *depsgraph)
+    : bmain_(bmain), depsgraph_(depsgraph), export_subset_({true, true})
 {
 }
 
@@ -283,10 +267,16 @@ void AbstractHierarchyIterator::export_graph_construct()
 {
   Scene *scene = DEG_get_evaluated_scene(depsgraph_);
 
-  DEG_OBJECT_ITER_BEGIN (depsgraph_,
-                         object,
-                         DEG_ITER_OBJECT_FLAG_LINKED_DIRECTLY |
-                             DEG_ITER_OBJECT_FLAG_LINKED_VIA_SET) {
+  /* Add a "null" root node with no children immediately for the case where the top-most node in
+   * the scene is not being exported and a root node otherwise wouldn't get added. */
+  ExportGraph::key_type root_node_id = ObjectIdentifier::for_real_object(nullptr);
+  export_graph_[root_node_id] = ExportChildren();
+
+  DEGObjectIterSettings deg_iter_settings{};
+  deg_iter_settings.depsgraph = depsgraph_;
+  deg_iter_settings.flags = DEG_ITER_OBJECT_FLAG_LINKED_DIRECTLY |
+                            DEG_ITER_OBJECT_FLAG_LINKED_VIA_SET;
+  DEG_OBJECT_ITER_BEGIN (&deg_iter_settings, object) {
     /* Non-instanced objects always have their object-parent as export-parent. */
     const bool weak_export = mark_as_weak_export(object);
     visit_object(object, object->parent, weak_export);
@@ -426,7 +416,7 @@ void AbstractHierarchyIterator::visit_object(Object *object,
   context->original_export_path = "";
   context->higher_up_export_path = "";
 
-  copy_m4_m4(context->matrix_world, object->obmat);
+  copy_m4_m4(context->matrix_world, object->object_to_world);
 
   ExportGraph::key_type graph_index = determine_graph_index_object(context);
   context_update_for_graph_index(context, graph_index);
@@ -462,7 +452,6 @@ void AbstractHierarchyIterator::visit_dupli_object(DupliObject *dupli_object,
   context->weak_export = false;
   context->export_path = "";
   context->original_export_path = "";
-  context->export_path = "";
   context->animation_check_include_parent = false;
 
   copy_m4_m4(context->matrix_world, dupli_object->mat);
@@ -682,6 +671,15 @@ void AbstractHierarchyIterator::make_writers_particle_systems(
         writer = ensure_writer(&hair_context, &AbstractHierarchyIterator::create_hair_writer);
         break;
       case PART_EMITTER:
+      case PART_FLUID_FLIP:
+      case PART_FLUID_SPRAY:
+      case PART_FLUID_BUBBLE:
+      case PART_FLUID_FOAM:
+      case PART_FLUID_TRACER:
+      case PART_FLUID_SPRAYFOAM:
+      case PART_FLUID_SPRAYBUBBLE:
+      case PART_FLUID_FOAMBUBBLE:
+      case PART_FLUID_SPRAYFOAMBUBBLE:
         writer = ensure_writer(&hair_context, &AbstractHierarchyIterator::create_particle_writer);
         break;
     }

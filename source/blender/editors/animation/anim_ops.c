@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edanimation
@@ -51,6 +35,7 @@
 
 #include "DEG_depsgraph.h"
 
+#include "SEQ_iterator.h"
 #include "SEQ_sequencer.h"
 #include "SEQ_time.h"
 
@@ -72,13 +57,71 @@ static bool change_frame_poll(bContext *C)
    * this shouldn't show up in 3D editor (or others without 2D timeline view) via search
    */
   if (area) {
-    if (ELEM(area->spacetype, SPACE_ACTION, SPACE_NLA, SPACE_SEQ, SPACE_CLIP, SPACE_GRAPH)) {
+    if (ELEM(area->spacetype, SPACE_ACTION, SPACE_NLA, SPACE_CLIP)) {
       return true;
+    }
+    if (area->spacetype == SPACE_SEQ) {
+      /* Check the region type so tools (which are shared between preview/strip view)
+       * don't conflict with actions which can have the same key bound (2D cursor for example). */
+      const ARegion *region = CTX_wm_region(C);
+      if (region && region->regiontype == RGN_TYPE_WINDOW) {
+        return true;
+      }
+    }
+    if (area->spacetype == SPACE_GRAPH) {
+      const SpaceGraph *sipo = area->spacedata.first;
+      /* Driver Editor's X axis is not time. */
+      if (sipo->mode != SIPO_MODE_DRIVERS) {
+        return true;
+      }
     }
   }
 
   CTX_wm_operator_poll_msg_set(C, "Expected an animation area to be active");
   return false;
+}
+
+static int seq_snap_threshold_get_frame_distance(bContext *C)
+{
+  const int snap_distance = SEQ_tool_settings_snap_distance_get(CTX_data_scene(C));
+  const ARegion *region = CTX_wm_region(C);
+  return round_fl_to_int(UI_view2d_region_to_view_x(&region->v2d, snap_distance) -
+                         UI_view2d_region_to_view_x(&region->v2d, 0));
+}
+
+static void seq_frame_snap_update_best(const int position,
+                                       const int timeline_frame,
+                                       int *r_best_frame,
+                                       int *r_best_distance)
+{
+  if (abs(position - timeline_frame) < *r_best_distance) {
+    *r_best_distance = abs(position - timeline_frame);
+    *r_best_frame = position;
+  }
+}
+
+static int seq_frame_apply_snap(bContext *C, Scene *scene, const int timeline_frame)
+{
+
+  ListBase *seqbase = SEQ_active_seqbase_get(SEQ_editing_get(scene));
+  SeqCollection *strips = SEQ_query_all_strips(seqbase);
+
+  int best_frame = 0;
+  int best_distance = MAXFRAME;
+  Sequence *seq;
+  SEQ_ITERATOR_FOREACH (seq, strips) {
+    seq_frame_snap_update_best(
+        SEQ_time_left_handle_frame_get(scene, seq), timeline_frame, &best_frame, &best_distance);
+    seq_frame_snap_update_best(
+        SEQ_time_right_handle_frame_get(scene, seq), timeline_frame, &best_frame, &best_distance);
+  }
+  SEQ_collection_free(strips);
+
+  if (best_distance < seq_snap_threshold_get_frame_distance(C)) {
+    return best_frame;
+  }
+
+  return timeline_frame;
 }
 
 /* Set the new frame number */
@@ -89,8 +132,8 @@ static void change_frame_apply(bContext *C, wmOperator *op)
   bool do_snap = RNA_boolean_get(op->ptr, "snap");
 
   if (do_snap) {
-    if (CTX_wm_space_seq(C)) {
-      frame = SEQ_time_find_next_prev_edit(scene, frame, SEQ_SIDE_BOTH, true, false, false);
+    if (CTX_wm_space_seq(C) && SEQ_editing_get(scene) != NULL) {
+      frame = seq_frame_apply_snap(C, scene, frame);
     }
     else {
       frame = BKE_scene_frame_snap_by_seconds(scene, 1.0, frame);
@@ -99,17 +142,17 @@ static void change_frame_apply(bContext *C, wmOperator *op)
 
   /* set the new frame number */
   if (scene->r.flag & SCER_SHOW_SUBFRAME) {
-    CFRA = (int)frame;
-    SUBFRA = frame - (int)frame;
+    scene->r.cfra = (int)frame;
+    scene->r.subframe = frame - (int)frame;
   }
   else {
-    CFRA = round_fl_to_int(frame);
-    SUBFRA = 0.0f;
+    scene->r.cfra = round_fl_to_int(frame);
+    scene->r.subframe = 0.0f;
   }
-  FRAMENUMBER_MIN_CLAMP(CFRA);
+  FRAMENUMBER_MIN_CLAMP(scene->r.cfra);
 
   /* do updates */
-  DEG_id_tag_update(&scene->id, ID_RECALC_AUDIO_SEEK);
+  DEG_id_tag_update(&scene->id, ID_RECALC_FRAME_CHANGE);
   WM_event_add_notifier(C, NC_SCENE | ND_FRAME, scene);
 }
 
@@ -181,14 +224,35 @@ static void change_frame_seq_preview_end(bContext *C)
   }
 }
 
+static bool use_sequencer_snapping(bContext *C)
+{
+  if (!CTX_wm_space_seq(C)) {
+    return false;
+  }
+
+  Scene *scene = CTX_data_scene(C);
+  short snap_flag = SEQ_tool_settings_snap_flag_get(scene);
+  return (scene->toolsettings->snap_flag_seq & SCE_SNAP) &&
+         (snap_flag & SEQ_SNAP_CURRENT_FRAME_TO_STRIPS);
+}
+
 /* Modal Operator init */
 static int change_frame_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
+  ARegion *region = CTX_wm_region(C);
+  if (CTX_wm_space_seq(C) != NULL && region->regiontype == RGN_TYPE_PREVIEW) {
+    return OPERATOR_CANCELLED;
+  }
+
   /* Change to frame that mouse is over before adding modal handler,
    * as user could click on a single frame (jump to frame) as well as
    * click-dragging over a range (modal scrubbing).
    */
   RNA_float_set(op->ptr, "frame", frame_from_event(C, event));
+
+  if (use_sequencer_snapping(C)) {
+    RNA_boolean_set(op->ptr, "snap", true);
+  }
 
   change_frame_seq_preview_begin(C, event);
 
@@ -231,11 +295,22 @@ static int change_frame_modal(bContext *C, wmOperator *op, const wmEvent *event)
 
     case EVT_LEFTCTRLKEY:
     case EVT_RIGHTCTRLKEY:
-      if (event->val == KM_RELEASE) {
-        RNA_boolean_set(op->ptr, "snap", false);
+      /* Use Ctrl key to invert snapping in sequencer. */
+      if (use_sequencer_snapping(C)) {
+        if (event->val == KM_RELEASE) {
+          RNA_boolean_set(op->ptr, "snap", true);
+        }
+        else if (event->val == KM_PRESS) {
+          RNA_boolean_set(op->ptr, "snap", false);
+        }
       }
-      else if (event->val == KM_PRESS) {
-        RNA_boolean_set(op->ptr, "snap", true);
+      else {
+        if (event->val == KM_RELEASE) {
+          RNA_boolean_set(op->ptr, "snap", false);
+        }
+        else if (event->val == KM_PRESS) {
+          RNA_boolean_set(op->ptr, "snap", true);
+        }
       }
       break;
   }
@@ -307,7 +382,7 @@ static int anim_set_sfra_exec(bContext *C, wmOperator *op)
     return OPERATOR_CANCELLED;
   }
 
-  frame = CFRA;
+  frame = scene->r.cfra;
 
   /* if Preview Range is defined, set the 'start' frame for that */
   if (PRVRANGEON) {
@@ -362,7 +437,7 @@ static int anim_set_efra_exec(bContext *C, wmOperator *op)
     return OPERATOR_CANCELLED;
   }
 
-  frame = CFRA;
+  frame = scene->r.cfra;
 
   /* if Preview Range is defined, set the 'end' frame for that */
   if (PRVRANGEON) {
@@ -465,7 +540,7 @@ static void ANIM_OT_previewrange_set(wmOperatorType *ot)
   /* rna */
   /* used to define frame range.
    *
-   * note: border Y values are not used,
+   * NOTE: border Y values are not used,
    * but are needed by box_select gesture operator stuff */
   WM_operator_properties_border(ot);
 }

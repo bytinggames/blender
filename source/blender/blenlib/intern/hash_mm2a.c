@@ -1,19 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- * Copyright (C) 2014 Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2014 Blender Foundation. */
 
 /** \file
  * \ingroup bli
@@ -55,7 +41,7 @@
   } \
   (void)0
 
-static void mm2a_mix_tail(BLI_HashMurmur2A *mm2, const unsigned char **data, size_t *len)
+static void mm2a_mix_tail(BLI_HashMurmur2A *mm2, const uchar **data, size_t *len)
 {
   while (*len && ((*len < 4) || mm2->count)) {
     mm2->tail |= (uint32_t)(**data) << (mm2->count * 8);
@@ -80,7 +66,7 @@ void BLI_hash_mm2a_init(BLI_HashMurmur2A *mm2, uint32_t seed)
   mm2->size = 0;
 }
 
-void BLI_hash_mm2a_add(BLI_HashMurmur2A *mm2, const unsigned char *data, size_t len)
+void BLI_hash_mm2a_add(BLI_HashMurmur2A *mm2, const uchar *data, size_t len)
 {
   mm2->size += (uint32_t)len;
 
@@ -97,7 +83,7 @@ void BLI_hash_mm2a_add(BLI_HashMurmur2A *mm2, const unsigned char *data, size_t 
 
 void BLI_hash_mm2a_add_int(BLI_HashMurmur2A *mm2, int data)
 {
-  BLI_hash_mm2a_add(mm2, (const unsigned char *)&data, sizeof(data));
+  BLI_hash_mm2a_add(mm2, (const uchar *)&data, sizeof(data));
 }
 
 uint32_t BLI_hash_mm2a_end(BLI_HashMurmur2A *mm2)
@@ -110,8 +96,7 @@ uint32_t BLI_hash_mm2a_end(BLI_HashMurmur2A *mm2)
   return mm2->hash;
 }
 
-/* Non-incremental version, quicker for small keys. */
-uint32_t BLI_hash_mm2(const unsigned char *data, size_t len, uint32_t seed)
+uint32_t BLI_hash_mm2(const uchar *data, size_t len, uint32_t seed)
 {
   /* Initialize the hash to a 'random' value */
   uint32_t h = seed ^ len;

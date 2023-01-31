@@ -1,6 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
 #include "testing/testing.h"
 
-// Keep first since utildefines defines AT which conflicts with STL
+/* Keep first since utildefines defines AT which conflicts with STL. */
 #include "intern/abc_axis_conversion.h"
 
 #include "BLI_math.h"

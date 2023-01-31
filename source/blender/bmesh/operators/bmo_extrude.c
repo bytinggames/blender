@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -459,8 +445,10 @@ void bmo_extrude_face_region_exec(BMesh *bm, BMOperator *op)
     }
 
     /* Allocate array to store possible vertices that will be dissolved. */
-    int boundary_verts_len = BMO_slot_map_count(dupeop.slots_out, "boundary_map.out");
-    dissolve_verts = MEM_mallocN((size_t)boundary_verts_len * sizeof(*dissolve_verts), __func__);
+    int boundary_edges_len = BMO_slot_map_len(dupeop.slots_out, "boundary_map.out");
+    /* We do not know the real number of boundary vertices. */
+    int boundary_verts_len_maybe = 2 * boundary_edges_len;
+    dissolve_verts = MEM_mallocN(boundary_verts_len_maybe * sizeof(*dissolve_verts), __func__);
   }
 
   BMO_slot_copy(&dupeop, slots_out, "geom.out", op, slots_out, "geom.out");

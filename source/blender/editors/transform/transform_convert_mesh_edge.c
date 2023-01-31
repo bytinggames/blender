@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -28,6 +12,7 @@
 #include "BLI_math.h"
 
 #include "BKE_context.h"
+#include "BKE_customdata.h"
 #include "BKE_editmesh.h"
 #include "BKE_mesh.h"
 
@@ -38,7 +23,7 @@
 /** \name Edge (for crease) Transform Creation
  * \{ */
 
-void createTransEdge(TransInfo *t)
+static void createTransEdge(bContext *UNUSED(C), TransInfo *t)
 {
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
 
@@ -77,17 +62,21 @@ void createTransEdge(TransInfo *t)
 
     td = tc->data = MEM_callocN(tc->data_len * sizeof(TransData), "TransCrease");
 
-    copy_m3_m4(mtx, tc->obedit->obmat);
+    copy_m3_m4(mtx, tc->obedit->object_to_world);
     pseudoinverse_m3_m3(smtx, mtx, PSEUDOINVERSE_EPSILON);
 
     /* create data we need */
     if (t->mode == TFM_BWEIGHT) {
-      BM_mesh_cd_flag_ensure(em->bm, BKE_mesh_from_object(tc->obedit), ME_CDFLAG_EDGE_BWEIGHT);
+      if (!CustomData_has_layer(&em->bm->edata, CD_BWEIGHT)) {
+        BM_data_layer_add(em->bm, &em->bm->edata, CD_BWEIGHT);
+      }
       cd_edge_float_offset = CustomData_get_offset(&em->bm->edata, CD_BWEIGHT);
     }
-    else { /* if (t->mode == TFM_CREASE) { */
-      BLI_assert(t->mode == TFM_CREASE);
-      BM_mesh_cd_flag_ensure(em->bm, BKE_mesh_from_object(tc->obedit), ME_CDFLAG_EDGE_CREASE);
+    else { /* if (t->mode == TFM_EDGE_CREASE) { */
+      BLI_assert(t->mode == TFM_EDGE_CREASE);
+      if (!CustomData_has_layer(&em->bm->edata, CD_CREASE)) {
+        BM_data_layer_add(em->bm, &em->bm->edata, CD_CREASE);
+      }
       cd_edge_float_offset = CustomData_get_offset(&em->bm->edata, CD_CREASE);
     }
 
@@ -114,8 +103,8 @@ void createTransEdge(TransInfo *t)
         td->ext = NULL;
 
         fl_ptr = BM_ELEM_CD_GET_VOID_P(eed, cd_edge_float_offset);
-        td->val = fl_ptr;
-        td->ival = *fl_ptr;
+        td->loc = fl_ptr;
+        td->iloc[0] = *fl_ptr;
 
         td++;
       }
@@ -123,4 +112,18 @@ void createTransEdge(TransInfo *t)
   }
 }
 
+static void recalcData_mesh_edge(TransInfo *t)
+{
+  FOREACH_TRANS_DATA_CONTAINER (t, tc) {
+    DEG_id_tag_update(tc->obedit->data, ID_RECALC_GEOMETRY);
+  }
+}
+
 /** \} */
+
+TransConvertTypeInfo TransConvertType_MeshEdge = {
+    /* flags */ T_EDIT,
+    /* createTransData */ createTransEdge,
+    /* recalcData */ recalcData_mesh_edge,
+    /* special_aftertrans_update */ NULL,
+};

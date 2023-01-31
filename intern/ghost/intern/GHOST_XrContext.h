@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup GHOST
@@ -35,6 +21,7 @@ struct GHOST_XrCustomFuncs {
   /** Function to release (possibly free) a graphics context. */
   GHOST_XrGraphicsContextUnbindFn gpu_ctx_unbind_fn = nullptr;
 
+  GHOST_XrSessionCreateFn session_create_fn = nullptr;
   GHOST_XrSessionExitFn session_exit_fn = nullptr;
   void *session_exit_customdata = nullptr;
 
@@ -50,6 +37,7 @@ enum GHOST_TXrOpenXRRuntimeID {
   OPENXR_RUNTIME_OCULUS,
   OPENXR_RUNTIME_STEAMVR,
   OPENXR_RUNTIME_WMR, /* Windows Mixed Reality */
+  OPENXR_RUNTIME_VARJO,
 
   OPENXR_RUNTIME_UNKNOWN
 };
@@ -72,6 +60,10 @@ class GHOST_XrContext : public GHOST_IXrContext {
   bool isSessionRunning() const override;
   void drawSessionViews(void *draw_customdata) override;
 
+  /** Needed for the GHOST C api. */
+  GHOST_XrSession *getSession() override;
+  const GHOST_XrSession *getSession() const override;
+
   static void setErrorHandler(GHOST_XrErrorHandlerFn handler_fn, void *customdata);
   void dispatchErrorMessage(const class GHOST_XrException *exception) const override;
 
@@ -88,6 +80,8 @@ class GHOST_XrContext : public GHOST_IXrContext {
   XrInstance getInstance() const;
   bool isDebugMode() const;
   bool isDebugTimeMode() const;
+
+  bool isExtensionEnabled(const char *ext) const;
 
  private:
   static GHOST_XrErrorHandlerFn s_error_handler;
@@ -118,6 +112,7 @@ class GHOST_XrContext : public GHOST_IXrContext {
   void storeInstanceProperties();
   void initDebugMessenger();
 
+  void printSDKVersion();
   void printInstanceInfo();
   void printAvailableAPILayersAndExtensionsInfo();
   void printExtensionsAndAPILayersToEnable();
@@ -131,5 +126,6 @@ class GHOST_XrContext : public GHOST_IXrContext {
   std::vector<GHOST_TXrGraphicsBinding> determineGraphicsBindingTypesToEnable(
       const GHOST_XrContextCreateInfo *create_info);
   GHOST_TXrGraphicsBinding determineGraphicsBindingTypeToUse(
-      const std::vector<GHOST_TXrGraphicsBinding> &enabled_types);
+      const std::vector<GHOST_TXrGraphicsBinding> &enabled_types,
+      const GHOST_XrContextCreateInfo *create_info);
 };

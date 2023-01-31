@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 import argparse
 import datetime
@@ -17,6 +18,7 @@ class Version:
     Version class that extracts the major, minor and build from
     a version string
     """
+
     def __init__(self, version: str):
         self.version = version
         v = version.split(".")
@@ -29,10 +31,10 @@ class Version:
 
 
 def get_download_file_names(version: Version):
-    yield f"blender-{version}-linux64.tar.xz"
-    yield f"blender-{version}-macOS.dmg"
-    yield f"blender-{version}-windows64.msi"
-    yield f"blender-{version}-windows64.zip"
+    yield f"blender-{version}-linux-x64.tar.xz"
+    yield f"blender-{version}-macos-x64.dmg"
+    yield f"blender-{version}-windows-x64.msi"
+    yield f"blender-{version}-windows-x64.zip"
 
 
 def get_download_url(version: Version, file_name: str) -> str:

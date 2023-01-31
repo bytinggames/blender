@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edscr
@@ -144,7 +130,7 @@ static void drawscredge_area_draw(
   }
 
   GPUBatch *batch = batch_screen_edges_get(NULL);
-  GPU_batch_program_set_builtin(batch, GPU_SHADER_2D_AREA_EDGES);
+  GPU_batch_program_set_builtin(batch, GPU_SHADER_2D_AREA_BORDERS);
   GPU_batch_uniform_4fv(batch, "rect", (float *)&rect);
   GPU_batch_draw(batch);
 }
@@ -162,9 +148,6 @@ static void drawscredge_area(ScrArea *area, int sizex, int sizey, float edge_thi
   drawscredge_area_draw(sizex, sizey, x1, y1, x2, y2, edge_thickness);
 }
 
-/**
- * Only for edge lines between areas.
- */
 void ED_screen_draw_edges(wmWindow *win)
 {
   bScreen *screen = WM_window_get_active_screen(win);
@@ -190,7 +173,7 @@ void ED_screen_draw_edges(wmWindow *win)
     BLI_rcti_do_minmax_v(&scissor_rect, (int[2]){area->v3->vec.x, area->v3->vec.y});
   }
 
-  if (GPU_type_matches(GPU_DEVICE_INTEL_UHD, GPU_OS_UNIX, GPU_DRIVER_ANY)) {
+  if (GPU_type_matches_ex(GPU_DEVICE_INTEL_UHD, GPU_OS_UNIX, GPU_DRIVER_ANY, GPU_BACKEND_OPENGL)) {
     /* For some reason, on linux + Intel UHD Graphics 620 the driver
      * hangs if we don't flush before this. (See T57455) */
     GPU_flush();
@@ -215,7 +198,7 @@ void ED_screen_draw_edges(wmWindow *win)
   GPU_blend(GPU_BLEND_ALPHA);
 
   GPUBatch *batch = batch_screen_edges_get(&verts_per_corner);
-  GPU_batch_program_set_builtin(batch, GPU_SHADER_2D_AREA_EDGES);
+  GPU_batch_program_set_builtin(batch, GPU_SHADER_2D_AREA_BORDERS);
   GPU_batch_uniform_1i(batch, "cornerLen", verts_per_corner);
   GPU_batch_uniform_1f(batch, "scale", corner_scale);
   GPU_batch_uniform_4fv(batch, "color", col);
@@ -231,33 +214,29 @@ void ED_screen_draw_edges(wmWindow *win)
   }
 }
 
-/**
- * Visual indication of the two areas involved in a proposed join.
- *
- * \param sa1: Area from which the resultant originates.
- * \param sa2: Target area that will be replaced.
- */
-void ED_screen_draw_join_highlight(ScrArea *sa1, ScrArea *sa2)
+void screen_draw_join_highlight(ScrArea *sa1, ScrArea *sa2)
 {
-  int dir = area_getorientation(sa1, sa2);
-  if (dir == -1) {
+  const eScreenDir dir = area_getorientation(sa1, sa2);
+  if (dir == SCREEN_DIR_NONE) {
     return;
   }
 
-  /* Rect of the combined areas.*/
-  bool vertical = ELEM(dir, 1, 3);
-  rctf combined = {.xmin = vertical ? MAX2(sa1->totrct.xmin, sa2->totrct.xmin) :
-                                      MIN2(sa1->totrct.xmin, sa2->totrct.xmin),
-                   .xmax = vertical ? MIN2(sa1->totrct.xmax, sa2->totrct.xmax) :
-                                      MAX2(sa1->totrct.xmax, sa2->totrct.xmax),
-                   .ymin = vertical ? MIN2(sa1->totrct.ymin, sa2->totrct.ymin) :
-                                      MAX2(sa1->totrct.ymin, sa2->totrct.ymin),
-                   .ymax = vertical ? MAX2(sa1->totrct.ymax, sa2->totrct.ymax) :
-                                      MIN2(sa1->totrct.ymax, sa2->totrct.ymax)};
+  /* Rect of the combined areas. */
+  const bool vertical = SCREEN_DIR_IS_VERTICAL(dir);
+  const rctf combined = {
+      .xmin = vertical ? MAX2(sa1->totrct.xmin, sa2->totrct.xmin) :
+                         MIN2(sa1->totrct.xmin, sa2->totrct.xmin),
+      .xmax = vertical ? MIN2(sa1->totrct.xmax, sa2->totrct.xmax) :
+                         MAX2(sa1->totrct.xmax, sa2->totrct.xmax),
+      .ymin = vertical ? MIN2(sa1->totrct.ymin, sa2->totrct.ymin) :
+                         MAX2(sa1->totrct.ymin, sa2->totrct.ymin),
+      .ymax = vertical ? MAX2(sa1->totrct.ymax, sa2->totrct.ymax) :
+                         MIN2(sa1->totrct.ymax, sa2->totrct.ymax),
+  };
 
   uint pos_id = GPU_vertformat_attr_add(
       immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
   GPU_blend(GPU_BLEND_ALPHA);
 
   /* Highlight source (sa1) within combined area. */
@@ -320,10 +299,10 @@ void ED_screen_draw_join_highlight(ScrArea *sa1, ScrArea *sa2)
   UI_draw_roundbox_4fv(&combined, false, 7 * U.pixelsize, (float[4]){1.0f, 1.0f, 1.0f, 0.8f});
 }
 
-void ED_screen_draw_split_preview(ScrArea *area, const int dir, const float fac)
+void screen_draw_split_preview(ScrArea *area, const eScreenAxis dir_axis, const float fac)
 {
   uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
   /* Split-point. */
   GPU_blend(GPU_BLEND_ALPHA);
@@ -332,7 +311,7 @@ void ED_screen_draw_split_preview(ScrArea *area, const int dir, const float fac)
 
   immBegin(GPU_PRIM_LINES, 2);
 
-  if (dir == 'h') {
+  if (dir_axis == SCREEN_AXIS_H) {
     const float y = (1 - fac) * area->totrct.ymin + fac * area->totrct.ymax;
 
     immVertex2f(pos, area->totrct.xmin, y);
@@ -350,7 +329,7 @@ void ED_screen_draw_split_preview(ScrArea *area, const int dir, const float fac)
     immEnd();
   }
   else {
-    BLI_assert(dir == 'v');
+    BLI_assert(dir_axis == SCREEN_AXIS_V);
     const float x = (1 - fac) * area->totrct.xmin + fac * area->totrct.xmax;
 
     immVertex2f(pos, x, area->totrct.ymin);
@@ -401,7 +380,7 @@ static void screen_preview_draw_areas(const bScreen *screen,
   const float ofs_h = ofs_between_areas * 0.5f;
   uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
   immUniformColor4fv(col);
 
   LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
@@ -443,13 +422,10 @@ static void screen_preview_draw(const bScreen *screen, int size_x, int size_y)
   GPU_matrix_pop();
 }
 
-/**
- * Render the preview for a screen layout in \a screen.
- */
 void ED_screen_preview_render(const bScreen *screen, int size_x, int size_y, uint *r_rect)
 {
   char err_out[256] = "unknown";
-  GPUOffScreen *offscreen = GPU_offscreen_create(size_x, size_y, true, false, err_out);
+  GPUOffScreen *offscreen = GPU_offscreen_create(size_x, size_y, true, GPU_RGBA8, err_out);
 
   GPU_offscreen_bind(offscreen, true);
   GPU_clear_color(0.0f, 0.0f, 0.0f, 0.0f);

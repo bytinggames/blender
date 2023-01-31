@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup GHOST
@@ -26,10 +10,10 @@
 
 #ifndef WIN32
 #  error WIN32 only!
-#endif  // WIN32
+#endif /* WIN32 */
 
 #define WIN32_LEAN_AND_MEAN
-#include <ole2.h>  // for drag-n-drop
+#include <ole2.h> /* For drag-n-drop. */
 #include <windows.h>
 
 #include "GHOST_System.h"
@@ -69,14 +53,14 @@ class GHOST_SystemWin32 : public GHOST_System {
    * system process.
    * \return The number of milliseconds since the start of the system process.
    */
-  GHOST_TUns64 performanceCounterToMillis(__int64 perf_ticks) const;
+  uint64_t performanceCounterToMillis(__int64 perf_ticks) const;
 
   /**
    * This method converts system ticks into milliseconds since the start of the
    * system process.
    * \return The number of milliseconds since the start of the system process.
    */
-  GHOST_TUns64 tickCountToMillis(__int64 ticks) const;
+  uint64_t tickCountToMillis(__int64 ticks) const;
 
   /**
    * Returns the system time.
@@ -84,7 +68,7 @@ class GHOST_SystemWin32 : public GHOST_System {
    * This overloaded method uses the high frequency timer if available.
    * \return The number of milliseconds.
    */
-  GHOST_TUns64 getMilliSeconds() const;
+  uint64_t getMilliSeconds() const;
 
   /***************************************************************************************
    ** Display/window management functionality
@@ -94,19 +78,19 @@ class GHOST_SystemWin32 : public GHOST_System {
    * Returns the number of displays on this system.
    * \return The number of displays.
    */
-  GHOST_TUns8 getNumDisplays() const;
+  uint8_t getNumDisplays() const;
 
   /**
    * Returns the dimensions of the main display on this system.
    * \return The dimension of the main display.
    */
-  void getMainDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const;
+  void getMainDisplayDimensions(uint32_t &width, uint32_t &height) const;
 
   /**
    * Returns the dimensions of all displays on this system.
    * \return The dimension of the main display.
    */
-  void getAllDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const;
+  void getAllDisplayDimensions(uint32_t &width, uint32_t &height) const;
 
   /**
    * Create a new window.
@@ -119,27 +103,25 @@ class GHOST_SystemWin32 : public GHOST_System {
    * \param width: The width the window.
    * \param height: The height the window.
    * \param state: The state of the window when opened.
-   * \param type: The type of drawing context installed in this window.
    * \param glSettings: Misc OpenGL settings.
-   * \param exclusive: Use to show the window ontop and ignore others (used fullscreen).
+   * \param exclusive: Use to show the window on top and ignore others (used full-screen).
    * \param parentWindow: Parent window.
    * \return The new window (or 0 if creation failed).
    */
   GHOST_IWindow *createWindow(const char *title,
-                              GHOST_TInt32 left,
-                              GHOST_TInt32 top,
-                              GHOST_TUns32 width,
-                              GHOST_TUns32 height,
+                              int32_t left,
+                              int32_t top,
+                              uint32_t width,
+                              uint32_t height,
                               GHOST_TWindowState state,
-                              GHOST_TDrawingContextType type,
                               GHOST_GLSettings glSettings,
                               const bool exclusive = false,
                               const bool is_dialog = false,
                               const GHOST_IWindow *parentWindow = 0);
 
   /**
-   * Create a new offscreen context.
-   * Never explicitly delete the window, use disposeContext() instead.
+   * Create a new off-screen context.
+   * Never explicitly delete the window, use #disposeContext() instead.
    * \return The new context (or 0 if creation failed).
    */
   GHOST_IContext *createOffscreenContext(GHOST_GLSettings glSettings);
@@ -152,8 +134,8 @@ class GHOST_SystemWin32 : public GHOST_System {
   GHOST_TSuccess disposeContext(GHOST_IContext *context);
 
   /**
-   * Create a new offscreen DirectX context.
-   * Never explicitly delete the context, use disposeContext() instead.
+   * Create a new off-screen DirectX context.
+   * Never explicitly delete the context, use #disposeContext() instead.
    * This is for GHOST internal, Win32 specific use, so it can be called statically.
    *
    * \return The new context (or 0 if creation failed).
@@ -189,7 +171,7 @@ class GHOST_SystemWin32 : public GHOST_System {
    * \param y: The y-coordinate of the cursor.
    * \return Indication of success.
    */
-  GHOST_TSuccess getCursorPosition(GHOST_TInt32 &x, GHOST_TInt32 &y) const;
+  GHOST_TSuccess getCursorPosition(int32_t &x, int32_t &y) const;
 
   /**
    * Updates the location of the cursor (location in screen coordinates).
@@ -197,7 +179,7 @@ class GHOST_SystemWin32 : public GHOST_System {
    * \param y: The y-coordinate of the cursor.
    * \return Indication of success.
    */
-  GHOST_TSuccess setCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y);
+  GHOST_TSuccess setCursorPosition(int32_t x, int32_t y);
 
   /***************************************************************************************
    ** Access to mouse button and keyboard states.
@@ -222,14 +204,14 @@ class GHOST_SystemWin32 : public GHOST_System {
    * \param selection: Used by X11 only.
    * \return Returns the Clipboard.
    */
-  GHOST_TUns8 *getClipboard(bool selection) const;
+  char *getClipboard(bool selection) const;
 
   /**
    * Puts buffer to system clipboard.
    * \param selection: Used by X11 only.
    * \return No return.
    */
-  void putClipboard(GHOST_TInt8 *buffer, bool selection) const;
+  void putClipboard(const char *buffer, bool selection) const;
 
   /**
    * Show a system message box
@@ -265,6 +247,26 @@ class GHOST_SystemWin32 : public GHOST_System {
                                           int mouseY,
                                           void *data);
 
+  /***************************************************************************************
+   ** Modify tablet API
+   ***************************************************************************************/
+
+  /**
+   * Set which tablet API to use.
+   * \param api: Enum indicating which API to use.
+   */
+  void setTabletAPI(GHOST_TTabletAPI api) override;
+
+  /***************************************************************************************
+   ** Debug Info
+   ***************************************************************************************/
+
+  /**
+   * Specify which debug messages are to be shown.
+   * \param debug: Flag for systems to debug.
+   */
+  void initDebug(GHOST_Debug debug) override;
+
  protected:
   /**
    * Initializes the system.
@@ -291,11 +293,10 @@ class GHOST_SystemWin32 : public GHOST_System {
   /**
    * Catches raw WIN32 key codes from WM_INPUT in the wndproc.
    * \param raw: RawInput structure with detailed info about the key event.
-   * \param keyDown: Pointer flag that specify if a key is down.
-   * \param vk: Pointer to virtual key.
+   * \param r_key_down: Set true when the key is pressed, otherwise false.
    * \return The GHOST key (GHOST_kKeyUnknown if no match).
    */
-  GHOST_TKey hardKey(RAWINPUT const &raw, bool *r_keyDown, bool *r_is_repeated_modifier);
+  GHOST_TKey hardKey(RAWINPUT const &raw, bool *r_key_down);
 
   /**
    * Creates mouse button event.
@@ -306,7 +307,13 @@ class GHOST_SystemWin32 : public GHOST_System {
    */
   static GHOST_EventButton *processButtonEvent(GHOST_TEventType type,
                                                GHOST_WindowWin32 *window,
-                                               GHOST_TButtonMask mask);
+                                               GHOST_TButton mask);
+
+  /**
+   * Creates tablet events from Wintab events.
+   * \param window: The window receiving the event (the active window).
+   */
+  static void processWintabEvent(GHOST_WindowWin32 *window);
 
   /**
    * Creates tablet events from pointer events.
@@ -344,12 +351,19 @@ class GHOST_SystemWin32 : public GHOST_System {
   static GHOST_EventKey *processKeyEvent(GHOST_WindowWin32 *window, RAWINPUT const &raw);
 
   /**
-   * Process special keys (VK_OEM_*), to see if current key layout
-   * gives us anything special, like ! on french AZERTY.
+   * Process special keys `VK_OEM_*`, to see if current key layout
+   * gives us anything special, like `!` on French AZERTY.
    * \param vKey: The virtual key from #hardKey.
    * \param scanCode: The ScanCode of pressed key (similar to PS/2 Set 1).
    */
   GHOST_TKey processSpecialKey(short vKey, short scanCode) const;
+
+  /**
+   * Creates a window size event.
+   * \param window: The window receiving the event (the active window).
+   * \return The event created.
+   */
+  static GHOST_Event *processWindowSizeEvent(GHOST_WindowWin32 *window);
 
   /**
    * Creates a window event.
@@ -370,7 +384,7 @@ class GHOST_SystemWin32 : public GHOST_System {
   static GHOST_Event *processImeEvent(GHOST_TEventType type,
                                       GHOST_WindowWin32 *window,
                                       GHOST_TEventImeData *data);
-#endif  // WITH_INPUT_IME
+#endif /* WITH_INPUT_IME */
 
   /**
    * Handles minimum window size.
@@ -390,17 +404,14 @@ class GHOST_SystemWin32 : public GHOST_System {
 #endif
 
   /**
-   * Returns the local state of the modifier keys (from the message queue).
-   * \param keys: The state of the keys.
+   * Drives Direct Manipulation update.
    */
-  inline void retrieveModifierKeys(GHOST_ModifierKeys &keys) const;
+  void driveTrackpad();
 
   /**
-   * Stores the state of the modifier keys locally.
-   * For internal use only!
-   * param keys The new state of the modifier keys.
+   * Creates trackpad events for the active window.
    */
-  inline void storeModifierKeys(const GHOST_ModifierKeys &keys);
+  void processTrackpad();
 
   /**
    * Check current key layout for AltGr
@@ -413,19 +424,12 @@ class GHOST_SystemWin32 : public GHOST_System {
   static LRESULT WINAPI s_wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
   /**
-   * Toggles console
-   * \param action:
-   * - 0 - Hides
-   * - 1 - Shows
-   * - 2 - Toggles
-   * - 3 - Hides if it runs not from  command line
-   * - * - Does nothing
+   * Set the Console State
+   * \param action: console state
    * \return current status (1 -visible, 0 - hidden)
    */
-  int toggleConsole(int action);
+  bool setConsoleWindowState(GHOST_TConsoleWindowState action);
 
-  /** The current state of the modifier keys. */
-  GHOST_ModifierKeys m_modifierKeys;
   /** The virtual-key code (VKey) of the last press event. Used to detect repeat events. */
   unsigned short m_keycode_last_repeat_key;
   /** State variable set at initialization. */
@@ -444,36 +448,26 @@ class GHOST_SystemWin32 : public GHOST_System {
   HKL m_keylayout;
 
   /** Console status. */
-  int m_consoleStatus;
+  bool m_consoleStatus;
 
   /** Wheel delta accumulator. */
   int m_wheelDeltaAccum;
 };
 
-inline void GHOST_SystemWin32::retrieveModifierKeys(GHOST_ModifierKeys &keys) const
-{
-  keys = m_modifierKeys;
-}
-
-inline void GHOST_SystemWin32::storeModifierKeys(const GHOST_ModifierKeys &keys)
-{
-  m_modifierKeys = keys;
-}
-
 inline void GHOST_SystemWin32::handleKeyboardChange(void)
 {
-  m_keylayout = GetKeyboardLayout(0);  // get keylayout for current thread
+  m_keylayout = GetKeyboardLayout(0); /* Get keylayout for current thread. */
   int i;
   SHORT s;
 
-  // save the language identifier.
+  /* Save the language identifier. */
   m_langId = LOWORD(m_keylayout);
 
   for (m_hasAltGr = false, i = 32; i < 256; ++i) {
     s = VkKeyScanEx((char)i, m_keylayout);
-    // s == -1 means no key that translates passed char code
-    // high byte contains shift state. bit 2 ctrl pressed, bit 4 alt pressed
-    // if both are pressed, we have AltGr keycombo on keylayout
+    /* `s == -1` means no key that translates passed char code high byte contains shift state.
+     * bit 2 Control pressed, bit 4 `Alt` pressed if both are pressed,
+     * we have `AltGr` key-combination on key-layout. */
     if (s != -1 && (s & 0x600) == 0x600) {
       m_hasAltGr = true;
       break;

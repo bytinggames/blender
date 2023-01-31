@@ -1,21 +1,7 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
- * \ingroup MEM
+ * \ingroup intern_mem
  */
 
 #include <cstdio> /* Needed for `printf` on WIN32/APPLE. */
@@ -50,12 +36,12 @@ class MemLeakPrinter {
     const size_t mem_in_use = MEM_get_memory_in_use();
     printf("Error: Not freed memory blocks: %u, total unfreed memory %f MB\n",
            leaked_blocks,
-           (double)mem_in_use / 1024 / 1024);
+           double(mem_in_use) / 1024 / 1024);
     MEM_printmemlist();
 
     if (fail_on_memleak) {
       /* There are many other ways to change the exit code to failure here:
-       * - Make the destructor noexcept(false) and throw an exception.
+       * - Make the destructor `noexcept(false)` and throw an exception.
        * - Call exit(EXIT_FAILURE).
        * - Call terminate().
        */
@@ -65,7 +51,7 @@ class MemLeakPrinter {
 };
 }  // namespace
 
-void MEM_init_memleak_detection(void)
+void MEM_init_memleak_detection()
 {
   /**
    * This variable is constructed when this function is first called. This should happen as soon as
@@ -84,7 +70,7 @@ void MEM_use_memleak_detection(bool enabled)
   ignore_memleak = !enabled;
 }
 
-void MEM_enable_fail_on_memleak(void)
+void MEM_enable_fail_on_memleak()
 {
   fail_on_memleak = true;
 }

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup spview3d
@@ -51,7 +37,7 @@
  * \{ */
 
 /*
- * TODO(campbell): Current conversion is a approximation (usable not correct),
+ * TODO(@campbellbarton): Current conversion is a approximation (usable not correct),
  * we'll need to take the next/previous bones into account to get the tangent directions.
  * First last matrices from 'BKE_pchan_bbone_spline_setup' are close but also not quite accurate
  * since they're not at either end-points on the curve.
@@ -86,12 +72,12 @@ static void gizmo_bbone_offset_get(const wmGizmo *UNUSED(gz),
   if (bh->index == 0) {
     bh->co[1] = pchan->bone->ease1 / BBONE_SCALE_Y;
     bh->co[0] = pchan->curve_in_x;
-    bh->co[2] = pchan->curve_in_y;
+    bh->co[2] = pchan->curve_in_z;
   }
   else {
     bh->co[1] = -pchan->bone->ease2 / BBONE_SCALE_Y;
     bh->co[0] = pchan->curve_out_x;
-    bh->co[2] = pchan->curve_out_y;
+    bh->co[2] = pchan->curve_out_z;
   }
   copy_v3_v3(value, bh->co);
 }
@@ -111,12 +97,12 @@ static void gizmo_bbone_offset_set(const wmGizmo *UNUSED(gz),
   if (bh->index == 0) {
     pchan->bone->ease1 = max_ff(0.0f, bh->co[1] * BBONE_SCALE_Y);
     pchan->curve_in_x = bh->co[0];
-    pchan->curve_in_y = bh->co[2];
+    pchan->curve_in_z = bh->co[2];
   }
   else {
     pchan->bone->ease2 = max_ff(0.0f, -bh->co[1] * BBONE_SCALE_Y);
     pchan->curve_out_x = bh->co[0];
-    pchan->curve_out_y = bh->co[2];
+    pchan->curve_out_z = bh->co[2];
   }
 }
 
@@ -127,14 +113,16 @@ static bool WIDGETGROUP_armature_spline_poll(const bContext *C, wmGizmoGroupType
     return false;
   }
 
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Base *base = BASACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Base *base = BKE_view_layer_active_base_get(view_layer);
   if (base && BASE_SELECTABLE(v3d, base)) {
     Object *ob = BKE_object_pose_armature_get(base->object);
     if (ob) {
       const bArmature *arm = ob->data;
       if (arm->drawtype == ARM_B_BONE) {
-        bPoseChannel *pchan = BKE_pose_channel_active(ob);
+        bPoseChannel *pchan = BKE_pose_channel_active_if_layer_visible(ob);
         if (pchan && pchan->bone->segments > 1) {
           return true;
         }
@@ -146,9 +134,11 @@ static bool WIDGETGROUP_armature_spline_poll(const bContext *C, wmGizmoGroupType
 
 static void WIDGETGROUP_armature_spline_setup(const bContext *C, wmGizmoGroup *gzgroup)
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *ob = BKE_object_pose_armature_get(OBACT(view_layer));
-  bPoseChannel *pchan = BKE_pose_channel_active(ob);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_object_pose_armature_get(BKE_view_layer_active_object_get(view_layer));
+  bPoseChannel *pchan = BKE_pose_channel_active_if_layer_visible(ob);
 
   const wmGizmoType *gzt_move = WM_gizmotype_find("GIZMO_GT_move_3d", true);
 
@@ -179,15 +169,17 @@ static void WIDGETGROUP_armature_spline_setup(const bContext *C, wmGizmoGroup *g
 
 static void WIDGETGROUP_armature_spline_refresh(const bContext *C, wmGizmoGroup *gzgroup)
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *ob = BKE_object_pose_armature_get(OBACT(view_layer));
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob = BKE_object_pose_armature_get(BKE_view_layer_active_object_get(view_layer));
 
   if (!gzgroup->customdata) {
     return;
   }
 
   struct BoneSplineWidgetGroup *bspline_group = gzgroup->customdata;
-  bPoseChannel *pchan = BKE_pose_channel_active(ob);
+  bPoseChannel *pchan = BKE_pose_channel_active_if_layer_visible(ob);
 
   /* Handles */
   for (int i = 0; i < ARRAY_SIZE(bspline_group->handles); i++) {
@@ -196,10 +188,10 @@ static void WIDGETGROUP_armature_spline_refresh(const bContext *C, wmGizmoGroup 
     bspline_group->handles[i].index = i;
 
     float mat[4][4];
-    mul_m4_m4m4(mat, ob->obmat, (i == 0) ? pchan->disp_mat : pchan->disp_tail_mat);
+    mul_m4_m4m4(mat, ob->object_to_world, (i == 0) ? pchan->disp_mat : pchan->disp_tail_mat);
     copy_m4_m4(gz->matrix_space, mat);
 
-    /* need to set property here for undo. TODO would prefer to do this in _init */
+    /* need to set property here for undo. TODO: would prefer to do this in _init. */
     WM_gizmo_target_property_def_func(gz,
                                       "offset",
                                       &(const struct wmGizmoPropertyFnParams){

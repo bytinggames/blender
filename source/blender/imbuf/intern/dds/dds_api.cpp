@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup imbdds
@@ -44,7 +30,7 @@ extern "C" {
 
 bool imb_save_dds(struct ImBuf *ibuf, const char *name, int /*flags*/)
 {
-  return false; /* todo: finish this function */
+  return false; /* TODO: finish this function. */
 
   /* check image buffer */
   if (ibuf == nullptr) {
@@ -72,7 +58,7 @@ bool imb_save_dds(struct ImBuf *ibuf, const char *name, int /*flags*/)
   return true;
 }
 
-bool imb_is_a_dds(const unsigned char *mem, const size_t size)
+bool imb_is_a_dds(const uchar *mem, const size_t size)
 {
   if (size < 8) {
     return false;
@@ -89,19 +75,16 @@ bool imb_is_a_dds(const unsigned char *mem, const size_t size)
   return true;
 }
 
-struct ImBuf *imb_load_dds(const unsigned char *mem,
-                           size_t size,
-                           int flags,
-                           char colorspace[IM_MAX_SPACE])
+struct ImBuf *imb_load_dds(const uchar *mem, size_t size, int flags, char colorspace[IM_MAX_SPACE])
 {
   struct ImBuf *ibuf = nullptr;
-  DirectDrawSurface dds((unsigned char *)mem, size); /* reads header */
-  unsigned char bits_per_pixel;
-  unsigned int *rect;
+  DirectDrawSurface dds((uchar *)mem, size); /* reads header */
+  uchar bits_per_pixel;
+  uint *rect;
   Image img;
-  unsigned int numpixels = 0;
+  uint numpixels = 0;
   int col;
-  unsigned char *cp = (unsigned char *)&col;
+  uchar *cp = (uchar *)&col;
   Color32 pixel;
   Color32 *pixels = nullptr;
 
@@ -142,7 +125,7 @@ struct ImBuf *imb_load_dds(const unsigned char *mem,
   bits_per_pixel = 24;
   if (img.format() == Image::Format_ARGB) {
     /* check that there is effectively an alpha channel */
-    for (unsigned int i = 0; i < numpixels; i++) {
+    for (uint i = 0; i < numpixels; i++) {
       pixel = pixels[i];
       if (pixel.a != 255) {
         bits_per_pixel = 32;
@@ -170,7 +153,7 @@ struct ImBuf *imb_load_dds(const unsigned char *mem,
     rect = ibuf->rect;
     cp[3] = 0xff; /* default alpha if alpha channel is not present */
 
-    for (unsigned int i = 0; i < numpixels; i++) {
+    for (uint i = 0; i < numpixels; i++) {
       pixel = pixels[i];
       cp[0] = pixel.r; /* set R component of col */
       cp[1] = pixel.g; /* set G component of col */
@@ -182,12 +165,17 @@ struct ImBuf *imb_load_dds(const unsigned char *mem,
     }
 
     if (ibuf->dds_data.fourcc != FOURCC_DDS) {
-      ibuf->dds_data.data = (unsigned char *)dds.readData(ibuf->dds_data.size);
+      ibuf->dds_data.data = (uchar *)dds.readData(ibuf->dds_data.size);
 
       /* flip compressed texture */
       if (ibuf->dds_data.data) {
-        FlipDXTCImage(
-            dds.width(), dds.height(), dds.mipmapCount(), dds.fourCC(), ibuf->dds_data.data);
+        FlipDXTCImage(dds.width(),
+                      dds.height(),
+                      ibuf->dds_data.nummipmaps,
+                      dds.fourCC(),
+                      ibuf->dds_data.data,
+                      ibuf->dds_data.size,
+                      &ibuf->dds_data.nummipmaps);
       }
     }
     else {

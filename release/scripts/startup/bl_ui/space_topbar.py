@@ -1,24 +1,11 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 import bpy
 from bpy.types import Header, Menu, Panel
+
+from bpy.app.translations import (
+    pgettext_iface as iface_,
+    contexts as i18n_contexts,
+)
 
 
 class TOPBAR_HT_upper_bar(Header):
@@ -209,9 +196,9 @@ class TOPBAR_MT_editor_menus(Menu):
 
         # Allow calling this menu directly (this might not be a header area).
         if getattr(context.area, "show_menus", False):
-            layout.menu("TOPBAR_MT_app", text="", icon='BLENDER')
+            layout.menu("TOPBAR_MT_blender", text="", icon='BLENDER')
         else:
-            layout.menu("TOPBAR_MT_app", text="Blender")
+            layout.menu("TOPBAR_MT_blender", text="Blender")
 
         layout.menu("TOPBAR_MT_file")
         layout.menu("TOPBAR_MT_edit")
@@ -222,7 +209,7 @@ class TOPBAR_MT_editor_menus(Menu):
         layout.menu("TOPBAR_MT_help")
 
 
-class TOPBAR_MT_app(Menu):
+class TOPBAR_MT_blender(Menu):
     bl_label = "Blender"
 
     def draw(self, _context):
@@ -238,7 +225,7 @@ class TOPBAR_MT_app(Menu):
 
         layout.separator()
 
-        layout.menu("TOPBAR_MT_app_system")
+        layout.menu("TOPBAR_MT_blender_system")
 
 
 class TOPBAR_MT_file_cleanup(Menu):
@@ -285,7 +272,7 @@ class TOPBAR_MT_file(Menu):
         layout = self.layout
 
         layout.operator_context = 'INVOKE_AREA'
-        layout.menu("TOPBAR_MT_file_new", text="New", icon='FILE_NEW')
+        layout.menu("TOPBAR_MT_file_new", text="New", text_ctxt=i18n_contexts.id_windowmanager, icon='FILE_NEW')
         layout.operator("wm.open_mainfile", text="Open...", icon='FILE_FOLDER')
         layout.menu("TOPBAR_MT_file_open_recent")
         layout.operator("wm.revert_mainfile")
@@ -381,7 +368,7 @@ class TOPBAR_MT_file_new(Menu):
         for d in paths:
             props = layout.operator(
                 "wm.read_homefile",
-                text=bpy.path.display_name(d),
+                text=bpy.path.display_name(iface_(d)),
                 icon=icon,
             )
             props.app_template = d
@@ -420,17 +407,29 @@ class TOPBAR_MT_file_defaults(Menu):
             app_template = None
 
         if app_template:
-            layout.label(text=bpy.path.display_name(
-                app_template, has_ext=False))
+            layout.label(
+                text=iface_(bpy.path.display_name(app_template, has_ext=False),
+                            i18n_contexts.id_workspace), translate=False)
 
         layout.operator("wm.save_homefile")
-        props = layout.operator("wm.read_factory_settings")
         if app_template:
+            display_name = bpy.path.display_name(iface_(app_template))
+            props = layout.operator("wm.read_factory_settings",
+                                    text="Load Factory Blender Settings")
             props.app_template = app_template
+            props = layout.operator("wm.read_factory_settings",
+                                    text=iface_("Load Factory %s Settings",
+                                                i18n_contexts.operator_default) % display_name,
+                                    translate=False)
+            props.app_template = app_template
+            props.use_factory_startup_app_template_only = True
+            del display_name
+        else:
+            layout.operator("wm.read_factory_settings")
 
 
 # Include technical operators here which would otherwise have no way for users to access.
-class TOPBAR_MT_app_system(Menu):
+class TOPBAR_MT_blender_system(Menu):
     bl_label = "System"
 
     def draw(self, _context):
@@ -464,12 +463,20 @@ class TOPBAR_MT_file_import(Menu):
 
     def draw(self, _context):
         if bpy.app.build_options.collada:
-            self.layout.operator("wm.collada_import",
-                                 text="Collada (Default) (.dae)")
+            self.layout.operator("wm.collada_import", text="Collada (.dae)")
         if bpy.app.build_options.alembic:
             self.layout.operator("wm.alembic_import", text="Alembic (.abc)")
+        if bpy.app.build_options.usd:
+            self.layout.operator(
+                "wm.usd_import", text="Universal Scene Description (.usd, .usdc, .usda)")
 
-        self.layout.operator("wm.gpencil_import_svg", text="SVG as Grease Pencil")
+        if bpy.app.build_options.io_gpencil:
+            self.layout.operator("wm.gpencil_import_svg", text="SVG as Grease Pencil")
+
+        if bpy.app.build_options.io_wavefront_obj:
+            self.layout.operator("wm.obj_import", text="Wavefront (.obj)")
+        if bpy.app.build_options.io_stl:
+            self.layout.operator("wm.stl_import", text="STL (.stl) (experimental)")
 
 
 class TOPBAR_MT_file_export(Menu):
@@ -479,20 +486,23 @@ class TOPBAR_MT_file_export(Menu):
 
     def draw(self, _context):
         if bpy.app.build_options.collada:
-            self.layout.operator("wm.collada_export",
-                                 text="Collada (Default) (.dae)")
+            self.layout.operator("wm.collada_export", text="Collada (.dae)")
         if bpy.app.build_options.alembic:
             self.layout.operator("wm.alembic_export", text="Alembic (.abc)")
         if bpy.app.build_options.usd:
             self.layout.operator(
                 "wm.usd_export", text="Universal Scene Description (.usd, .usdc, .usda)")
 
-        # Pugixml lib dependency
-        if bpy.app.build_options.pugixml:
-            self.layout.operator("wm.gpencil_export_svg", text="Grease Pencil as SVG")
-        # Haru lib dependency
-        if bpy.app.build_options.haru:
-            self.layout.operator("wm.gpencil_export_pdf", text="Grease Pencil as PDF")
+        if bpy.app.build_options.io_gpencil:
+            # Pugixml lib dependency
+            if bpy.app.build_options.pugixml:
+                self.layout.operator("wm.gpencil_export_svg", text="Grease Pencil as SVG")
+            # Haru lib dependency
+            if bpy.app.build_options.haru:
+                self.layout.operator("wm.gpencil_export_pdf", text="Grease Pencil as PDF")
+
+        if bpy.app.build_options.io_wavefront_obj:
+            self.layout.operator("wm.obj_export", text="Wavefront (.obj)")
 
 
 class TOPBAR_MT_file_external_data(Menu):
@@ -585,7 +595,7 @@ class TOPBAR_MT_edit(Menu):
 
         layout.separator()
 
-        layout.operator("ed.undo_history", text="Undo History...")
+        layout.menu("TOPBAR_MT_undo_history")
 
         layout.separator()
 
@@ -631,6 +641,8 @@ class TOPBAR_MT_window(Menu):
 
         layout = self.layout
 
+        operator_context_default = layout.operator_context
+
         layout.operator("wm.window_new")
         layout.operator("wm.window_new_main")
 
@@ -652,6 +664,14 @@ class TOPBAR_MT_window(Menu):
         layout.separator()
 
         layout.operator("screen.screenshot")
+
+        # Showing the status in the area doesn't work well in this case.
+        # - From the top-bar, the text replaces the file-menu (not so bad but strange).
+        # - From menu-search it replaces the area that the user may want to screen-shot.
+        # Setting the context to screen causes the status to show in the global status-bar.
+        layout.operator_context = 'INVOKE_SCREEN'
+        layout.operator("screen.screenshot_area")
+        layout.operator_context = operator_context_default
 
         if sys.platform[:3] == "win":
             layout.separator()
@@ -692,8 +712,8 @@ class TOPBAR_MT_help(Menu):
         layout.separator()
 
         layout.operator(
-            "wm.url_open", text="Python API Reference", icon='URL',
-        ).url = bpy.types.WM_OT_doc_view._prefix
+            "wm.url_open_preset", text="Python API Reference", icon='URL',
+        ).type = 'API'
 
         if show_developer:
             layout.operator(
@@ -719,7 +739,7 @@ class TOPBAR_MT_file_context_menu(Menu):
         layout = self.layout
 
         layout.operator_context = 'INVOKE_AREA'
-        layout.menu("TOPBAR_MT_file_new", text="New", icon='FILE_NEW')
+        layout.menu("TOPBAR_MT_file_new", text="New", text_ctxt=i18n_contexts.id_windowmanager, icon='FILE_NEW')
         layout.operator("wm.open_mainfile", text="Open...", icon='FILE_FOLDER')
 
         layout.separator()
@@ -800,13 +820,12 @@ class TOPBAR_PT_name(Panel):
             return row
 
         mode = context.mode
-        scene = context.scene
         space = context.space_data
         space_type = None if (space is None) else space.type
         found = False
         if space_type == 'SEQUENCE_EDITOR':
             layout.label(text="Sequence Strip Name")
-            item = getattr(scene.sequence_editor, "active_strip")
+            item = context.active_sequence_strip
             if item:
                 row = row_with_icon(layout, 'SEQUENCE')
                 row.prop(item, "name", text="")
@@ -817,6 +836,14 @@ class TOPBAR_PT_name(Panel):
             if item:
                 row = row_with_icon(layout, 'NODE')
                 row.prop(item, "label", text="")
+                found = True
+        elif space_type == 'NLA_EDITOR':
+            layout.label(text="NLA Strip Name")
+            item = next(
+                (strip for strip in context.selected_nla_strips if strip.active), None)
+            if item:
+                row = row_with_icon(layout, 'NLA')
+                row.prop(item, "name", text="")
                 found = True
         else:
             if mode == 'POSE' or (mode == 'WEIGHT_PAINT' and context.pose_object):
@@ -846,13 +873,71 @@ class TOPBAR_PT_name(Panel):
             row.label(text="No active item")
 
 
+class TOPBAR_PT_name_marker(Panel):
+    bl_space_type = 'TOPBAR'  # dummy
+    bl_region_type = 'HEADER'
+    bl_label = "Rename Marker"
+    bl_ui_units_x = 14
+
+    @staticmethod
+    def is_using_pose_markers(context):
+        sd = context.space_data
+        return (sd.type == 'DOPESHEET_EDITOR' and sd.mode in {'ACTION', 'SHAPEKEY'} and
+                sd.show_pose_markers and sd.action)
+
+    @staticmethod
+    def get_selected_marker(context):
+        if TOPBAR_PT_name_marker.is_using_pose_markers(context):
+            markers = context.space_data.action.pose_markers
+        else:
+            markers = context.scene.timeline_markers
+
+        for marker in markers:
+            if marker.select:
+                return marker
+        return None
+
+    @staticmethod
+    def row_with_icon(layout, icon):
+        row = layout.row()
+        row.activate_init = True
+        row.label(icon=icon)
+        return row
+
+    def draw(self, context):
+        layout = self.layout
+
+        layout.label(text="Marker Name")
+
+        scene = context.scene
+        if scene.tool_settings.lock_markers:
+            row = self.row_with_icon(layout, 'ERROR')
+            label = "Markers are locked"
+            row.label(text=label)
+            return
+
+        marker = self.get_selected_marker(context)
+        if marker is None:
+            row = self.row_with_icon(layout, 'ERROR')
+            row.label(text="No active marker")
+            return
+
+        icon = 'TIME'
+        if marker.camera is not None:
+            icon = 'CAMERA_DATA'
+        elif self.is_using_pose_markers(context):
+            icon = 'ARMATURE_DATA'
+        row = self.row_with_icon(layout, icon)
+        row.prop(marker, "name", text="")
+
+
 classes = (
     TOPBAR_HT_upper_bar,
     TOPBAR_MT_file_context_menu,
     TOPBAR_MT_workspace_menu,
     TOPBAR_MT_editor_menus,
-    TOPBAR_MT_app,
-    TOPBAR_MT_app_system,
+    TOPBAR_MT_blender,
+    TOPBAR_MT_blender_system,
     TOPBAR_MT_file,
     TOPBAR_MT_file_new,
     TOPBAR_MT_file_recover,
@@ -872,6 +957,7 @@ classes = (
     TOPBAR_PT_gpencil_layers,
     TOPBAR_PT_gpencil_primitive,
     TOPBAR_PT_name,
+    TOPBAR_PT_name_marker,
 )
 
 if __name__ == "__main__":  # only for live edit.

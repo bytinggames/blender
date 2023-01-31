@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bke
@@ -75,7 +61,7 @@ static CLG_LogRef LOG = {"bke.appdir"};
 
 static struct {
   /** Full path to program executable. */
-  char program_filename[FILE_MAX];
+  char program_filepath[FILE_MAX];
   /** Full path to directory in which executable is located. */
   char program_dirname[FILE_MAX];
   /** Persistent temporary directory (defined by the preferences or OS). */
@@ -99,15 +85,6 @@ static bool is_appdir_init = false;
 #  define ASSERT_IS_INIT() ((void)0)
 #endif
 
-/**
- * Sanity check to ensure correct API use in debug mode.
- *
- * Run this once the first level of arguments has been passed so we can be sure
- * `--env-system-datafiles`, and other `--env-*` arguments has been passed.
- *
- * Without this any callers to this module that run early on,
- * will miss out on changes from parsing arguments.
- */
 void BKE_appdir_init(void)
 {
 #ifndef NDEBUG
@@ -147,13 +124,6 @@ static char *blender_version_decimal(const int version)
 /** \name Default Directories
  * \{ */
 
-/**
- * Get the folder that's the "natural" starting point for browsing files on an OS. On Unix that is
- * $HOME, on Windows it is %userprofile%/Documents.
- *
- * \note On Windows `Users/{MyUserName}/Documents` is used as it's the default location to save
- *       documents.
- */
 const char *BKE_appdir_folder_default(void)
 {
 #ifndef WIN32
@@ -169,30 +139,42 @@ const char *BKE_appdir_folder_default(void)
 #endif /* WIN32 */
 }
 
-/**
- * Get the user's home directory, i.e. $HOME on UNIX, %userprofile% on Windows.
- */
-const char *BKE_appdir_folder_home(void)
+const char *BKE_appdir_folder_root(void)
 {
 #ifndef WIN32
-  return BLI_getenv("HOME");
-#else /* Windows */
-  return BLI_getenv("userprofile");
+  return "/";
+#else
+  static char root[4];
+  BLI_windows_get_default_root_dir(root);
+  return root;
 #endif
 }
 
-/**
- * Get the user's document directory, i.e. $HOME/Documents on Linux, %userprofile%/Documents on
- * Windows. If this can't be found using OS queries (via Ghost), try manually finding it.
- *
- * \returns True if the path is valid and points to an existing directory.
- */
+const char *BKE_appdir_folder_default_or_root(void)
+{
+  const char *path = BKE_appdir_folder_default();
+  if (path == NULL) {
+    path = BKE_appdir_folder_root();
+  }
+  return path;
+}
+
+const char *BKE_appdir_folder_home(void)
+{
+#ifdef WIN32
+  return BLI_getenv("userprofile");
+#elif defined(__APPLE__)
+  return BLI_expand_tilde("~/");
+#else
+  return BLI_getenv("HOME");
+#endif
+}
+
 bool BKE_appdir_folder_documents(char *dir)
 {
   dir[0] = '\0';
 
-  const char *documents_path = (const char *)GHOST_getUserSpecialDir(
-      GHOST_kUserSpecialDirDocuments);
+  const char *documents_path = GHOST_getUserSpecialDir(GHOST_kUserSpecialDirDocuments);
 
   /* Usual case: Ghost gave us the documents path. We're done here. */
   if (documents_path && BLI_is_dir(documents_path)) {
@@ -200,7 +182,7 @@ bool BKE_appdir_folder_documents(char *dir)
     return true;
   }
 
-  /* Ghost couldn't give us a documents path, let's try if we can find it ourselves.*/
+  /* Ghost couldn't give us a documents path, let's try if we can find it ourselves. */
 
   const char *home_path = BKE_appdir_folder_home();
   if (!home_path || !BLI_is_dir(home_path)) {
@@ -209,7 +191,7 @@ bool BKE_appdir_folder_documents(char *dir)
 
   char try_documents_path[FILE_MAXDIR];
   /* Own attempt at getting a valid Documents path. */
-  BLI_path_join(try_documents_path, sizeof(try_documents_path), home_path, N_("Documents"), NULL);
+  BLI_path_join(try_documents_path, sizeof(try_documents_path), home_path, N_("Documents"));
   if (!BLI_is_dir(try_documents_path)) {
     return false;
   }
@@ -218,26 +200,53 @@ bool BKE_appdir_folder_documents(char *dir)
   return true;
 }
 
-/**
- * Gets a good default directory for fonts.
- */
-bool BKE_appdir_font_folder_default(
-    /* This parameter can only be `const` on non-windows platforms.
-     * NOLINTNEXTLINE: readability-non-const-parameter. */
-    char *dir)
+bool BKE_appdir_folder_caches(char *r_path, const size_t path_len)
 {
-  bool success = false;
+  r_path[0] = '\0';
+
+  const char *caches_root_path = GHOST_getUserSpecialDir(GHOST_kUserSpecialDirCaches);
+  if (caches_root_path == NULL || !BLI_is_dir(caches_root_path)) {
+    caches_root_path = BKE_tempdir_base();
+  }
+  if (caches_root_path == NULL || !BLI_is_dir(caches_root_path)) {
+    return false;
+  }
+
+#ifdef WIN32
+  BLI_path_join(
+      r_path, path_len, caches_root_path, "Blender Foundation", "Blender", "Cache", SEP_STR);
+#elif defined(__APPLE__)
+  BLI_path_join(r_path, path_len, caches_root_path, "Blender", SEP_STR);
+#else /* __linux__ */
+  BLI_path_join(r_path, path_len, caches_root_path, "blender", SEP_STR);
+#endif
+
+  return true;
+}
+
+bool BKE_appdir_font_folder_default(char *dir)
+{
+  char test_dir[FILE_MAXDIR];
+  test_dir[0] = '\0';
+
 #ifdef WIN32
   wchar_t wpath[FILE_MAXDIR];
-  success = SHGetSpecialFolderPathW(0, wpath, CSIDL_FONTS, 0);
-  if (success) {
+  if (SHGetSpecialFolderPathW(0, wpath, CSIDL_FONTS, 0)) {
     wcscat(wpath, L"\\");
-    BLI_strncpy_wchar_as_utf8(dir, wpath, FILE_MAXDIR);
+    BLI_strncpy_wchar_as_utf8(test_dir, wpath, sizeof(test_dir));
   }
+#elif defined(__APPLE__)
+  STRNCPY(test_dir, BLI_expand_tilde("~/Library/Fonts/"));
+  BLI_path_slash_ensure(test_dir, sizeof(test_dir));
+#else
+  STRNCPY(test_dir, "/usr/share/fonts");
 #endif
-  /* TODO: Values for other platforms. */
-  UNUSED_VARS(dir);
-  return success;
+
+  if (test_dir[0] && BLI_exists(test_dir)) {
+    BLI_strncpy(dir, test_dir, FILE_MAXDIR);
+    return true;
+  }
+  return false;
 }
 
 /** \} */
@@ -272,7 +281,9 @@ static bool test_path(char *targetpath,
 
   /* Only the last argument should be NULL. */
   BLI_assert(!(folder_name == NULL && (subfolder_name != NULL)));
-  BLI_path_join(targetpath, targetpath_len, path_base, folder_name, subfolder_name, NULL);
+  const char *path_array[] = {path_base, folder_name, subfolder_name};
+  const int path_array_num = (folder_name ? (subfolder_name ? 3 : 2) : 1);
+  BLI_path_join_array(targetpath, targetpath_len, path_array, path_array_num);
   if (check_is_dir == false) {
     CLOG_INFO(&LOG, 3, "using without test: '%s'", targetpath);
     return true;
@@ -356,20 +367,23 @@ static bool get_path_local_ex(char *targetpath,
             STR_OR_FALLBACK(subfolder_name));
 
   if (folder_name) { /* `subfolder_name` may be NULL. */
-    BLI_path_join(relfolder, sizeof(relfolder), folder_name, subfolder_name, NULL);
+    const char *path_array[] = {folder_name, subfolder_name};
+    const int path_array_num = subfolder_name ? 2 : 1;
+    BLI_path_join_array(relfolder, sizeof(relfolder), path_array, path_array_num);
   }
   else {
     relfolder[0] = '\0';
   }
 
-  /* Try `{g_app.program_dirname}/2.xx/{folder_name}` the default directory
+  /* Try `{g_app.program_dirname}/3.xx/{folder_name}` the default directory
    * for a portable distribution. See `WITH_INSTALL_PORTABLE` build-option. */
   const char *path_base = g_app.program_dirname;
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(WITH_PYTHON_MODULE)
   /* Due new code-sign situation in OSX > 10.9.5
-   * we must move the blender_version dir with contents to Resources. */
-  char osx_resourses[FILE_MAX];
-  BLI_snprintf(osx_resourses, sizeof(osx_resourses), "%s../Resources", g_app.program_dirname);
+   * we must move the blender_version dir with contents to Resources.
+   * Add 4 + 9 for the temporary `/../` path & `Resources`. */
+  char osx_resourses[FILE_MAX + 4 + 9];
+  BLI_path_join(osx_resourses, sizeof(osx_resourses), g_app.program_dirname, "..", "Resources");
   /* Remove the '/../' added above. */
   BLI_path_normalize(NULL, osx_resourses);
   path_base = osx_resourses;
@@ -392,10 +406,6 @@ static bool get_path_local(char *targetpath,
       targetpath, targetpath_len, folder_name, subfolder_name, version, check_is_dir);
 }
 
-/**
- * Check if this is an install with user files kept together
- * with the Blender executable and its installation files.
- */
 bool BKE_appdir_app_is_portable_install(void)
 {
   /* Detect portable install by the existence of `config` folder. */
@@ -453,18 +463,22 @@ static bool get_path_user_ex(char *targetpath,
                              const bool check_is_dir)
 {
   char user_path[FILE_MAX];
-  const char *user_base_path;
 
-  /* for portable install, user path is always local */
-  if (BKE_appdir_app_is_portable_install()) {
-    return get_path_local_ex(
-        targetpath, targetpath_len, folder_name, subfolder_name, version, check_is_dir);
+  if (test_env_path(user_path, "BLENDER_USER_RESOURCES", check_is_dir)) {
+    /* Pass. */
   }
-  user_path[0] = '\0';
+  else {
+    /* for portable install, user path is always local */
+    if (BKE_appdir_app_is_portable_install()) {
+      return get_path_local_ex(
+          targetpath, targetpath_len, folder_name, subfolder_name, version, check_is_dir);
+    }
+    user_path[0] = '\0';
 
-  user_base_path = (const char *)GHOST_getUserDir(version, blender_version_decimal(version));
-  if (user_base_path) {
-    BLI_strncpy(user_path, user_base_path, FILE_MAX);
+    const char *user_base_path = GHOST_getUserDir(version, blender_version_decimal(version));
+    if (user_base_path) {
+      BLI_strncpy(user_path, user_base_path, FILE_MAX);
+    }
   }
 
   if (!user_path[0]) {
@@ -511,20 +525,26 @@ static bool get_path_system_ex(char *targetpath,
                                const bool check_is_dir)
 {
   char system_path[FILE_MAX];
-  const char *system_base_path;
   char relfolder[FILE_MAX];
 
   if (folder_name) { /* `subfolder_name` may be NULL. */
-    BLI_path_join(relfolder, sizeof(relfolder), folder_name, subfolder_name, NULL);
+    const char *path_array[] = {folder_name, subfolder_name};
+    const int path_array_num = subfolder_name ? 2 : 1;
+    BLI_path_join_array(relfolder, sizeof(relfolder), path_array, path_array_num);
   }
   else {
     relfolder[0] = '\0';
   }
 
-  system_path[0] = '\0';
-  system_base_path = (const char *)GHOST_getSystemDir(version, blender_version_decimal(version));
-  if (system_base_path) {
-    BLI_strncpy(system_path, system_base_path, FILE_MAX);
+  if (test_env_path(system_path, "BLENDER_SYSTEM_RESOURCES", check_is_dir)) {
+    /* Pass. */
+  }
+  else {
+    system_path[0] = '\0';
+    const char *system_base_path = GHOST_getSystemDir(version, blender_version_decimal(version));
+    if (system_base_path) {
+      BLI_strncpy(system_path, system_base_path, FILE_MAX);
+    }
   }
 
   if (!system_path[0]) {
@@ -560,13 +580,6 @@ static bool get_path_system(char *targetpath,
 /** \name Path Presets API
  * \{ */
 
-/**
- * Get a folder out of the \a folder_id presets for paths.
- *
- * \param subfolder: The name of a directory to check for,
- * this may contain path separators but must resolve to a directory, checked with #BLI_is_dir.
- * \return The path if found, NULL string if not.
- */
 bool BKE_appdir_folder_id_ex(const int folder_id,
                              const char *subfolder,
                              char *path,
@@ -680,9 +693,6 @@ const char *BKE_appdir_folder_id(const int folder_id, const char *subfolder)
   return NULL;
 }
 
-/**
- * Returns the path to a folder in the user area without checking that it actually exists first.
- */
 const char *BKE_appdir_folder_id_user_notest(const int folder_id, const char *subfolder)
 {
   const int version = BLENDER_VERSION;
@@ -729,9 +739,6 @@ const char *BKE_appdir_folder_id_user_notest(const int folder_id, const char *su
   return path;
 }
 
-/**
- * Returns the path to a folder in the user area, creating it if it doesn't exist.
- */
 const char *BKE_appdir_folder_id_create(const int folder_id, const char *subfolder)
 {
   const char *path;
@@ -742,6 +749,7 @@ const char *BKE_appdir_folder_id_create(const int folder_id, const char *subfold
             BLENDER_USER_CONFIG,
             BLENDER_USER_SCRIPTS,
             BLENDER_USER_AUTOSAVE)) {
+    BLI_assert_unreachable();
     return NULL;
   }
 
@@ -757,13 +765,9 @@ const char *BKE_appdir_folder_id_create(const int folder_id, const char *subfold
   return path;
 }
 
-/**
- * Returns the path of the top-level version-specific local, user or system directory.
- * If check_is_dir, then the result will be NULL if the directory doesn't exist.
- */
-const char *BKE_appdir_folder_id_version(const int folder_id,
-                                         const int version,
-                                         const bool check_is_dir)
+const char *BKE_appdir_resource_path_id_with_version(const int folder_id,
+                                                     const bool check_is_dir,
+                                                     const int version)
 {
   static char path[FILE_MAX] = "";
   bool ok;
@@ -780,10 +784,15 @@ const char *BKE_appdir_folder_id_version(const int folder_id,
     default:
       path[0] = '\0'; /* in case check_is_dir is false */
       ok = false;
-      BLI_assert(!"incorrect ID");
+      BLI_assert_msg(0, "incorrect ID");
       break;
   }
   return ok ? path : NULL;
+}
+
+const char *BKE_appdir_resource_path_id(const int folder_id, const bool check_is_dir)
+{
+  return BKE_appdir_resource_path_id_with_version(folder_id, check_is_dir, BLENDER_VERSION);
 }
 
 /** \} */
@@ -794,6 +803,7 @@ const char *BKE_appdir_folder_id_version(const int folder_id,
  * Access locations of Blender & Python.
  * \{ */
 
+#ifndef WITH_PYTHON_MODULE
 /**
  * Checks if name is a fully qualified filename to an executable.
  * If not it searches `$PATH` for the file. On Windows it also
@@ -808,7 +818,7 @@ const char *BKE_appdir_folder_id_version(const int folder_id,
  */
 static void where_am_i(char *fullname, const size_t maxlen, const char *name)
 {
-#ifdef WITH_BINRELOC
+#  ifdef WITH_BINRELOC
   /* Linux uses `binreloc` since `argv[0]` is not reliable, call `br_init(NULL)` first. */
   {
     const char *path = NULL;
@@ -819,9 +829,9 @@ static void where_am_i(char *fullname, const size_t maxlen, const char *name)
       return;
     }
   }
-#endif
+#  endif
 
-#ifdef _WIN32
+#  ifdef _WIN32
   {
     wchar_t *fullname_16 = MEM_mallocN(maxlen * sizeof(wchar_t), "ProgramPath");
     if (GetModuleFileNameW(0, fullname_16, maxlen)) {
@@ -837,7 +847,7 @@ static void where_am_i(char *fullname, const size_t maxlen, const char *name)
 
     MEM_freeN(fullname_16);
   }
-#endif
+#  endif
 
   /* Unix and non Linux. */
   if (name && name[0]) {
@@ -845,16 +855,16 @@ static void where_am_i(char *fullname, const size_t maxlen, const char *name)
     BLI_strncpy(fullname, name, maxlen);
     if (name[0] == '.') {
       BLI_path_abs_from_cwd(fullname, maxlen);
-#ifdef _WIN32
+#  ifdef _WIN32
       BLI_path_program_extensions_add_win32(fullname, maxlen);
-#endif
+#  endif
     }
     else if (BLI_path_slash_rfind(name)) {
       /* Full path. */
       BLI_strncpy(fullname, name, maxlen);
-#ifdef _WIN32
+#  ifdef _WIN32
       BLI_path_program_extensions_add_win32(fullname, maxlen);
-#endif
+#  endif
     }
     else {
       BLI_path_program_search(fullname, maxlen, name);
@@ -862,32 +872,46 @@ static void where_am_i(char *fullname, const size_t maxlen, const char *name)
     /* Remove "/./" and "/../" so string comparisons can be used on the path. */
     BLI_path_normalize(NULL, fullname);
 
-#if defined(DEBUG)
+#  if defined(DEBUG)
     if (!STREQ(name, fullname)) {
       CLOG_INFO(&LOG, 2, "guessing '%s' == '%s'", name, fullname);
     }
-#endif
+#  endif
   }
 }
+#endif /* WITH_PYTHON_MODULE */
 
 void BKE_appdir_program_path_init(const char *argv0)
 {
-  where_am_i(g_app.program_filename, sizeof(g_app.program_filename), argv0);
-  BLI_split_dir_part(g_app.program_filename, g_app.program_dirname, sizeof(g_app.program_dirname));
+#ifdef WITH_PYTHON_MODULE
+  /* NOTE(@campbellbarton): Always use `argv[0]` as is, when building as a Python module.
+   * Otherwise other methods of detecting the binary that override this argument
+   * which must point to the Python module for data-files to be detected. */
+  STRNCPY(g_app.program_filepath, argv0);
+  BLI_path_abs_from_cwd(g_app.program_filepath, sizeof(g_app.program_filepath));
+  BLI_path_normalize(NULL, g_app.program_filepath);
+
+  if (g_app.program_dirname[0] == '\0') {
+    /* First time initializing, the file binary path isn't valid from a Python module.
+     * Calling again must set the `filepath` and leave the directory as-is. */
+    BLI_split_dir_part(
+        g_app.program_filepath, g_app.program_dirname, sizeof(g_app.program_dirname));
+    g_app.program_filepath[0] = '\0';
+  }
+#else
+  where_am_i(g_app.program_filepath, sizeof(g_app.program_filepath), argv0);
+  BLI_split_dir_part(g_app.program_filepath, g_app.program_dirname, sizeof(g_app.program_dirname));
+#endif
 }
 
-/**
- * Path to executable
- */
 const char *BKE_appdir_program_path(void)
 {
-  BLI_assert(g_app.program_filename[0]);
-  return g_app.program_filename;
+#ifndef WITH_PYTHON_MODULE /* Default's to empty when building as a Python module. */
+  BLI_assert(g_app.program_filepath[0]);
+#endif
+  return g_app.program_filepath;
 }
 
-/**
- * Path to directory of executable
- */
 const char *BKE_appdir_program_dir(void)
 {
   BLI_assert(g_app.program_dirname[0]);
@@ -930,7 +954,7 @@ bool BKE_appdir_program_python_search(char *fullpath,
     if (python_bin_dir) {
 
       for (int i = 0; i < ARRAY_SIZE(python_names); i++) {
-        BLI_join_dirfile(fullpath, fullpath_len, python_bin_dir, python_names[i]);
+        BLI_path_join(fullpath, fullpath_len, python_bin_dir, python_names[i]);
 
         if (
 #ifdef _WIN32
@@ -981,9 +1005,6 @@ static const int app_template_directory_id[2] = {
     BLENDER_SYSTEM_SCRIPTS,
 };
 
-/**
- * Return true if templates exist
- */
 bool BKE_appdir_app_template_any(void)
 {
   char temp_dir[FILE_MAX];
@@ -1002,7 +1023,7 @@ bool BKE_appdir_app_template_id_search(const char *app_template, char *path, siz
 {
   for (int i = 0; i < ARRAY_SIZE(app_template_directory_id); i++) {
     char subdir[FILE_MAX];
-    BLI_join_dirfile(subdir, sizeof(subdir), app_template_directory_search[i], app_template);
+    BLI_path_join(subdir, sizeof(subdir), app_template_directory_search[i], app_template);
     if (BKE_appdir_folder_id_ex(app_template_directory_id[i], subdir, path, path_len)) {
       return true;
     }
@@ -1025,8 +1046,7 @@ bool BKE_appdir_app_template_has_userpref(const char *app_template)
   }
 
   char userpref_path[FILE_MAX];
-  BLI_path_join(
-      userpref_path, sizeof(userpref_path), app_template_path, BLENDER_USERPREF_FILE, NULL);
+  BLI_path_join(userpref_path, sizeof(userpref_path), app_template_path, BLENDER_USERPREF_FILE);
   return BLI_exists(userpref_path);
 }
 
@@ -1043,16 +1063,16 @@ void BKE_appdir_app_templates(ListBase *templates)
       continue;
     }
 
-    struct direntry *dir;
-    uint totfile = BLI_filelist_dir_contents(subdir, &dir);
-    for (int f = 0; f < totfile; f++) {
-      if (!FILENAME_IS_CURRPAR(dir[f].relname) && S_ISDIR(dir[f].type)) {
-        char *template = BLI_strdup(dir[f].relname);
+    struct direntry *dirs;
+    const uint dir_num = BLI_filelist_dir_contents(subdir, &dirs);
+    for (int f = 0; f < dir_num; f++) {
+      if (!FILENAME_IS_CURRPAR(dirs[f].relname) && S_ISDIR(dirs[f].type)) {
+        char *template = BLI_strdup(dirs[f].relname);
         BLI_addtail(templates, BLI_genericNodeN(template));
       }
     }
 
-    BLI_filelist_free(dir, totfile);
+    BLI_filelist_free(dirs, dir_num);
   }
 }
 
@@ -1073,13 +1093,13 @@ void BKE_appdir_app_templates(ListBase *templates)
  * \param userdir: Directory specified in user preferences (may be NULL).
  * note that by default this is an empty string, only use when non-empty.
  */
-static void where_is_temp(char *tempdir, const size_t tempdir_len, const char *userdir)
+static void where_is_temp(char *tempdir, const size_t tempdir_maxlen, const char *userdir)
 {
 
   tempdir[0] = '\0';
 
   if (userdir && BLI_is_dir(userdir)) {
-    BLI_strncpy(tempdir, userdir, tempdir_len);
+    BLI_strncpy(tempdir, userdir, tempdir_maxlen);
   }
 
   if (tempdir[0] == '\0') {
@@ -1096,23 +1116,23 @@ static void where_is_temp(char *tempdir, const size_t tempdir_len, const char *u
     for (int i = 0; i < ARRAY_SIZE(env_vars); i++) {
       const char *tmp = BLI_getenv(env_vars[i]);
       if (tmp && (tmp[0] != '\0') && BLI_is_dir(tmp)) {
-        BLI_strncpy(tempdir, tmp, tempdir_len);
+        BLI_strncpy(tempdir, tmp, tempdir_maxlen);
         break;
       }
     }
   }
 
   if (tempdir[0] == '\0') {
-    BLI_strncpy(tempdir, "/tmp/", tempdir_len);
+    BLI_strncpy(tempdir, "/tmp/", tempdir_maxlen);
   }
   else {
     /* add a trailing slash if needed */
-    BLI_path_slash_ensure(tempdir);
+    BLI_path_slash_ensure(tempdir, tempdir_maxlen);
   }
 }
 
 static void tempdir_session_create(char *tempdir_session,
-                                   const size_t tempdir_session_len,
+                                   const size_t tempdir_session_maxlen,
                                    const char *tempdir)
 {
   tempdir_session[0] = '\0';
@@ -1126,9 +1146,9 @@ static void tempdir_session_create(char *tempdir_session,
    * #_mktemp_s also requires the last null character is included. */
   const int tempdir_session_len_required = tempdir_len + session_name_len + 1;
 
-  if (tempdir_session_len_required <= tempdir_session_len) {
+  if (tempdir_session_len_required <= tempdir_session_maxlen) {
     /* No need to use path joining utility as we know the last character of #tempdir is a slash. */
-    BLI_string_join(tempdir_session, tempdir_session_len, tempdir, session_name);
+    BLI_string_join(tempdir_session, tempdir_session_maxlen, tempdir, session_name);
 #ifdef WIN32
     const bool needs_create = (_mktemp_s(tempdir_session, tempdir_session_len_required) == 0);
 #else
@@ -1138,7 +1158,7 @@ static void tempdir_session_create(char *tempdir_session,
       BLI_dir_create_recursive(tempdir_session);
     }
     if (BLI_is_dir(tempdir_session)) {
-      BLI_path_slash_ensure(tempdir_session);
+      BLI_path_slash_ensure(tempdir_session, tempdir_session_maxlen);
       /* Success. */
       return;
     }
@@ -1148,17 +1168,16 @@ static void tempdir_session_create(char *tempdir_session,
             "Could not generate a temp file name for '%s', falling back to '%s'",
             tempdir_session,
             tempdir);
-  BLI_strncpy(tempdir_session, tempdir, tempdir_session_len);
+  BLI_strncpy(tempdir_session, tempdir, tempdir_session_maxlen);
 }
 
-/**
- * Sets #g_app.temp_dirname_base to \a userdir if specified and is a valid directory,
- * otherwise chooses a suitable OS-specific temporary directory.
- * Sets #g_app.temp_dirname_session to a #mkdtemp
- * generated sub-dir of #g_app.temp_dirname_base.
- */
 void BKE_tempdir_init(const char *userdir)
 {
+  /* Sets #g_app.temp_dirname_base to \a userdir if specified and is a valid directory,
+   * otherwise chooses a suitable OS-specific temporary directory.
+   * Sets #g_app.temp_dirname_session to a #mkdtemp
+   * generated sub-dir of #g_app.temp_dirname_base. */
+
   where_is_temp(g_app.temp_dirname_base, sizeof(g_app.temp_dirname_base), userdir);
 
   /* Clear existing temp dir, if needed. */
@@ -1168,25 +1187,16 @@ void BKE_tempdir_init(const char *userdir)
       g_app.temp_dirname_session, sizeof(g_app.temp_dirname_session), g_app.temp_dirname_base);
 }
 
-/**
- * Path to temporary directory (with trailing slash)
- */
 const char *BKE_tempdir_session(void)
 {
   return g_app.temp_dirname_session[0] ? g_app.temp_dirname_session : BKE_tempdir_base();
 }
 
-/**
- * Path to persistent temporary directory (with trailing slash)
- */
 const char *BKE_tempdir_base(void)
 {
   return g_app.temp_dirname_base;
 }
 
-/**
- * Delete content of this instance's temp dir.
- */
 void BKE_tempdir_session_purge(void)
 {
   if (g_app.temp_dirname_session[0] && BLI_is_dir(g_app.temp_dirname_session)) {

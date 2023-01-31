@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 from bl_ui.properties_animviz import (
     MotionPathButtonsPanel,
     MotionPathButtonsPanel_display,
@@ -184,24 +166,18 @@ class OBJECT_PT_collections(ObjectButtonsPanel, Panel):
             row.operator("object.collection_add", text="Add to Collection")
         row.operator("object.collection_add", text="", icon='ADD')
 
-        obj_name = obj.name
-        for collection in bpy.data.collections:
-            # XXX this is slow and stupid!, we need 2 checks, one that's fast
-            # and another that we can be sure its not a name collision
-            # from linked library data
-            collection_objects = collection.objects
-            if obj_name in collection.objects and obj in collection_objects[:]:
-                col = layout.column(align=True)
+        for collection in obj.users_collection:
+            col = layout.column(align=True)
 
-                col.context_pointer_set("collection", collection)
+            col.context_pointer_set("collection", collection)
 
-                row = col.box().row()
-                row.prop(collection, "name", text="")
-                row.operator("object.collection_remove", text="", icon='X', emboss=False)
-                row.menu("COLLECTION_MT_context_menu", icon='DOWNARROW_HLT', text="")
+            row = col.box().row()
+            row.prop(collection, "name", text="")
+            row.operator("object.collection_remove", text="", icon='X', emboss=False)
+            row.menu("COLLECTION_MT_context_menu", icon='DOWNARROW_HLT', text="")
 
-                row = col.box().row()
-                row.prop(collection, "instance_offset", text="")
+            row = col.box().row()
+            row.prop(collection, "instance_offset", text="")
 
 
 class OBJECT_PT_display(ObjectButtonsPanel, Panel):
@@ -215,7 +191,8 @@ class OBJECT_PT_display(ObjectButtonsPanel, Panel):
 
         obj = context.object
         obj_type = obj.type
-        is_geometry = (obj_type in {'MESH', 'CURVE', 'SURFACE', 'META', 'FONT', 'VOLUME', 'HAIR', 'POINTCLOUD'})
+        is_geometry = (obj_type in {'MESH', 'CURVE', 'SURFACE', 'META', 'FONT', 'VOLUME', 'CURVES', 'POINTCLOUD'})
+        has_bounds = (is_geometry or obj_type in {'LATTICE', 'ARMATURE'})
         is_wire = (obj_type in {'CAMERA', 'EMPTY'})
         is_empty_image = (obj_type == 'EMPTY' and obj.empty_display_type == 'IMAGE')
         is_dupli = (obj.instance_type != 'NONE')
@@ -247,20 +224,27 @@ class OBJECT_PT_display(ObjectButtonsPanel, Panel):
             # Only useful with object having faces/materials...
             col.prop(obj, "color")
 
-        col = layout.column(align=False, heading="Bounds")
-        col.use_property_decorate = False
-        row = col.row(align=True)
-        sub = row.row(align=True)
-        sub.prop(obj, "show_bounds", text="")
-        sub = sub.row(align=True)
-        sub.active = obj.show_bounds or (obj.display_type == 'BOUNDS')
-        sub.prop(obj, "display_bounds_type", text="")
-        row.prop_decorator(obj, "display_bounds_type")
+        if has_bounds:
+            col = layout.column(align=False, heading="Bounds")
+            col.use_property_decorate = False
+            row = col.row(align=True)
+            sub = row.row(align=True)
+            sub.prop(obj, "show_bounds", text="")
+            sub = sub.row(align=True)
+            sub.active = obj.show_bounds or (obj.display_type == 'BOUNDS')
+            sub.prop(obj, "display_bounds_type", text="")
+            row.prop_decorator(obj, "display_bounds_type")
 
 
 class OBJECT_PT_instancing(ObjectButtonsPanel, Panel):
     bl_label = "Instancing"
     bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.object
+        # FONT objects need (vertex) instancing for the 'Object Font' feature
+        return (ob.type in {'MESH', 'EMPTY', 'FONT'})
 
     def draw(self, context):
         layout = self.layout
@@ -333,6 +317,12 @@ class OBJECT_PT_lineart(ObjectButtonsPanel, Panel):
         subrow.active = lineart.use_crease_override
         subrow.prop(lineart, "crease_threshold", slider=True, text="")
 
+        row = layout.row(heading="Intersection Priority")
+        row.prop(lineart, "use_intersection_priority_override", text="")
+        subrow = row.row()
+        subrow.active = lineart.use_intersection_priority_override
+        subrow.prop(lineart, "intersection_priority", text="")
+
 
 class OBJECT_PT_motion_paths(MotionPathButtonsPanel, Panel):
     #bl_label = "Object Motion Paths"
@@ -398,6 +388,10 @@ class OBJECT_PT_visibility(ObjectButtonsPanel, Panel):
         if context.object.type == 'GPENCIL':
             col = layout.column(heading="Grease Pencil")
             col.prop(ob, "use_grease_pencil_lights", toggle=False)
+
+        layout.separator()
+        col = layout.column(heading="Mask")
+        col.prop(ob, "is_holdout")
 
 
 class OBJECT_PT_custom_props(ObjectButtonsPanel, PropertyPanel, Panel):

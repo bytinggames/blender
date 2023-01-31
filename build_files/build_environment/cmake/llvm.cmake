@@ -1,20 +1,4 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 if(BLENDER_PLATFORM_ARM)
   set(LLVM_TARGETS AArch64$<SEMICOLON>ARM)
@@ -25,6 +9,7 @@ endif()
 if(APPLE)
   set(LLVM_XML2_ARGS
     -DLIBXML2_LIBRARY=${LIBDIR}/xml2/lib/libxml2.a
+    -DLIBXML2_INCLUDE_DIR=${LIBDIR}/xml2/include/libxml2
   )
   set(LLVM_BUILD_CLANG_TOOLS_EXTRA ^^clang-tools-extra)
   set(BUILD_CLANG_TOOLS ON)
@@ -41,11 +26,14 @@ set(LLVM_EXTRA_ARGS
   -DLLVM_BUILD_LLVM_C_DYLIB=OFF
   -DLLVM_ENABLE_UNWIND_TABLES=OFF
   -DLLVM_ENABLE_PROJECTS=clang${LLVM_BUILD_CLANG_TOOLS_EXTRA}
+  -DPython3_ROOT_DIR=${LIBDIR}/python/
+  -DPython3_EXECUTABLE=${PYTHON_BINARY}
   ${LLVM_XML2_ARGS}
 )
 
 if(WIN32)
   set(LLVM_GENERATOR "Ninja")
+  list(APPEND LLVM_EXTRA_ARGS -DPython3_FIND_REGISTRY=NEVER)
 else()
   set(LLVM_GENERATOR "Unix Makefiles")
 endif()
@@ -66,7 +54,11 @@ ExternalProject_Add(ll
 
 if(MSVC)
   if(BUILD_MODE STREQUAL Release)
-    set(LLVM_HARVEST_COMMAND ${CMAKE_COMMAND} -E copy_directory ${LIBDIR}/llvm/ ${HARVEST_TARGET}/llvm/ )
+    set(LLVM_HARVEST_COMMAND
+      ${CMAKE_COMMAND} -E copy_directory ${LIBDIR}/llvm/lib ${HARVEST_TARGET}/llvm/lib &&
+      ${CMAKE_COMMAND} -E copy_directory ${LIBDIR}/llvm/include ${HARVEST_TARGET}/llvm/include &&
+      ${CMAKE_COMMAND} -E copy ${LIBDIR}/llvm/bin/clang-format.exe ${HARVEST_TARGET}/llvm/bin/clang-format.exe
+    )
   else()
     set(LLVM_HARVEST_COMMAND
       ${CMAKE_COMMAND} -E copy_directory ${LIBDIR}/llvm/lib/ ${HARVEST_TARGET}/llvm/debug/lib/ &&
@@ -86,3 +78,8 @@ if(APPLE)
     external_xml2
   )
 endif()
+
+add_dependencies(
+  ll
+  external_python
+)

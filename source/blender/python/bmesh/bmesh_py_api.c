@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2012 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2012 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup pybmesh
@@ -125,7 +109,7 @@ static PyObject *bpy_bm_update_edit_mesh(PyObject *UNUSED(self), PyObject *args,
 
   if (!PyArg_ParseTupleAndKeywords(args,
                                    kw,
-                                   "O|O&O&:update_edit_mesh",
+                                   "O|$O&O&:update_edit_mesh",
                                    (char **)kwlist,
                                    &py_me,
                                    PyC_ParseBool,
@@ -147,10 +131,10 @@ static PyObject *bpy_bm_update_edit_mesh(PyObject *UNUSED(self), PyObject *args,
   }
 
   {
-    extern void EDBM_update_generic(
+    extern void EDBM_update_extern(
         struct Mesh * me, const bool do_tessface, const bool is_destructive);
 
-    EDBM_update_generic(me, do_loop_triangles, is_destructive);
+    EDBM_update_extern(me, do_loop_triangles, is_destructive);
   }
 
   Py_RETURN_NONE;
@@ -176,7 +160,7 @@ static struct PyModuleDef BPy_BM_module_def = {
     BPy_BM_doc,     /* m_doc */
     0,              /* m_size */
     BPy_BM_methods, /* m_methods */
-    NULL,           /* m_reload */
+    NULL,           /* m_slots */
     NULL,           /* m_traverse */
     NULL,           /* m_clear */
     NULL,           /* m_free */

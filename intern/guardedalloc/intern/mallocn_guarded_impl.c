@@ -1,24 +1,8 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
- * \ingroup MEM
+ * \ingroup intern_mem
  *
  * Guarded memory allocation, and boundary-write detection.
  */
@@ -70,7 +54,7 @@
 #  define DEBUG_MEMCOUNTER_ERROR_VAL 0
 static int _mallocn_count = 0;
 
-/* breakpoint here */
+/* Break-point here. */
 static void memcount_raise(const char *name)
 {
   fprintf(stderr, "%s: memcount-leak, %d\n", name, _mallocn_count);
@@ -89,7 +73,7 @@ typedef struct localListBase {
   void *first, *last;
 } localListBase;
 
-/* note: keep this struct aligned (e.g., irix/gcc) - Hos */
+/* NOTE(@hos): keep this struct aligned (e.g., IRIX/GCC). */
 typedef struct MemHead {
   int tag1;
   size_t len;
@@ -98,9 +82,8 @@ typedef struct MemHead {
   const char *nextname;
   int tag2;
   short pad1;
-  short alignment; /* if non-zero aligned alloc was used
-                    * and alignment is stored here.
-                    */
+  /* if non-zero aligned allocation was used and alignment is stored here. */
+  short alignment;
 #ifdef DEBUG_MEMCOUNTER
   int _count;
 #endif
@@ -161,7 +144,7 @@ static const char *check_memlist(MemHead *memh);
 /* vars                                                                  */
 /* --------------------------------------------------------------------- */
 
-static unsigned int totblock = 0;
+static uint totblock = 0;
 static size_t mem_in_use = 0, peak_mem = 0;
 
 static volatile struct localListBase _membase;
@@ -470,7 +453,7 @@ void *MEM_guarded_mallocN(size_t len, const char *str)
   print_error("Malloc returns null: len=" SIZET_FORMAT " in %s, total %u\n",
               SIZET_ARG(len),
               str,
-              (unsigned int)mem_in_use);
+              (uint)mem_in_use);
   return NULL;
 }
 
@@ -484,7 +467,7 @@ void *MEM_guarded_malloc_arrayN(size_t len, size_t size, const char *str)
         SIZET_ARG(len),
         SIZET_ARG(size),
         str,
-        (unsigned int)mem_in_use);
+        (uint)mem_in_use);
     abort();
     return NULL;
   }
@@ -543,7 +526,7 @@ void *MEM_guarded_mallocN_aligned(size_t len, size_t alignment, const char *str)
   print_error("aligned_malloc returns null: len=" SIZET_FORMAT " in %s, total %u\n",
               SIZET_ARG(len),
               str,
-              (unsigned int)mem_in_use);
+              (uint)mem_in_use);
   return NULL;
 }
 
@@ -567,7 +550,7 @@ void *MEM_guarded_callocN(size_t len, const char *str)
   print_error("Calloc returns null: len=" SIZET_FORMAT " in %s, total %u\n",
               SIZET_ARG(len),
               str,
-              (unsigned int)mem_in_use);
+              (uint)mem_in_use);
   return NULL;
 }
 
@@ -581,7 +564,7 @@ void *MEM_guarded_calloc_arrayN(size_t len, size_t size, const char *str)
         SIZET_ARG(len),
         SIZET_ARG(size),
         str,
-        (unsigned int)mem_in_use);
+        (uint)mem_in_use);
     abort();
     return NULL;
   }
@@ -623,7 +606,7 @@ void MEM_guarded_printmemlist_stats(void)
 {
   MemHead *membl;
   MemPrintBlock *pb, *printblock;
-  unsigned int totpb, a, b;
+  uint totpb, a, b;
   size_t mem_in_use_slop = 0;
 
   mem_lock_thread();
@@ -871,7 +854,7 @@ void MEM_guarded_freeN(void *vmemh)
 
   if (memh == NULL) {
     MemorY_ErroR("free", "attempt to free NULL pointer");
-    /* print_error(err_stream, "%d\n", (memh+4000)->tag1); */
+    // print_error(err_stream, "%d\n", (memh+4000)->tag1);
     return;
   }
 
@@ -1194,9 +1177,9 @@ size_t MEM_guarded_get_memory_in_use(void)
   return _mem_in_use;
 }
 
-unsigned int MEM_guarded_get_memory_blocks_in_use(void)
+uint MEM_guarded_get_memory_blocks_in_use(void)
 {
-  unsigned int _totblock;
+  uint _totblock;
 
   mem_lock_thread();
   _totblock = totblock;
@@ -1215,5 +1198,19 @@ const char *MEM_guarded_name_ptr(void *vmemh)
   }
 
   return "MEM_guarded_name_ptr(NULL)";
+}
+
+void MEM_guarded_name_ptr_set(void *vmemh, const char *str)
+{
+  if (!vmemh) {
+    return;
+  }
+
+  MemHead *memh = vmemh;
+  memh--;
+  memh->name = str;
+  if (memh->prev) {
+    MEMNEXT(memh->prev)->nextname = str;
+  }
 }
 #endif /* NDEBUG */

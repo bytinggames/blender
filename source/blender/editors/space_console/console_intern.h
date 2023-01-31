@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup spconsole
@@ -27,8 +13,9 @@ struct bContext;
 struct wmOperatorType;
 
 /* console_draw.c */
+
 void console_textview_main(struct SpaceConsole *sc, const struct ARegion *region);
-/* needed to calculate the scrollbar */
+/* Needed to calculate the scroll-bar. */
 int console_textview_height(struct SpaceConsole *sc, const struct ARegion *region);
 int console_char_pick(struct SpaceConsole *sc, const struct ARegion *region, const int mval[2]);
 
@@ -36,6 +23,7 @@ void console_scrollback_prompt_begin(struct SpaceConsole *sc, ConsoleLine *cl_du
 void console_scrollback_prompt_end(struct SpaceConsole *sc, ConsoleLine *cl_dummy);
 
 /* console_ops.c */
+
 void console_history_free(SpaceConsole *sc, ConsoleLine *cl);
 void console_scrollback_free(SpaceConsole *sc, ConsoleLine *cl);
 ConsoleLine *console_history_add_str(struct SpaceConsole *sc, char *str, bool own);

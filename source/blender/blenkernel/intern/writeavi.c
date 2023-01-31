@@ -1,25 +1,9 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- * Functions for writing avi-format files.
- * Added interface for generic movie support (ton)
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
+ * Functions for writing AVI-format files.
+ * Added interface for generic movie support (ton)
  * \ingroup bke
  */
 
@@ -138,7 +122,8 @@ bMovieHandle *BKE_movie_handle_get(const char imtype)
            R_IMF_IMTYPE_FFMPEG,
            R_IMF_IMTYPE_H264,
            R_IMF_IMTYPE_XVID,
-           R_IMF_IMTYPE_THEORA)) {
+           R_IMF_IMTYPE_THEORA,
+           R_IMF_IMTYPE_AV1)) {
     mh.start_movie = BKE_ffmpeg_start;
     mh.append_movie = BKE_ffmpeg_append;
     mh.end_movie = BKE_ffmpeg_end;
@@ -253,7 +238,7 @@ static int append_avi(void *context_v,
                       const char *UNUSED(suffix),
                       ReportList *UNUSED(reports))
 {
-  unsigned int *rt1, *rt2, *rectot;
+  uint *rt1, *rt2, *rectot;
   int x, y;
   char *cp, rt;
   AviMovie *avi = context_v;
@@ -265,7 +250,7 @@ static int append_avi(void *context_v,
   /* note that libavi free's the buffer... stupid interface - zr */
   rectot = MEM_mallocN(rectx * recty * sizeof(int), "rectot");
   rt1 = rectot;
-  rt2 = (unsigned int *)pixels + (recty - 1) * rectx;
+  rt2 = (uint *)pixels + (recty - 1) * rectx;
   /* flip y and convert to abgr */
   for (y = 0; y < recty; y++, rt1 += rectx, rt2 -= rectx) {
     memcpy(rt1, rt2, rectx * sizeof(int));
@@ -315,7 +300,6 @@ static void context_free_avi(void *context_v)
 
 #endif /* WITH_AVI */
 
-/* similar to BKE_image_path_from_imformat() */
 void BKE_movie_filepath_get(char *string, const RenderData *rd, bool preview, const char *suffix)
 {
   bMovieHandle *mh = BKE_movie_handle_get(rd->im_format.imtype);

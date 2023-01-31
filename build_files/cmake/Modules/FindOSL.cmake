@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2014 Blender Foundation.
+
 # - Find OpenShadingLanguage library
 # Find the native OpenShadingLanguage includes and library
 # This module defines
@@ -10,13 +13,6 @@
 #  OSL_FOUND, if false, do not try to use OSL.
 #  OSL_LIBRARY_VERSION_MAJOR, OSL_LIBRARY_VERSION_MINOR,  the major
 #                and minor versions of OSL library if found.
-#
-#=============================================================================
-# Copyright 2014 Blender Foundation.
-#
-# Distributed under the OSI-approved BSD 3-Clause License,
-# see accompanying file BSD-3-Clause-license.txt for details.
-#=============================================================================
 
 # If OSL_ROOT_DIR was defined in the environment, use it.
 IF(NOT OSL_ROOT_DIR AND NOT $ENV{OSL_ROOT_DIR} STREQUAL "")
@@ -24,6 +20,7 @@ IF(NOT OSL_ROOT_DIR AND NOT $ENV{OSL_ROOT_DIR} STREQUAL "")
 ENDIF()
 
 SET(_osl_FIND_COMPONENTS
+  oslnoise
   oslcomp
   oslexec
   oslquery
@@ -43,7 +40,6 @@ FIND_PATH(OSL_INCLUDE_DIR
     include
 )
 
-SET(_osl_LIBRARIES)
 FOREACH(COMPONENT ${_osl_FIND_COMPONENTS})
   STRING(TOUPPER ${COMPONENT} UPPERCOMPONENT)
 
@@ -55,8 +51,19 @@ FOREACH(COMPONENT ${_osl_FIND_COMPONENTS})
     PATH_SUFFIXES
       lib64 lib
     )
-  LIST(APPEND _osl_LIBRARIES "${OSL_${UPPERCOMPONENT}_LIBRARY}")
 ENDFOREACH()
+
+# Note linking order matters, and oslnoise existence depends on version.
+SET(_osl_LIBRARIES ${OSL_OSLCOMP_LIBRARY})
+IF(APPLE)
+  list(APPEND _osl_LIBRARIES -force_load ${OSL_OSLEXEC_LIBRARY})
+ELSE()
+  list(APPEND _osl_LIBRARIES ${OSL_OSLEXEC_LIBRARY})
+ENDIF()
+list(APPEND _osl_LIBRARIES ${OSL_OSLQUERY_LIBRARY})
+IF(OSL_OSLNOISE_LIBRARY)
+  list(APPEND _osl_LIBRARIES ${OSL_OSLNOISE_LIBRARY})
+ENDIF()
 
 FIND_PROGRAM(OSL_COMPILER oslc
              HINTS ${_osl_SEARCH_DIRS}
@@ -76,6 +83,7 @@ FIND_PATH(OSL_SHADER_DIR
     /usr/include/OSL/
   PATH_SUFFIXES
     share/OSL/shaders
+    shaders
 )
 
 # handle the QUIETLY and REQUIRED arguments and set OSL_FOUND to TRUE if
@@ -99,6 +107,7 @@ ENDIF()
 
 MARK_AS_ADVANCED(
   OSL_INCLUDE_DIR
+  OSL_SHADER_DIR
 )
 FOREACH(COMPONENT ${_osl_FIND_COMPONENTS})
   STRING(TOUPPER ${COMPONENT} UPPERCOMPONENT)

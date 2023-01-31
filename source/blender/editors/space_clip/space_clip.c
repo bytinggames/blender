@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2011 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2011 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spclip
@@ -23,6 +7,8 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#include "DNA_defaults.h"
 
 #include "DNA_mask_types.h"
 #include "DNA_movieclip_types.h"
@@ -37,6 +23,7 @@
 
 #include "BKE_context.h"
 #include "BKE_lib_id.h"
+#include "BKE_lib_remap.h"
 #include "BKE_movieclip.h"
 #include "BKE_screen.h"
 #include "BKE_tracking.h"
@@ -61,6 +48,8 @@
 #include "UI_interface.h"
 #include "UI_resources.h"
 #include "UI_view2d.h"
+
+#include "BLO_read_write.h"
 
 #include "RNA_access.h"
 
@@ -239,14 +228,7 @@ static SpaceLink *clip_create(const ScrArea *area, const Scene *scene)
   ARegion *region;
   SpaceClip *sc;
 
-  sc = MEM_callocN(sizeof(SpaceClip), "initclip");
-  sc->spacetype = SPACE_CLIP;
-  sc->flag = SC_SHOW_MARKER_PATTERN | SC_SHOW_TRACK_PATH | SC_SHOW_GRAPH_TRACKS_MOTION |
-             SC_SHOW_GRAPH_FRAMES | SC_SHOW_ANNOTATION;
-  sc->zoom = 1.0f;
-  sc->path_length = 20;
-  sc->scopes.track_preview_height = 120;
-  sc->around = V3D_AROUND_CENTER_MEDIAN;
+  sc = DNA_struct_default_alloc(SpaceClip);
 
   /* header */
   region = MEM_callocN(sizeof(ARegion), "header for clip");
@@ -334,7 +316,7 @@ static SpaceLink *clip_duplicate(SpaceLink *sl)
 static void clip_listener(const wmSpaceTypeListenerParams *params)
 {
   ScrArea *area = params->area;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
   const Scene *scene = params->scene;
 
   /* context changes */
@@ -535,6 +517,9 @@ static void clip_operatortypes(void)
   WM_operatortype_append(CLIP_OT_keyframe_insert);
   WM_operatortype_append(CLIP_OT_keyframe_delete);
 
+  WM_operatortype_append(CLIP_OT_new_image_from_plane_marker);
+  WM_operatortype_append(CLIP_OT_update_image_from_plane_marker);
+
   /* ** clip_graph_ops.c  ** */
 
   /* graph editing */
@@ -605,10 +590,7 @@ static int /*eContextResult*/ clip_context(const bContext *C,
 }
 
 /* dropboxes */
-static bool clip_drop_poll(bContext *UNUSED(C),
-                           wmDrag *drag,
-                           const wmEvent *UNUSED(event),
-                           const char **UNUSED(r_tooltip))
+static bool clip_drop_poll(bContext *UNUSED(C), wmDrag *drag, const wmEvent *UNUSED(event))
 {
   if (drag->type == WM_DRAG_PATH) {
     /* rule might not work? */
@@ -620,7 +602,7 @@ static bool clip_drop_poll(bContext *UNUSED(C),
   return false;
 }
 
-static void clip_drop_copy(wmDrag *drag, wmDropBox *drop)
+static void clip_drop_copy(bContext *UNUSED(C), wmDrag *drag, wmDropBox *drop)
 {
   PointerRNA itemptr;
   char dir[FILE_MAX], file[FILE_MAX];
@@ -639,7 +621,45 @@ static void clip_dropboxes(void)
 {
   ListBase *lb = WM_dropboxmap_find("Clip", SPACE_CLIP, 0);
 
-  WM_dropbox_add(lb, "CLIP_OT_open", clip_drop_poll, clip_drop_copy, NULL);
+  WM_dropbox_add(lb, "CLIP_OT_open", clip_drop_poll, clip_drop_copy, NULL, NULL);
+}
+
+static bool clip_set_region_visible(const bContext *C,
+                                    ARegion *region,
+                                    const bool is_visible,
+                                    const short alignment,
+                                    const bool view_all_on_show)
+{
+  bool view_changed = false;
+
+  if (is_visible) {
+    if (region && (region->flag & RGN_FLAG_HIDDEN)) {
+      region->flag &= ~RGN_FLAG_HIDDEN;
+      region->v2d.flag &= ~V2D_IS_INIT;
+      if (view_all_on_show) {
+        region->v2d.cur = region->v2d.tot;
+      }
+      view_changed = true;
+    }
+    if (region && region->alignment != alignment) {
+      region->alignment = alignment;
+      view_changed = true;
+    }
+  }
+  else {
+    if (region && !(region->flag & RGN_FLAG_HIDDEN)) {
+      region->flag |= RGN_FLAG_HIDDEN;
+      region->v2d.flag &= ~V2D_IS_INIT;
+      WM_event_remove_handlers((bContext *)C, &region->handlers);
+      view_changed = true;
+    }
+    if (region && region->alignment != RGN_ALIGN_NONE) {
+      region->alignment = RGN_ALIGN_NONE;
+      view_changed = true;
+    }
+  }
+
+  return view_changed;
 }
 
 static void clip_refresh(const bContext *C, ScrArea *area)
@@ -685,127 +705,14 @@ static void clip_refresh(const bContext *C, ScrArea *area)
       break;
   }
 
-  if (main_visible) {
-    if (region_main && (region_main->flag & RGN_FLAG_HIDDEN)) {
-      region_main->flag &= ~RGN_FLAG_HIDDEN;
-      region_main->v2d.flag &= ~V2D_IS_INIT;
-      view_changed = true;
-    }
-
-    if (region_main && region_main->alignment != RGN_ALIGN_NONE) {
-      region_main->alignment = RGN_ALIGN_NONE;
-      view_changed = true;
-    }
-  }
-  else {
-    if (region_main && !(region_main->flag & RGN_FLAG_HIDDEN)) {
-      region_main->flag |= RGN_FLAG_HIDDEN;
-      region_main->v2d.flag &= ~V2D_IS_INIT;
-      WM_event_remove_handlers((bContext *)C, &region_main->handlers);
-      view_changed = true;
-    }
-    if (region_main && region_main->alignment != RGN_ALIGN_NONE) {
-      region_main->alignment = RGN_ALIGN_NONE;
-      view_changed = true;
-    }
-  }
-
-  if (properties_visible) {
-    if (region_properties && (region_properties->flag & RGN_FLAG_HIDDEN)) {
-      region_properties->flag &= ~RGN_FLAG_HIDDEN;
-      region_properties->v2d.flag &= ~V2D_IS_INIT;
-      view_changed = true;
-    }
-    if (region_properties && region_properties->alignment != RGN_ALIGN_RIGHT) {
-      region_properties->alignment = RGN_ALIGN_RIGHT;
-      view_changed = true;
-    }
-  }
-  else {
-    if (region_properties && !(region_properties->flag & RGN_FLAG_HIDDEN)) {
-      region_properties->flag |= RGN_FLAG_HIDDEN;
-      region_properties->v2d.flag &= ~V2D_IS_INIT;
-      WM_event_remove_handlers((bContext *)C, &region_properties->handlers);
-      view_changed = true;
-    }
-    if (region_properties && region_properties->alignment != RGN_ALIGN_NONE) {
-      region_properties->alignment = RGN_ALIGN_NONE;
-      view_changed = true;
-    }
-  }
-
-  if (tools_visible) {
-    if (region_tools && (region_tools->flag & RGN_FLAG_HIDDEN)) {
-      region_tools->flag &= ~RGN_FLAG_HIDDEN;
-      region_tools->v2d.flag &= ~V2D_IS_INIT;
-      view_changed = true;
-    }
-    if (region_tools && region_tools->alignment != RGN_ALIGN_LEFT) {
-      region_tools->alignment = RGN_ALIGN_LEFT;
-      view_changed = true;
-    }
-  }
-  else {
-    if (region_tools && !(region_tools->flag & RGN_FLAG_HIDDEN)) {
-      region_tools->flag |= RGN_FLAG_HIDDEN;
-      region_tools->v2d.flag &= ~V2D_IS_INIT;
-      WM_event_remove_handlers((bContext *)C, &region_tools->handlers);
-      view_changed = true;
-    }
-    if (region_tools && region_tools->alignment != RGN_ALIGN_NONE) {
-      region_tools->alignment = RGN_ALIGN_NONE;
-      view_changed = true;
-    }
-  }
-
-  if (preview_visible) {
-    if (region_preview && (region_preview->flag & RGN_FLAG_HIDDEN)) {
-      region_preview->flag &= ~RGN_FLAG_HIDDEN;
-      region_preview->v2d.flag &= ~V2D_IS_INIT;
-      region_preview->v2d.cur = region_preview->v2d.tot;
-      view_changed = true;
-    }
-    if (region_preview && region_preview->alignment != RGN_ALIGN_NONE) {
-      region_preview->alignment = RGN_ALIGN_NONE;
-      view_changed = true;
-    }
-  }
-  else {
-    if (region_preview && !(region_preview->flag & RGN_FLAG_HIDDEN)) {
-      region_preview->flag |= RGN_FLAG_HIDDEN;
-      region_preview->v2d.flag &= ~V2D_IS_INIT;
-      WM_event_remove_handlers((bContext *)C, &region_preview->handlers);
-      view_changed = true;
-    }
-    if (region_preview && region_preview->alignment != RGN_ALIGN_NONE) {
-      region_preview->alignment = RGN_ALIGN_NONE;
-      view_changed = true;
-    }
-  }
-
-  if (channels_visible) {
-    if (region_channels && (region_channels->flag & RGN_FLAG_HIDDEN)) {
-      region_channels->flag &= ~RGN_FLAG_HIDDEN;
-      region_channels->v2d.flag &= ~V2D_IS_INIT;
-      view_changed = true;
-    }
-    if (region_channels && region_channels->alignment != RGN_ALIGN_LEFT) {
-      region_channels->alignment = RGN_ALIGN_LEFT;
-      view_changed = true;
-    }
-  }
-  else {
-    if (region_channels && !(region_channels->flag & RGN_FLAG_HIDDEN)) {
-      region_channels->flag |= RGN_FLAG_HIDDEN;
-      region_channels->v2d.flag &= ~V2D_IS_INIT;
-      WM_event_remove_handlers((bContext *)C, &region_channels->handlers);
-      view_changed = true;
-    }
-    if (region_channels && region_channels->alignment != RGN_ALIGN_NONE) {
-      region_channels->alignment = RGN_ALIGN_NONE;
-      view_changed = true;
-    }
-  }
+  view_changed |= clip_set_region_visible(C, region_main, main_visible, RGN_ALIGN_NONE, false);
+  view_changed |= clip_set_region_visible(
+      C, region_properties, properties_visible, RGN_ALIGN_RIGHT, false);
+  view_changed |= clip_set_region_visible(C, region_tools, tools_visible, RGN_ALIGN_LEFT, false);
+  view_changed |= clip_set_region_visible(
+      C, region_preview, preview_visible, RGN_ALIGN_NONE, true);
+  view_changed |= clip_set_region_visible(
+      C, region_channels, channels_visible, RGN_ALIGN_LEFT, false);
 
   if (view_changed) {
     ED_area_init(wm, window, area);
@@ -906,8 +813,8 @@ static void clip_main_region_draw(const bContext *C, ARegion *region)
   int width, height;
   bool show_cursor = false;
 
-  /* if tracking is in progress, we should synchronize framenr from clipuser
-   * so latest tracked frame would be shown */
+  /* If tracking is in progress, we should synchronize the frame from the clip-user
+   * (#MovieClipUser.framenr) so latest tracked frame would be shown. */
   if (clip && clip->tracking_context) {
     BKE_autotrack_context_sync_user(clip->tracking_context, &sc->user);
   }
@@ -958,6 +865,7 @@ static void clip_main_region_draw(const bContext *C, ARegion *region)
                           sc->mask_info.draw_flag,
                           sc->mask_info.draw_type,
                           sc->mask_info.overlay_mode,
+                          sc->mask_info.blend_factor,
                           mask_width,
                           mask_height,
                           aspx,
@@ -1013,7 +921,7 @@ static void clip_main_region_draw(const bContext *C, ARegion *region)
 static void clip_main_region_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -1082,6 +990,9 @@ static void graph_region_draw(const bContext *C, ARegion *region)
   /* time-scrubbing */
   ED_time_scrub_draw(region, scene, sc->flag & SC_SHOW_SECONDS, true);
 
+  /* current frame indicator */
+  ED_time_scrub_draw_current_frame(region, scene, sc->flag & SC_SHOW_SECONDS);
+
   /* scrollers */
   UI_view2d_scrollers_draw(v2d, NULL);
 
@@ -1112,7 +1023,7 @@ static void dopesheet_region_draw(const bContext *C, ARegion *region)
   UI_view2d_view_ortho(v2d);
 
   /* time grid */
-  UI_view2d_draw_lines_x__discrete_frames_or_seconds(v2d, scene, sc->flag & SC_SHOW_SECONDS);
+  UI_view2d_draw_lines_x__discrete_frames_or_seconds(v2d, scene, sc->flag & SC_SHOW_SECONDS, true);
 
   /* data... */
   clip_draw_dopesheet_main(sc, region, scene);
@@ -1128,6 +1039,9 @@ static void dopesheet_region_draw(const bContext *C, ARegion *region)
 
   /* time-scrubbing */
   ED_time_scrub_draw(region, scene, sc->flag & SC_SHOW_SECONDS, true);
+
+  /* current frame indicator */
+  ED_time_scrub_draw_current_frame(region, scene, sc->flag & SC_SHOW_SECONDS);
 
   /* scrollers */
   UI_view2d_scrollers_draw(v2d, NULL);
@@ -1206,7 +1120,7 @@ static void clip_header_region_draw(const bContext *C, ARegion *region)
 static void clip_header_region_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -1214,7 +1128,7 @@ static void clip_header_region_listener(const wmRegionListenerParams *params)
       switch (wmn->data) {
         /* for proportional editmode only */
         case ND_TOOLSETTINGS:
-          /* TODO - should do this when in mask mode only but no data available */
+          /* TODO: should do this when in mask mode only but no data available. */
           // if (sc->mode == SC_MODE_MASKEDIT)
           {
             ED_region_tag_redraw(region);
@@ -1248,7 +1162,7 @@ static void clip_tools_region_draw(const bContext *C, ARegion *region)
 static void clip_props_region_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -1300,7 +1214,7 @@ static void clip_properties_region_draw(const bContext *C, ARegion *region)
 static void clip_properties_region_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -1319,33 +1233,48 @@ static void clip_properties_region_listener(const wmRegionListenerParams *params
 
 /********************* registration ********************/
 
-static void clip_id_remap(ScrArea *UNUSED(area), SpaceLink *slink, ID *old_id, ID *new_id)
+static void clip_id_remap(ScrArea *UNUSED(area),
+                          SpaceLink *slink,
+                          const struct IDRemapper *mappings)
 {
   SpaceClip *sclip = (SpaceClip *)slink;
 
-  if (!ELEM(GS(old_id->name), ID_MC, ID_MSK)) {
+  if (!BKE_id_remapper_has_mapping_for(mappings, FILTER_ID_MC | FILTER_ID_MSK)) {
     return;
   }
 
-  if ((ID *)sclip->clip == old_id) {
-    sclip->clip = (MovieClip *)new_id;
-    id_us_ensure_real(new_id);
-  }
-
-  if ((ID *)sclip->mask_info.mask == old_id) {
-    sclip->mask_info.mask = (Mask *)new_id;
-    id_us_ensure_real(new_id);
-  }
+  BKE_id_remapper_apply(mappings, (ID **)&sclip->clip, ID_REMAP_APPLY_ENSURE_REAL);
+  BKE_id_remapper_apply(mappings, (ID **)&sclip->mask_info.mask, ID_REMAP_APPLY_ENSURE_REAL);
 }
 
-/* only called once, from space/spacetypes.c */
+static void clip_blend_read_data(BlendDataReader *UNUSED(reader), SpaceLink *sl)
+{
+  SpaceClip *sclip = (SpaceClip *)sl;
+
+  sclip->scopes.track_search = NULL;
+  sclip->scopes.track_preview = NULL;
+  sclip->scopes.ok = 0;
+}
+
+static void clip_blend_read_lib(BlendLibReader *reader, ID *parent_id, SpaceLink *sl)
+{
+  SpaceClip *sclip = (SpaceClip *)sl;
+  BLO_read_id_address(reader, parent_id->lib, &sclip->clip);
+  BLO_read_id_address(reader, parent_id->lib, &sclip->mask_info.mask);
+}
+
+static void clip_blend_write(BlendWriter *writer, SpaceLink *sl)
+{
+  BLO_write_struct(writer, SpaceClip, sl);
+}
+
 void ED_spacetype_clip(void)
 {
   SpaceType *st = MEM_callocN(sizeof(SpaceType), "spacetype clip");
   ARegionType *art;
 
   st->spaceid = SPACE_CLIP;
-  strncpy(st->name, "Clip", BKE_ST_MAXNAME);
+  STRNCPY(st->name, "Clip");
 
   st->create = clip_create;
   st->free = clip_free;
@@ -1359,6 +1288,9 @@ void ED_spacetype_clip(void)
   st->dropboxes = clip_dropboxes;
   st->refresh = clip_refresh;
   st->id_remap = clip_id_remap;
+  st->blend_read_data = clip_blend_read_data;
+  st->blend_read_lib = clip_blend_read_lib;
+  st->blend_write = clip_blend_write;
 
   /* regions: main window */
   art = MEM_callocN(sizeof(ARegionType), "spacetype clip region");

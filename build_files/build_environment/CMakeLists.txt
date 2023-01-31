@@ -1,22 +1,6 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
 
-####################################################################################################
+##################################################################################################
 #
 # This is a build system used by platform maintainers to build library dependencies on
 # Windows, macOS and Linux.
@@ -38,7 +22,7 @@
 #   Install compiler cmake autoconf automake libtool yasm tcl
 #   Run "make deps" from main Blender directory
 #
-####################################################################################################
+##################################################################################################
 
 project("BlenderDependencies")
 cmake_minimum_required(VERSION 3.5)
@@ -46,8 +30,12 @@ cmake_minimum_required(VERSION 3.5)
 include(ExternalProject)
 include(cmake/check_software.cmake)
 include(cmake/options.cmake)
+# `versions.cmake` needs to be included after `options.cmake`
+# due to the `BLENDER_PLATFORM_ARM` variable being needed.
 include(cmake/versions.cmake)
+include(cmake/boost_build_options.cmake)
 include(cmake/download.cmake)
+include(cmake/macros.cmake)
 
 if(ENABLE_MINGW64)
   include(cmake/setup_mingw64.cmake)
@@ -56,23 +44,22 @@ else()
 endif()
 
 include(cmake/zlib.cmake)
+include(cmake/zstd.cmake)
 include(cmake/openal.cmake)
 include(cmake/png.cmake)
 include(cmake/jpeg.cmake)
 include(cmake/blosc.cmake)
 include(cmake/pthreads.cmake)
+include(cmake/imath.cmake)
 include(cmake/openexr.cmake)
+include(cmake/brotli.cmake)
 include(cmake/freetype.cmake)
+include(cmake/epoxy.cmake)
 include(cmake/freeglut.cmake)
-include(cmake/glew.cmake)
 include(cmake/alembic.cmake)
-include(cmake/glfw.cmake)
-include(cmake/clew.cmake)
-include(cmake/cuew.cmake)
 include(cmake/opensubdiv.cmake)
 include(cmake/sdl.cmake)
 include(cmake/opencollada.cmake)
-include(cmake/llvm.cmake)
 if(APPLE)
   include(cmake/openmp.cmake)
 endif()
@@ -81,12 +68,16 @@ if(UNIX)
 endif()
 include(cmake/openimageio.cmake)
 include(cmake/tiff.cmake)
-include(cmake/flexbison.cmake)
+if(WIN32)
+  include(cmake/flexbison.cmake)
+elseif(UNIX AND NOT APPLE)
+  include(cmake/flex.cmake)
+endif()
 include(cmake/osl.cmake)
 include(cmake/tbb.cmake)
 include(cmake/openvdb.cmake)
-include(cmake/nanovdb.cmake)
 include(cmake/python.cmake)
+include(cmake/llvm.cmake)
 option(USE_PIP_NUMPY "Install NumPy using pip wheel instead of building from source" OFF)
 if(APPLE AND ("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64"))
   set(USE_PIP_NUMPY ON)
@@ -98,18 +89,33 @@ include(cmake/package_python.cmake)
 include(cmake/usd.cmake)
 include(cmake/potrace.cmake)
 include(cmake/haru.cmake)
-# Boost needs to be included after python.cmake due to the PYTHON_BINARY variable being needed.
+# Boost needs to be included after `python.cmake` due to the PYTHON_BINARY variable being needed.
 include(cmake/boost.cmake)
 include(cmake/pugixml.cmake)
 include(cmake/ispc.cmake)
 include(cmake/openimagedenoise.cmake)
 include(cmake/embree.cmake)
+include(cmake/openpgl.cmake)
+include(cmake/fmt.cmake)
+include(cmake/robinmap.cmake)
+include(cmake/xml2.cmake)
+
 if(NOT APPLE)
   include(cmake/xr_openxr.cmake)
+  if(NOT WIN32 OR BUILD_MODE STREQUAL Release)
+    include(cmake/dpcpp.cmake)
+    include(cmake/dpcpp_deps.cmake)
+  endif()
+  if(NOT WIN32)
+    include(cmake/igc.cmake)
+    include(cmake/gmmlib.cmake)
+    include(cmake/ocloc.cmake)
+  endif()
 endif()
 
 # OpenColorIO and dependencies.
 include(cmake/expat.cmake)
+include(cmake/pystring.cmake)
 include(cmake/yamlcpp.cmake)
 include(cmake/opencolorio.cmake)
 
@@ -117,8 +123,9 @@ if(BLENDER_PLATFORM_ARM)
   include(cmake/sse2neon.cmake)
 endif()
 
-if(WITH_WEBP)
-  include(cmake/webp.cmake)
+include(cmake/webp.cmake)
+if(NOT APPLE)
+  include(cmake/level-zero.cmake)
 endif()
 
 if(NOT WIN32 OR ENABLE_MINGW64)
@@ -136,6 +143,7 @@ if(NOT WIN32 OR ENABLE_MINGW64)
     include(cmake/vpx.cmake)
     include(cmake/x264.cmake)
     include(cmake/xvidcore.cmake)
+    include(cmake/aom.cmake)
     include(cmake/ffmpeg.cmake)
     include(cmake/fftw.cmake)
     include(cmake/sndfile.cmake)
@@ -144,7 +152,6 @@ if(NOT WIN32 OR ENABLE_MINGW64)
     endif()
     if(UNIX)
       include(cmake/flac.cmake)
-      include(cmake/xml2.cmake)
       if(NOT APPLE)
         include(cmake/spnav.cmake)
         include(cmake/jemalloc.cmake)
@@ -164,6 +171,11 @@ endif()
 if(UNIX AND NOT APPLE)
   include(cmake/libglu.cmake)
   include(cmake/mesa.cmake)
+  include(cmake/wayland_protocols.cmake)
+  # Can be removed when the build-bot upgrades to v1.20.x or newer.
+  include(cmake/wayland.cmake)
+  include(cmake/wayland_libdecor.cmake)
 endif()
 
 include(cmake/harvest.cmake)
+include(cmake/cve_check.cmake)

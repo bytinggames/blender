@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -62,6 +46,7 @@ Mesh *BKE_mesh_mirror_bisect_on_mirror_plane_for_modifier(MirrorModifierData *mm
                             &(struct BMeshCreateParams){0},
                             &(struct BMeshFromMeshParams){
                                 .calc_face_normal = true,
+                                .calc_vert_normal = true,
                                 .cd_mask_extra = {.vmask = CD_MASK_ORIGINDEX,
                                                   .emask = CD_MASK_ORIGINDEX,
                                                   .pmask = CD_MASK_ORIGINDEX},
@@ -70,9 +55,9 @@ Mesh *BKE_mesh_mirror_bisect_on_mirror_plane_for_modifier(MirrorModifierData *mm
   /* Define bisecting plane (aka mirror plane). */
   float plane[4];
   if (!do_bisect_flip_axis) {
-    /* That reversed condition is a tad weird, but for some reason that's how you keep
-     * the part of the mesh which is on the non-mirrored side when flip option is disabled,
-     * think that that is the expected behavior. */
+    /* That reversed condition is a little weird, but for some reason that's how you keep
+     * the part of the mesh which is on the non-mirrored side when flip option is disabled.
+     * I think this is the expected behavior. */
     negate_v3(plane_no);
   }
   plane_from_point_normal_v3(plane, plane_co, plane_no);
@@ -108,6 +93,7 @@ void BKE_mesh_mirror_apply_mirror_on_axis(struct Main *bmain,
                                    },
                                    &(struct BMeshFromMeshParams){
                                        .calc_face_normal = true,
+                                       .calc_vert_normal = true,
                                        .cd_mask_extra =
                                            {
                                                .vmask = CD_MASK_SHAPEKEY,
@@ -130,14 +116,11 @@ void BKE_mesh_mirror_apply_mirror_on_axis(struct Main *bmain,
   BM_mesh_free(bm);
 }
 
-/**
- * \warning This should _not_ be used to modify original meshes since
- * it doesn't handle shape-keys, use #BKE_mesh_mirror_apply_mirror_on_axis instead.
- */
 Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
                                                         Object *ob,
                                                         const Mesh *mesh,
-                                                        const int axis)
+                                                        const int axis,
+                                                        const bool use_correct_order_on_merge)
 {
   const float tolerance_sq = mmd->tolerance * mmd->tolerance;
   const bool do_vtargetmap = (mmd->flag & MOD_MIR_NO_MERGE) == 0;
@@ -169,8 +152,8 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
 
     /* tmp is a transform from coords relative to the object's own origin,
      * to coords relative to the mirror object origin */
-    invert_m4_m4(tmp, mirror_ob->obmat);
-    mul_m4_m4m4(tmp, tmp, ob->obmat);
+    invert_m4_m4(tmp, mirror_ob->object_to_world);
+    mul_m4_m4m4(tmp, tmp, ob->object_to_world);
 
     /* itmp is the reverse transform back to origin-relative coordinates */
     invert_m4_m4(itmp, tmp);
@@ -186,9 +169,9 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
 
       /* Account for non-uniform scale in `ob`, see: T87592. */
       float ob_scale[3] = {
-          len_squared_v3(ob->obmat[0]),
-          len_squared_v3(ob->obmat[1]),
-          len_squared_v3(ob->obmat[2]),
+          len_squared_v3(ob->object_to_world[0]),
+          len_squared_v3(ob->object_to_world[1]),
+          len_squared_v3(ob->object_to_world[2]),
       };
       /* Scale to avoid precision loss with extreme values. */
       const float ob_scale_max = max_fff(UNPACK3(ob_scale));
@@ -225,21 +208,21 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
   CustomData_copy_data(&mesh->ldata, &result->ldata, 0, 0, maxLoops);
   CustomData_copy_data(&mesh->pdata, &result->pdata, 0, 0, maxPolys);
 
-  /* Subsurf for eg won't have mesh data in the custom-data arrays.
-   * now add mvert/medge/mpoly layers. */
+  /* Subdivision-surface for eg won't have mesh data in the custom-data arrays.
+   * Now add #MVert/#MEdge/#MPoly layers. */
   if (!CustomData_has_layer(&mesh->vdata, CD_MVERT)) {
-    memcpy(result->mvert, mesh->mvert, sizeof(*result->mvert) * mesh->totvert);
+    memcpy(BKE_mesh_verts_for_write(result), BKE_mesh_verts(mesh), sizeof(MVert) * mesh->totvert);
   }
   if (!CustomData_has_layer(&mesh->edata, CD_MEDGE)) {
-    memcpy(result->medge, mesh->medge, sizeof(*result->medge) * mesh->totedge);
+    memcpy(BKE_mesh_edges_for_write(result), BKE_mesh_edges(mesh), sizeof(MEdge) * mesh->totedge);
   }
   if (!CustomData_has_layer(&mesh->pdata, CD_MPOLY)) {
-    memcpy(result->mloop, mesh->mloop, sizeof(*result->mloop) * mesh->totloop);
-    memcpy(result->mpoly, mesh->mpoly, sizeof(*result->mpoly) * mesh->totpoly);
+    memcpy(BKE_mesh_loops_for_write(result), BKE_mesh_loops(mesh), sizeof(MLoop) * mesh->totloop);
+    memcpy(BKE_mesh_polys_for_write(result), BKE_mesh_polys(mesh), sizeof(MPoly) * mesh->totpoly);
   }
 
   /* Copy custom-data to new geometry,
-   * copy from its self because this data may have been created in the checks above. */
+   * copy from itself because this data may have been created in the checks above. */
   CustomData_copy_data(&result->vdata, &result->vdata, 0, maxVerts, maxVerts);
   CustomData_copy_data(&result->edata, &result->edata, 0, maxEdges, maxEdges);
   /* loops are copied later */
@@ -254,27 +237,57 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
   }
 
   /* mirror vertex coordinates */
-  mv_prev = result->mvert;
+  mv_prev = BKE_mesh_verts_for_write(result);
   mv = mv_prev + maxVerts;
   for (i = 0; i < maxVerts; i++, mv++, mv_prev++) {
     mul_m4_v3(mtx, mv->co);
 
     if (do_vtargetmap) {
-      /* compare location of the original and mirrored vertex, to see if they
-       * should be mapped for merging */
-      if (UNLIKELY(len_squared_v3v3(mv_prev->co, mv->co) < tolerance_sq)) {
-        *vtmap_a = maxVerts + i;
-        tot_vtargetmap++;
+      /* Compare location of the original and mirrored vertex,
+       * to see if they should be mapped for merging.
+       *
+       * Always merge from the copied into the original vertices so it's possible to
+       * generate a 1:1 mapping by scanning vertices from the beginning of the array
+       * as is done in #BKE_editmesh_vert_coords_when_deformed. Without this,
+       * the coordinates returned will sometimes point to the copied vertex locations, see:
+       * T91444.
+       *
+       * However, such a change also affects non-versionable things like some modifiers binding, so
+       * we cannot enforce that behavior on existing modifiers, in which case we keep using the
+       * old, incorrect behavior of merging the source vertex into its copy.
+       */
+      if (use_correct_order_on_merge) {
+        if (UNLIKELY(len_squared_v3v3(mv_prev->co, mv->co) < tolerance_sq)) {
+          *vtmap_b = i;
+          tot_vtargetmap++;
 
-        /* average location */
-        mid_v3_v3v3(mv->co, mv_prev->co, mv->co);
-        copy_v3_v3(mv_prev->co, mv->co);
-      }
-      else {
+          /* average location */
+          mid_v3_v3v3(mv->co, mv_prev->co, mv->co);
+          copy_v3_v3(mv_prev->co, mv->co);
+        }
+        else {
+          *vtmap_b = -1;
+        }
+
+        /* Fill here to avoid 2x loops. */
         *vtmap_a = -1;
       }
+      else {
+        if (UNLIKELY(len_squared_v3v3(mv_prev->co, mv->co) < tolerance_sq)) {
+          *vtmap_a = maxVerts + i;
+          tot_vtargetmap++;
 
-      *vtmap_b = -1; /* fill here to avoid 2x loops */
+          /* average location */
+          mid_v3_v3v3(mv->co, mv_prev->co, mv->co);
+          copy_v3_v3(mv_prev->co, mv->co);
+        }
+        else {
+          *vtmap_a = -1;
+        }
+
+        /* Fill here to avoid 2x loops. */
+        *vtmap_b = -1;
+      }
 
       vtmap_a++;
       vtmap_b++;
@@ -291,15 +304,15 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
   }
 
   /* adjust mirrored edge vertex indices */
-  me = result->medge + maxEdges;
+  me = BKE_mesh_edges_for_write(result) + maxEdges;
   for (i = 0; i < maxEdges; i++, me++) {
     me->v1 += maxVerts;
     me->v2 += maxVerts;
   }
 
   /* adjust mirrored poly loopstart indices, and reverse loop order (normals) */
-  mp = result->mpoly + maxPolys;
-  ml = result->mloop;
+  mp = BKE_mesh_polys_for_write(result) + maxPolys;
+  ml = BKE_mesh_loops_for_write(result);
   for (i = 0; i < maxPolys; i++, mp++) {
     MLoop *ml2;
     int j, e;
@@ -328,7 +341,7 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
   }
 
   /* adjust mirrored loop vertex and edge indices */
-  ml = result->mloop + maxLoops;
+  ml = BKE_mesh_loops_for_write(result) + maxLoops;
   for (i = 0; i < maxLoops; i++, ml++) {
     ml->v += maxVerts;
     ml->e += maxEdges;
@@ -383,7 +396,6 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
     CustomData *ldata = &result->ldata;
     short(*clnors)[2] = CustomData_get_layer(ldata, CD_CUSTOMLOOPNORMAL);
     MLoopNorSpaceArray lnors_spacearr = {NULL};
-    float(*poly_normals)[3] = MEM_mallocN(sizeof(*poly_normals) * totpoly, __func__);
 
     /* The transform matrix of a normal must be
      * the transpose of inverse of transform matrix of the geometry... */
@@ -393,25 +405,16 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
 
     /* calculate custom normals into loop_normals, then mirror first half into second half */
 
-    BKE_mesh_calc_normals_poly(result->mvert,
-                               NULL,
-                               result->totvert,
-                               result->mloop,
-                               result->mpoly,
-                               totloop,
-                               totpoly,
-                               poly_normals,
-                               false);
-
-    BKE_mesh_normals_loop_split(result->mvert,
+    BKE_mesh_normals_loop_split(BKE_mesh_verts(result),
+                                BKE_mesh_vertex_normals_ensure(result),
                                 result->totvert,
-                                result->medge,
+                                BKE_mesh_edges(result),
                                 result->totedge,
-                                result->mloop,
+                                BKE_mesh_loops(result),
                                 loop_normals,
                                 totloop,
-                                result->mpoly,
-                                poly_normals,
+                                BKE_mesh_polys(result),
+                                BKE_mesh_poly_normals_ensure(result),
                                 totpoly,
                                 true,
                                 mesh->smoothresh,
@@ -420,9 +423,10 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
                                 NULL);
 
     /* mirroring has to account for loops being reversed in polys in second half */
-    mp = result->mpoly;
+    MPoly *result_polys = BKE_mesh_polys_for_write(result);
+    mp = result_polys;
     for (i = 0; i < maxPolys; i++, mp++) {
-      MPoly *mpmirror = result->mpoly + maxPolys + i;
+      MPoly *mpmirror = result_polys + maxPolys + i;
       int j;
 
       for (j = mp->loopstart; j < mp->loopstart + mp->totloop; j++) {
@@ -437,23 +441,24 @@ Mesh *BKE_mesh_mirror_apply_mirror_on_axis_for_modifier(MirrorModifierData *mmd,
       }
     }
 
-    MEM_freeN(poly_normals);
     MEM_freeN(loop_normals);
     BKE_lnor_spacearr_free(&lnors_spacearr);
   }
 
   /* handle vgroup stuff */
   if ((mmd->flag & MOD_MIR_VGROUP) && CustomData_has_layer(&result->vdata, CD_MDEFORMVERT)) {
-    MDeformVert *dvert = (MDeformVert *)CustomData_get_layer(&result->vdata, CD_MDEFORMVERT) +
-                         maxVerts;
+    MDeformVert *dvert = BKE_mesh_deform_verts_for_write(result) + maxVerts;
     int *flip_map = NULL, flip_map_len = 0;
 
-    flip_map = BKE_object_defgroup_flip_map(ob, &flip_map_len, false);
+    flip_map = BKE_object_defgroup_flip_map(ob, false, &flip_map_len);
 
     if (flip_map) {
       for (i = 0; i < maxVerts; dvert++, i++) {
         /* merged vertices get both groups, others get flipped */
-        if (do_vtargetmap && (vtargetmap[i] != -1)) {
+        if (use_correct_order_on_merge && do_vtargetmap && (vtargetmap[i + maxVerts] != -1)) {
+          BKE_defvert_flip_merged(dvert - maxVerts, flip_map, flip_map_len);
+        }
+        else if (!use_correct_order_on_merge && do_vtargetmap && (vtargetmap[i] != -1)) {
           BKE_defvert_flip_merged(dvert, flip_map, flip_map_len);
         }
         else {

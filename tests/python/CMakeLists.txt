@@ -1,19 +1,4 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # Use '--write-blend=/tmp/test.blend' to view output
 
@@ -56,7 +41,7 @@ function(add_python_test testname testscript)
 
   add_test(
     NAME ${testname}
-    COMMAND ${TEST_PYTHON_EXE} ${testscript} ${ARGN}
+    COMMAND ${TEST_PYTHON_EXE} ${TEST_PYTHON_EXE_EXTRA_ARGS} ${testscript} ${ARGN}
   )
   set_tests_properties(${testname} PROPERTIES ENVIRONMENT
     LSAN_OPTIONS=exitcode=0:$ENV{LSAN_OPTIONS}
@@ -117,6 +102,11 @@ add_blender_test(
 )
 
 add_blender_test(
+  script_pyapi_bpy_driver_secure_eval
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_bpy_driver_secure_eval.py
+)
+
+add_blender_test(
   script_pyapi_idprop
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_idprop.py
 )
@@ -129,6 +119,11 @@ add_blender_test(
 add_blender_test(
   script_pyapi_prop_array
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_prop_array.py
+)
+
+add_blender_test(
+  script_pyapi_text
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_pyapi_text.py
 )
 
 # ------------------------------------------------------------------------------
@@ -289,6 +284,13 @@ add_blender_test(
 add_blender_test(
   bl_animation_fcurves
   --python ${CMAKE_CURRENT_LIST_DIR}/bl_animation_fcurves.py
+  --
+  --testdir "${TEST_SRC_DIR}/animation"
+)
+
+add_blender_test(
+  bl_rigging_symmetrize
+  --python ${CMAKE_CURRENT_LIST_DIR}/bl_rigging_symmetrize.py
   --
   --testdir "${TEST_SRC_DIR}/animation"
 )
@@ -628,17 +630,37 @@ add_blender_test(
 )
 endif()
 
+# SVG Import
+if(True)
+  set(_svg_render_tests complex path)
+
+  foreach(render_test ${_svg_render_tests})
+    add_python_test(
+      io_curve_svg_${render_test}
+      ${CMAKE_CURRENT_LIST_DIR}/bl_io_curve_svg_test.py
+      -blender "${TEST_BLENDER_EXE}"
+      -testdir "${TEST_SRC_DIR}/io_tests/svg/${render_test}"
+      -idiff "${OPENIMAGEIO_IDIFF}"
+      -outdir "${TEST_OUT_DIR}/io_curve_svg"
+    )
+  endforeach()
+
+  unset(_svg_render_tests)
+endif()
+
 if(WITH_CYCLES OR WITH_OPENGL_RENDER_TESTS)
   if(NOT OPENIMAGEIO_IDIFF)
-    MESSAGE(STATUS "Disabling render tests because OIIO idiff does not exist")
+    message(WARNING "Disabling render tests because OIIO idiff does not exist")
   elseif(NOT EXISTS "${TEST_SRC_DIR}/render/shader")
-    MESSAGE(STATUS "Disabling render tests because tests folder does not exist at ${TEST_SRC_DIR}")
+    message(WARNING "Disabling render tests because tests folder does not exist at ${TEST_SRC_DIR}")
+  elseif(NOT WITH_COMPOSITOR_CPU)
+    message(WARNING "Disabling render tests because WITH_COMPOSITOR_CPU is disabled")
+  elseif(NOT WITH_OPENCOLORIO)
+    message(WARNING "Disabling render tests because WITH_OPENCOLORIO is disabled")
   else()
     set(render_tests
+      camera
       bsdf
-      denoise
-      denoise_animation
-      displacement
       hair
       image_colorspace
       image_data_types
@@ -647,19 +669,42 @@ if(WITH_CYCLES OR WITH_OPENGL_RENDER_TESTS)
       integrator
       light
       mesh
-      motion_blur
-      openvdb
-      render_layer
-      reports
+      pointcloud
       shader
       shadow_catcher
       sss
-      volume
     )
+
+    if(WITH_OPENSUBDIV)
+      list(APPEND render_tests displacement)
+    endif()
+
+    if(WITH_FREESTYLE)
+      list(APPEND render_tests render_layer)
+    endif()
+
+    if(WITH_MOD_FLUID)
+      list(APPEND render_tests motion_blur reports volume)
+    endif()
+
+    if(WITH_OPENVDB)
+      list(APPEND render_tests openvdb)
+    endif()
+
+    if(WITH_OPENIMAGEDENOISE)
+      list(APPEND render_tests denoise)
+    endif()
+
+    # Disabled until new OpenGL version with deterministic results.
+    #if(WITH_CYCLES_PATH_GUIDING)
+    #  list(APPEND render_tests guiding)
+    #endif()
 
     if(WITH_OPENGL_RENDER_TESTS)
       list(APPEND render_tests grease_pencil)
     endif()
+
+    list(SORT render_tests)
 
     # Cycles
     if(WITH_CYCLES)
@@ -713,19 +758,21 @@ if(WITH_CYCLES OR WITH_OPENGL_RENDER_TESTS)
   endif()
 endif()
 
-if(WITH_COMPOSITOR)
+if(WITH_COMPOSITOR_CPU)
   set(compositor_tests
     color
     converter
-    distort
     filter
     input
-    matte
     output
     vector
 
     multiple_node_setups
   )
+
+  if(WITH_LIBMV)
+    list(APPEND compositor_tests distort matte)
+  endif()
 
   foreach(comp_test ${compositor_tests})
     add_python_test(
@@ -740,11 +787,52 @@ if(WITH_COMPOSITOR)
 
 endif()
 
+set(geo_node_tests
+  attributes
+  curve_primitives
+  curves
+  geometry
+  mesh_primitives
+  mesh
+  mesh/extrude
+  points
+  utilities
+  vector
+)
+
+if(WITH_GMP)
+  list(APPEND geo_node_tests mesh/boolean)
+endif()
+
+if(WITH_OPENVDB)
+  list(APPEND geo_node_tests volume)
+endif()
+
+if(WITH_OPENSUBDIV)
+  list(APPEND geo_node_tests mesh/subdivision_tests)
+endif()
+
+foreach(geo_node_test ${geo_node_tests})
+  if(EXISTS "${TEST_SRC_DIR}/modeling/geometry_nodes/${geo_node_test}/")
+    file(GLOB files "${TEST_SRC_DIR}/modeling/geometry_nodes/${geo_node_test}/*.blend")
+    foreach(file ${files})
+      get_filename_component(filename ${file} NAME_WE)
+      add_blender_test(
+        geo_node_${geo_node_test}_test_${filename}
+        ${file}
+        --python ${TEST_PYTHON_DIR}/geo_node_test.py
+      )
+      endforeach()
+  else()
+    message(STATUS "Directory named ${TEST_SRC_DIR}/modeling/geometry_nodes/${geo_node_test}/ Not Found, disabling test.")
+  endif()
+endforeach()
+
 if(WITH_OPENGL_DRAW_TESTS)
   if(NOT OPENIMAGEIO_IDIFF)
-    MESSAGE(STATUS "Disabling OpenGL draw tests because OIIO idiff does not exist")
+    message(STATUS "Disabling OpenGL draw tests because OIIO idiff does not exist")
   elseif(NOT EXISTS "${TEST_SRC_DIR}/opengl")
-    MESSAGE(STATUS "Disabling OpenGL draw tests because tests folder does not exist at ${TEST_SRC_DIR}")
+    message(STATUS "Disabling OpenGL draw tests because tests folder does not exist at ${TEST_SRC_DIR}")
   else()
     # Use all subdirectories of opengl folder.
     file(GLOB children RELATIVE ${TEST_SRC_DIR}/opengl ${TEST_SRC_DIR}/opengl/*)
@@ -793,6 +881,15 @@ if(WITH_ALEMBIC)
   )
 endif()
 
+if(WITH_USD)
+  add_blender_test(
+    usd_import_test
+    --python ${CMAKE_CURRENT_LIST_DIR}/bl_usd_import_test.py
+    --
+    --testdir "${TEST_SRC_DIR}/usd"
+  )
+endif()
+
 if(WITH_CODEC_FFMPEG)
   add_python_test(
     ffmpeg
@@ -807,7 +904,7 @@ endif()
 # SEQUENCER RENDER TESTS
 
 if(NOT OPENIMAGEIO_IDIFF)
-  MESSAGE(STATUS "Disabling sequencer render tests because OIIO idiff does not exist")
+  message(STATUS "Disabling sequencer render tests because OIIO idiff does not exist")
 else()
   set(render_tests
     transform

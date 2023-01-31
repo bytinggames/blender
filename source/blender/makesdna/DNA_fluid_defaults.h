@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup DNA
@@ -50,7 +36,6 @@
     .tex_flags = NULL, \
     .tex_range_field = NULL, \
     .guide_parent = NULL, \
-    .mesh_velocities = NULL, \
     .effector_weights = NULL, /* #BKE_effector_add_weights. */ \
     .p0 = {0.0f, 0.0f, 0.0f}, \
     .p1 = {0.0f, 0.0f, 0.0f}, \
@@ -101,7 +86,6 @@
     .noise_time_anim = 0.1f, \
     .res_noise = {0, 0, 0}, \
     .noise_scale = 2, \
-    .noise_type = FLUID_NOISE_TYPE_WAVELET, \
     .particle_randomness = 0.1f, \
     .particle_number = 2, \
     .particle_minimum = 8, \
@@ -123,7 +107,6 @@
     .mesh_smoothen_pos = 1, \
     .mesh_smoothen_neg = 1, \
     .mesh_scale = 2, \
-    .totvert = 0, \
     .mesh_generator = FLUID_DOMAIN_MESH_IMPROVED, \
     .particle_type = 0, \
     .particle_scale = 1, \
@@ -204,6 +187,7 @@
     .cache_comp = SM_CACHE_LIGHT, \
     .cache_high_comp = SM_CACHE_LIGHT, \
     .cache_file_format = 0, \
+    .velocity_scale = 1.0f, \
   }
 
 /** \} */

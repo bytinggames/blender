@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -27,6 +13,13 @@
 #include "bmesh.h"
 
 #include "intern/bmesh_operators_private.h" /* own include */
+
+/**
+ * TODO(@campbellbarton): Many connected edge loops can cause an error attempting
+ * to create faces with duplicate vertices. While this needs to be investigated,
+ * it's simple enough to check for this case, see: T102232.
+ */
+#define USE_DUPLICATE_FACE_VERT_CHECK
 
 #define EDGE_MARK 4
 #define EDGE_OUT 8
@@ -161,7 +154,7 @@ static void bridge_loop_pair(BMesh *bm,
   }
 
   if (use_merge) {
-    BLI_assert((el_store_a_len == el_store_b_len));
+    BLI_assert(el_store_a_len == el_store_b_len);
   }
 
   if (el_store_a_len != el_store_b_len) {
@@ -236,7 +229,7 @@ static void bridge_loop_pair(BMesh *bm,
   if (UNLIKELY((len_squared_v3(el_dir) < eps) || ((fabsf(dot_a) < eps) && (fabsf(dot_b) < eps)))) {
     /* in this case there is no depth between the two loops,
      * eg: 2x 2d circles, one scaled smaller,
-     * in this case 'el_dir' cant be used, just ensure we have matching flipping. */
+     * in this case 'el_dir' can't be used, just ensure we have matching flipping. */
     if (dot_v3v3(BM_edgeloop_normal_get(el_store_a), BM_edgeloop_normal_get(el_store_b)) < 0.0f) {
       BM_edgeloop_flip(bm, el_store_b);
     }
@@ -400,61 +393,84 @@ static void bridge_loop_pair(BMesh *bm,
       f_example = l_a ? l_a->f : (l_b ? l_b->f : NULL);
 
       if (v_b != v_b_next) {
-        BMVert *v_arr[4] = {v_b, v_b_next, v_a_next, v_a};
-        f = BM_face_exists(v_arr, 4);
-        if (f == NULL) {
-          /* copy if loop data if its is missing on one ring */
-          f = BM_face_create_verts(bm, v_arr, 4, NULL, BM_CREATE_NOP, true);
+#ifdef USE_DUPLICATE_FACE_VERT_CHECK /* Only check for duplicates between loops. */
+        BLI_assert((v_b != v_b_next) && (v_a_next != v_a));
+        if (UNLIKELY(ELEM(v_b, v_a_next, v_a) || ELEM(v_b_next, v_a_next, v_a))) {
+          f = NULL;
+        }
+        else
+#endif
+        {
+          BMVert *v_arr[4] = {v_b, v_b_next, v_a_next, v_a};
+          f = BM_face_exists(v_arr, 4);
+          if (f == NULL) {
+            /* copy if loop data if its is missing on one ring */
+            f = BM_face_create_verts(bm, v_arr, 4, NULL, BM_CREATE_NOP, true);
 
-          l_iter = BM_FACE_FIRST_LOOP(f);
-          if (l_b) {
-            BM_elem_attrs_copy(bm, bm, l_b, l_iter);
-          }
-          l_iter = l_iter->next;
-          if (l_b_next) {
-            BM_elem_attrs_copy(bm, bm, l_b_next, l_iter);
-          }
-          l_iter = l_iter->next;
-          if (l_a_next) {
-            BM_elem_attrs_copy(bm, bm, l_a_next, l_iter);
-          }
-          l_iter = l_iter->next;
-          if (l_a) {
-            BM_elem_attrs_copy(bm, bm, l_a, l_iter);
+            l_iter = BM_FACE_FIRST_LOOP(f);
+            if (l_b) {
+              BM_elem_attrs_copy(bm, bm, l_b, l_iter);
+            }
+            l_iter = l_iter->next;
+            if (l_b_next) {
+              BM_elem_attrs_copy(bm, bm, l_b_next, l_iter);
+            }
+            l_iter = l_iter->next;
+            if (l_a_next) {
+              BM_elem_attrs_copy(bm, bm, l_a_next, l_iter);
+            }
+            l_iter = l_iter->next;
+            if (l_a) {
+              BM_elem_attrs_copy(bm, bm, l_a, l_iter);
+            }
           }
         }
       }
       else {
-        BMVert *v_arr[3] = {v_b, v_a_next, v_a};
-        f = BM_face_exists(v_arr, 3);
-        if (f == NULL) {
-          /* fan-fill a triangle */
-          f = BM_face_create_verts(bm, v_arr, 3, NULL, BM_CREATE_NOP, true);
+#ifdef USE_DUPLICATE_FACE_VERT_CHECK /* Only check for duplicates between loops. */
+        BLI_assert(v_a_next != v_a);
+        if (UNLIKELY(ELEM(v_b, v_a_next, v_a))) {
+          f = NULL;
+        }
+        else
+#endif
+        {
+          BMVert *v_arr[3] = {v_b, v_a_next, v_a};
+          f = BM_face_exists(v_arr, 3);
+          if (f == NULL) {
+            /* fan-fill a triangle */
+            f = BM_face_create_verts(bm, v_arr, 3, NULL, BM_CREATE_NOP, true);
 
-          l_iter = BM_FACE_FIRST_LOOP(f);
-          if (l_b) {
-            BM_elem_attrs_copy(bm, bm, l_b, l_iter);
-          }
-          l_iter = l_iter->next;
-          if (l_a_next) {
-            BM_elem_attrs_copy(bm, bm, l_a_next, l_iter);
-          }
-          l_iter = l_iter->next;
-          if (l_a) {
-            BM_elem_attrs_copy(bm, bm, l_a, l_iter);
+            l_iter = BM_FACE_FIRST_LOOP(f);
+            if (l_b) {
+              BM_elem_attrs_copy(bm, bm, l_b, l_iter);
+            }
+            l_iter = l_iter->next;
+            if (l_a_next) {
+              BM_elem_attrs_copy(bm, bm, l_a_next, l_iter);
+            }
+            l_iter = l_iter->next;
+            if (l_a) {
+              BM_elem_attrs_copy(bm, bm, l_a, l_iter);
+            }
           }
         }
       }
 
-      if (f_example && (f_example != f)) {
-        BM_elem_attrs_copy(bm, bm, f_example, f);
-      }
-      BMO_face_flag_enable(bm, f, FACE_OUT);
-      BM_elem_flag_enable(f, BM_ELEM_TAG);
+#ifdef USE_DUPLICATE_FACE_VERT_CHECK
+      if (f != NULL)
+#endif
+      {
+        if (f_example && (f_example != f)) {
+          BM_elem_attrs_copy(bm, bm, f_example, f);
+        }
+        BMO_face_flag_enable(bm, f, FACE_OUT);
+        BM_elem_flag_enable(f, BM_ELEM_TAG);
 
-      /* tag all edges of the face, untag the loop edges after */
-      if (use_edgeout) {
-        bm_face_edges_tag_out(bm, f);
+        /* tag all edges of the face, untag the loop edges after */
+        if (use_edgeout) {
+          bm_face_edges_tag_out(bm, f);
+        }
       }
 
       if (el_a_next == el_a_first) {
@@ -576,13 +592,12 @@ void bmo_bridge_loops_exec(BMesh *bm, BMOperator *op)
   BM_mesh_edgeloops_calc_center(bm, &eloops);
 
   if (count < 2) {
-    BMO_error_raise(bm, op, BMERR_INVALID_SELECTION, "Select at least two edge loops");
+    BMO_error_raise(bm, op, BMO_ERROR_CANCEL, "Select at least two edge loops");
     goto cleanup;
   }
 
   if (use_pairs && (count % 2)) {
-    BMO_error_raise(
-        bm, op, BMERR_INVALID_SELECTION, "Select an even number of loops to bridge pairs");
+    BMO_error_raise(bm, op, BMO_ERROR_CANCEL, "Select an even number of loops to bridge pairs");
     goto cleanup;
   }
 
@@ -596,8 +611,7 @@ void bmo_bridge_loops_exec(BMesh *bm, BMOperator *op)
       }
     }
     if (!match) {
-      BMO_error_raise(
-          bm, op, BMERR_INVALID_SELECTION, "Selected loops must have equal edge counts");
+      BMO_error_raise(bm, op, BMO_ERROR_CANCEL, "Selected loops must have equal edge counts");
       goto cleanup;
     }
   }

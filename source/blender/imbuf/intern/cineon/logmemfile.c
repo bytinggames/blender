@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2006 Joseph Eagar <joeedh@gmail.com>
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2006 Joseph Eagar <joeedh@gmail.com>. */
 
 /** \file
  * \ingroup imbcineon
@@ -59,7 +44,7 @@ int logimage_fseek(LogImageFile *logFile, intptr_t offset, int origin)
   return 0;
 }
 
-int logimage_fwrite(void *buffer, size_t size, unsigned int count, LogImageFile *logFile)
+int logimage_fwrite(void *buffer, size_t size, uint count, LogImageFile *logFile)
 {
   if (logFile->file) {
     return fwrite(buffer, size, count, logFile->file);
@@ -69,13 +54,13 @@ int logimage_fwrite(void *buffer, size_t size, unsigned int count, LogImageFile 
   return count;
 }
 
-int logimage_fread(void *buffer, size_t size, unsigned int count, LogImageFile *logFile)
+int logimage_fread(void *buffer, size_t size, uint count, LogImageFile *logFile)
 {
   if (logFile->file) {
     return fread(buffer, size, count, logFile->file);
   }
   /* we're reading from memory */
-  unsigned char *buf = (unsigned char *)buffer;
+  uchar *buf = (uchar *)buffer;
   uintptr_t pos = (uintptr_t)logFile->memCursor - (uintptr_t)logFile->memBuffer;
   size_t total_size = size * count;
   if (pos + total_size > logFile->memBufferSize) {
@@ -92,38 +77,38 @@ int logimage_fread(void *buffer, size_t size, unsigned int count, LogImageFile *
   return count;
 }
 
-int logimage_read_uchar(unsigned char *x, LogImageFile *logFile)
+int logimage_read_uchar(uchar *x, LogImageFile *logFile)
 {
   uintptr_t pos = (uintptr_t)logFile->memCursor - (uintptr_t)logFile->memBuffer;
-  if (pos + sizeof(unsigned char) > logFile->memBufferSize) {
+  if (pos + sizeof(uchar) > logFile->memBufferSize) {
     return 1;
   }
 
-  *x = *(unsigned char *)logFile->memCursor;
-  logFile->memCursor += sizeof(unsigned char);
+  *x = *(uchar *)logFile->memCursor;
+  logFile->memCursor += sizeof(uchar);
   return 0;
 }
 
-int logimage_read_ushort(unsigned short *x, LogImageFile *logFile)
+int logimage_read_ushort(ushort *x, LogImageFile *logFile)
 {
   uintptr_t pos = (uintptr_t)logFile->memCursor - (uintptr_t)logFile->memBuffer;
-  if (pos + sizeof(unsigned short) > logFile->memBufferSize) {
+  if (pos + sizeof(ushort) > logFile->memBufferSize) {
     return 1;
   }
 
-  *x = *(unsigned short *)logFile->memCursor;
-  logFile->memCursor += sizeof(unsigned short);
+  *x = *(ushort *)logFile->memCursor;
+  logFile->memCursor += sizeof(ushort);
   return 0;
 }
 
-int logimage_read_uint(unsigned int *x, LogImageFile *logFile)
+int logimage_read_uint(uint *x, LogImageFile *logFile)
 {
   uintptr_t pos = (uintptr_t)logFile->memCursor - (uintptr_t)logFile->memBuffer;
-  if (pos + sizeof(unsigned int) > logFile->memBufferSize) {
+  if (pos + sizeof(uint) > logFile->memBufferSize) {
     return 1;
   }
 
-  *x = *(unsigned int *)logFile->memCursor;
-  logFile->memCursor += sizeof(unsigned int);
+  *x = *(uint *)logFile->memCursor;
+  logFile->memCursor += sizeof(uint);
   return 0;
 }

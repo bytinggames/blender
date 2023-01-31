@@ -63,7 +63,7 @@ vec4 screen_space_refraction(vec3 vP, vec3 N, vec3 V, float ior, float roughness
     float cone_tan = sqrt(1 - cone_cos * cone_cos) / cone_cos;
 
     /* Empirical fit for refraction. */
-    /* TODO find a better fit or precompute inside the LUT. */
+    /* TODO: find a better fit or precompute inside the LUT. */
     cone_tan *= 0.5 * fast_sqrt(f0_from_ior((ior < 1.0) ? 1.0 / ior : ior));
 
     float cone_footprint = hit_dist * cone_tan;
@@ -79,7 +79,7 @@ vec4 screen_space_refraction(vec3 vP, vec3 N, vec3 V, float ior, float roughness
 
     /* Texel footprint */
     vec2 texture_size = vec2(textureSize(refractColorBuffer, 0).xy) / hizUvScale.xy;
-    float mip = clamp(log2(cone_footprint * max(texture_size.x, texture_size.y)), 0.0, 9.0);
+    float mip = log2(cone_footprint * max(texture_size.x, texture_size.y));
 
     vec3 spec = textureLod(refractColorBuffer, hit_uvs * hizUvScale.xy, mip).xyz;
     float mask = screen_border_mask(hit_uvs);

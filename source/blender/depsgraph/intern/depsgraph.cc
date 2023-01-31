@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2013 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2013 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup depsgraph
@@ -61,14 +45,20 @@ namespace blender::deg {
 
 Depsgraph::Depsgraph(Main *bmain, Scene *scene, ViewLayer *view_layer, eEvaluationMode mode)
     : time_source(nullptr),
-      need_update(true),
+      has_animated_visibility(false),
+      need_update_relations(true),
+      need_update_nodes_visibility(true),
+      need_tag_id_on_graph_visibility_update(true),
+      need_tag_id_on_graph_visibility_time_update(false),
       bmain(bmain),
       scene(scene),
       view_layer(view_layer),
       mode(mode),
-      ctime(BKE_scene_frame_get(scene)),
+      frame(BKE_scene_frame_get(scene)),
+      ctime(BKE_scene_ctime_get(scene)),
       scene_cow(nullptr),
       is_active(false),
+      use_visibility_optimization(true),
       is_evaluating(false),
       is_render_pipeline_depsgraph(false),
       use_editors_update(false)
@@ -179,7 +169,6 @@ void Depsgraph::clear_id_nodes()
   clear_physics_relations(this);
 }
 
-/* Add new relation between two nodes */
 Relation *Depsgraph::add_new_relation(Node *from, Node *to, const char *description, int flags)
 {
   Relation *rel = nullptr;
@@ -225,7 +214,6 @@ Relation *Depsgraph::check_nodes_connected(const Node *from,
 
 /* Low level tagging -------------------------------------- */
 
-/* Tag a specific node as needing updates. */
 void Depsgraph::add_entry_tag(OperationNode *node)
 {
   /* Sanity check. */
@@ -265,7 +253,7 @@ ID *Depsgraph::get_cow_id(const ID *id_orig) const
        * - Object or mesh has material at a slot which is not used (for
        *   example, object has material slot by materials are set to
        *   object data). */
-      // BLI_assert(!"Request for non-existing copy-on-write ID");
+      // BLI_assert_msg(0, "Request for non-existing copy-on-write ID");
     }
     return (ID *)id_orig;
   }
@@ -277,7 +265,6 @@ ID *Depsgraph::get_cow_id(const ID *id_orig) const
 /* **************** */
 /* Public Graph API */
 
-/* Initialize a new Depsgraph */
 Depsgraph *DEG_graph_new(Main *bmain, Scene *scene, ViewLayer *view_layer, eEvaluationMode mode)
 {
   deg::Depsgraph *deg_depsgraph = new deg::Depsgraph(bmain, scene, view_layer, mode);
@@ -285,10 +272,6 @@ Depsgraph *DEG_graph_new(Main *bmain, Scene *scene, ViewLayer *view_layer, eEval
   return reinterpret_cast<Depsgraph *>(deg_depsgraph);
 }
 
-/* Replace the "owner" pointers (currently Main/Scene/ViewLayer) of this depsgraph.
- * Used for:
- * - Undo steps when we do want to re-use the old depsgraph data as much as possible.
- * - Rendering where we want to re-use objects between different view layers. */
 void DEG_graph_replace_owners(struct Depsgraph *depsgraph,
                               Main *bmain,
                               Scene *scene,
@@ -310,7 +293,6 @@ void DEG_graph_replace_owners(struct Depsgraph *depsgraph,
   }
 }
 
-/* Free graph's contents and graph itself */
 void DEG_graph_free(Depsgraph *graph)
 {
   if (graph == nullptr) {
@@ -352,4 +334,10 @@ void DEG_make_inactive(struct Depsgraph *depsgraph)
 {
   deg::Depsgraph *deg_graph = reinterpret_cast<deg::Depsgraph *>(depsgraph);
   deg_graph->is_active = false;
+}
+
+void DEG_disable_visibility_optimization(struct Depsgraph *depsgraph)
+{
+  deg::Depsgraph *deg_graph = reinterpret_cast<deg::Depsgraph *>(depsgraph);
+  deg_graph->use_visibility_optimization = false;
 }

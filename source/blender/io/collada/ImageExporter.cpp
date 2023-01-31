@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup collada
@@ -28,6 +14,7 @@
 #include "BKE_customdata.h"
 #include "BKE_global.h"
 #include "BKE_image.h"
+#include "BKE_image_format.h"
 #include "BKE_main.h"
 #include "BKE_mesh.h"
 
@@ -62,7 +49,7 @@ void ImagesExporter::export_UV_Image(Image *image, bool use_copies)
   bool is_dirty = BKE_image_is_dirty(image);
 
   ImageFormatData imageFormat;
-  BKE_imbuf_to_image_format(&imageFormat, imbuf);
+  BKE_image_format_from_imbuf(&imageFormat, imbuf);
 
   short image_source = image->source;
   bool is_generated = image_source == IMA_SRC_GENERATED;
@@ -83,7 +70,7 @@ void ImagesExporter::export_UV_Image(Image *image, bool use_copies)
     BLI_strncpy(export_file, name.c_str(), sizeof(export_file));
     BKE_image_path_ensure_ext_from_imformat(export_file, &imageFormat);
 
-    BLI_join_dirfile(export_path, sizeof(export_path), export_dir, export_file);
+    BLI_path_join(export_path, sizeof(export_path), export_dir, export_file);
 
     /* make dest directory if it doesn't exist */
     BLI_make_existing_file(export_path);
@@ -113,7 +100,7 @@ void ImagesExporter::export_UV_Image(Image *image, bool use_copies)
       /* This image is already located on the file system.
        * But we want to create copies here.
        * To move images into the same export directory.
-       * Note: If an image is already located in the export folder,
+       * NOTE: If an image is already located in the export folder,
        * then skip the copy (as it would result in a file copy error). */
 
       if (BLI_path_cmp(source_path, export_path) != 0) {

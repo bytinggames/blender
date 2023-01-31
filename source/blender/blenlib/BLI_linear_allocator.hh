@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bli
@@ -32,7 +18,7 @@ namespace blender {
 
 template<typename Allocator = GuardedAllocator> class LinearAllocator : NonCopyable, NonMovable {
  private:
-  Allocator allocator_;
+  BLI_NO_UNIQUE_ADDRESS Allocator allocator_;
   Vector<void *> owned_buffers_;
   Vector<Span<char>> unused_borrowed_buffers_;
 
@@ -121,11 +107,26 @@ template<typename Allocator = GuardedAllocator> class LinearAllocator : NonCopya
    * You must not call `delete` on the returned value.
    * Instead, only the destructor has to be called.
    */
-  template<typename T, typename... Args> destruct_ptr<T> construct(Args &&... args)
+  template<typename T, typename... Args> destruct_ptr<T> construct(Args &&...args)
   {
     void *buffer = this->allocate(sizeof(T), alignof(T));
     T *value = new (buffer) T(std::forward<Args>(args)...);
     return destruct_ptr<T>(value);
+  }
+
+  /**
+   * Construct multiple instances of a type in an array. The constructor of is called with the
+   * given arguments. The caller is responsible for calling the destructor (and not `delete`) on
+   * the constructed elements.
+   */
+  template<typename T, typename... Args>
+  MutableSpan<T> construct_array(int64_t size, Args &&...args)
+  {
+    MutableSpan<T> array = this->allocate_array<T>(size);
+    for (const int64_t i : IndexRange(size)) {
+      new (&array[i]) T(std::forward<Args>(args)...);
+    }
+    return array;
   }
 
   /**
@@ -160,7 +161,7 @@ template<typename Allocator = GuardedAllocator> class LinearAllocator : NonCopya
     void *pointer_buffer = this->allocate(element_amount * sizeof(void *), alignof(void *));
     void *elements_buffer = this->allocate(element_amount * element_size, element_alignment);
 
-    MutableSpan<void *> pointers((void **)pointer_buffer, element_amount);
+    MutableSpan<void *> pointers(static_cast<void **>(pointer_buffer), element_amount);
     void *next_element_buffer = elements_buffer;
     for (int64_t i : IndexRange(element_amount)) {
       pointers[i] = next_element_buffer;
@@ -171,7 +172,7 @@ template<typename Allocator = GuardedAllocator> class LinearAllocator : NonCopya
   }
 
   template<typename T, typename... Args>
-  Span<T *> construct_elements_and_pointer_array(int64_t n, Args &&... args)
+  Span<T *> construct_elements_and_pointer_array(int64_t n, Args &&...args)
   {
     MutableSpan<void *> void_pointers = this->allocate_elements_and_pointer_array(
         n, sizeof(T), alignof(T));
@@ -206,8 +207,8 @@ template<typename Allocator = GuardedAllocator> class LinearAllocator : NonCopya
       Span<char> buffer = unused_borrowed_buffers_[i];
       if (buffer.size() >= min_allocation_size) {
         unused_borrowed_buffers_.remove_and_reorder(i);
-        current_begin_ = (uintptr_t)buffer.begin();
-        current_end_ = (uintptr_t)buffer.end();
+        current_begin_ = uintptr_t(buffer.begin());
+        current_end_ = uintptr_t(buffer.end());
         return;
       }
     }
@@ -225,7 +226,7 @@ template<typename Allocator = GuardedAllocator> class LinearAllocator : NonCopya
 
     void *buffer = allocator_.allocate(size_in_bytes, min_alignment, __func__);
     owned_buffers_.append(buffer);
-    current_begin_ = (uintptr_t)buffer;
+    current_begin_ = uintptr_t(buffer);
     current_end_ = current_begin_ + size_in_bytes;
   }
 

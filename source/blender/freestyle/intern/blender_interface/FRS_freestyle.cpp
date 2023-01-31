@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -65,9 +51,6 @@ using namespace Freestyle;
 
 extern "C" {
 
-#define DEFAULT_SPHERE_RADIUS 1.0f
-#define DEFAULT_DKR_EPSILON 0.0f
-
 struct FreestyleGlobals g_freestyle;
 
 // Freestyle configuration
@@ -89,8 +72,8 @@ static void load_post_callback(struct Main * /*main*/,
 }
 
 static bCallbackFuncStore load_post_callback_funcstore = {
-    nullptr,
-    nullptr,            /* next, prev */
+    nullptr,            /* next */
+    nullptr,            /* prev */
     load_post_callback, /* func */
     nullptr,            /* arg */
     0                   /* alloc */
@@ -148,9 +131,9 @@ static void init_view(Render *re)
   int ymax = re->disprect.ymax;
 
   float thickness = 1.0f;
-  switch (re->r.line_thickness_mode) {
+  switch (re->scene->r.line_thickness_mode) {
     case R_LINE_THICKNESS_ABSOLUTE:
-      thickness = re->r.unit_line_thickness * (re->r.size / 100.0f);
+      thickness = re->scene->r.unit_line_thickness * (re->r.size / 100.0f);
       break;
     case R_LINE_THICKNESS_RELATIVE:
       thickness = height / 480.0f;
@@ -433,14 +416,8 @@ static void prepare(Render *re, ViewLayer *view_layer, Depsgraph *depsgraph)
   }
 
   // set parameters
-  if (config->flags & FREESTYLE_ADVANCED_OPTIONS_FLAG) {
-    controller->setSphereRadius(config->sphere_radius);
-    controller->setSuggestiveContourKrDerivativeEpsilon(config->dkr_epsilon);
-  }
-  else {
-    controller->setSphereRadius(DEFAULT_SPHERE_RADIUS);
-    controller->setSuggestiveContourKrDerivativeEpsilon(DEFAULT_DKR_EPSILON);
-  }
+  controller->setSphereRadius(config->sphere_radius);
+  controller->setSuggestiveContourKrDerivativeEpsilon(config->dkr_epsilon);
   controller->setFaceSmoothness((config->flags & FREESTYLE_FACE_SMOOTHNESS_FLAG) ? true : false);
   controller->setCreaseAngle(RAD2DEGF(config->crease_angle));
   controller->setVisibilityAlgo((config->flags & FREESTYLE_CULLING) ?
@@ -503,12 +480,12 @@ void FRS_composite_result(Render *re, ViewLayer *view_layer, Render *freestyle_r
     if (view_layer->freestyle_config.flags & FREESTYLE_AS_RENDER_PASS) {
       // Create a blank render pass output.
       RE_create_render_pass(
-          re->result, RE_PASSNAME_FREESTYLE, 4, "RGBA", view_layer->name, re->viewname);
+          re->result, RE_PASSNAME_FREESTYLE, 4, "RGBA", view_layer->name, re->viewname, true);
     }
     return;
   }
 
-  rl = render_get_active_layer(freestyle_render, freestyle_render->result);
+  rl = render_get_single_layer(freestyle_render, freestyle_render->result);
   if (!rl) {
     if (G.debug & G_DEBUG_FREESTYLE) {
       cout << "No source render layer to composite" << endl;
@@ -539,7 +516,7 @@ void FRS_composite_result(Render *re, ViewLayer *view_layer, Render *freestyle_r
 
   if (view_layer->freestyle_config.flags & FREESTYLE_AS_RENDER_PASS) {
     RE_create_render_pass(
-        re->result, RE_PASSNAME_FREESTYLE, 4, "RGBA", view_layer->name, re->viewname);
+        re->result, RE_PASSNAME_FREESTYLE, 4, "RGBA", view_layer->name, re->viewname, true);
     dest = RE_RenderLayerGetPass(rl, RE_PASSNAME_FREESTYLE, re->viewname);
   }
   else {
@@ -619,7 +596,7 @@ void FRS_init_stroke_renderer(Render *re)
   controller->ResetRenderCount();
 }
 
-void FRS_begin_stroke_rendering(Render *UNUSED(re))
+void FRS_begin_stroke_rendering(Render * /*re*/)
 {
 }
 
@@ -778,10 +755,6 @@ void FRS_delete_active_lineset(FreestyleConfig *config)
   }
 }
 
-/**
- * Reinsert the active lineset at an offset \a direction from current position.
- * \return if position of active lineset has changed.
- */
 bool FRS_move_active_lineset(FreestyleConfig *config, int direction)
 {
   FreestyleLineSet *lineset = BKE_freestyle_lineset_get_active(config);

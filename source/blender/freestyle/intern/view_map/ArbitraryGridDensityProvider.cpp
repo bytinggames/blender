@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -21,13 +7,15 @@
 
 #include "ArbitraryGridDensityProvider.h"
 
+#include "BLI_sys_types.h"
+
 #include "BKE_global.h"
 
 namespace Freestyle {
 
 ArbitraryGridDensityProvider::ArbitraryGridDensityProvider(OccluderSource &source,
                                                            const real proscenium[4],
-                                                           unsigned numCells)
+                                                           uint numCells)
     : GridDensityProvider(source), numCells(numCells)
 {
   initialize(proscenium);
@@ -36,7 +24,7 @@ ArbitraryGridDensityProvider::ArbitraryGridDensityProvider(OccluderSource &sourc
 ArbitraryGridDensityProvider::ArbitraryGridDensityProvider(OccluderSource &source,
                                                            const BBox<Vec3r> &bbox,
                                                            const GridHelpers::Transform &transform,
-                                                           unsigned numCells)
+                                                           uint numCells)
     : GridDensityProvider(source), numCells(numCells)
 {
   real proscenium[4];
@@ -45,8 +33,7 @@ ArbitraryGridDensityProvider::ArbitraryGridDensityProvider(OccluderSource &sourc
   initialize(proscenium);
 }
 
-ArbitraryGridDensityProvider::ArbitraryGridDensityProvider(OccluderSource &source,
-                                                           unsigned numCells)
+ArbitraryGridDensityProvider::ArbitraryGridDensityProvider(OccluderSource &source, uint numCells)
     : GridDensityProvider(source), numCells(numCells)
 {
   real proscenium[4];
@@ -90,7 +77,7 @@ void ArbitraryGridDensityProvider::initialize(const real proscenium[4])
   _cellOrigin[1] = ((proscenium[2] + proscenium[3]) / 2.0) - (_cellsY / 2.0) * _cellSize;
 }
 
-ArbitraryGridDensityProviderFactory::ArbitraryGridDensityProviderFactory(unsigned numCells)
+ArbitraryGridDensityProviderFactory::ArbitraryGridDensityProviderFactory(uint numCells)
     : numCells(numCells)
 {
 }

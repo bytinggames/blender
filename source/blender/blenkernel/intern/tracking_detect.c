@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2011 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2011 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -97,7 +81,6 @@ static void detect_retrieve_libmv_features(MovieTracking *tracking,
 
   a = libmv_countFeatures(features);
   while (a--) {
-    MovieTrackingTrack *track;
     double x, y, size, score;
     bool ok = true;
     float xu, yu;
@@ -115,7 +98,8 @@ static void detect_retrieve_libmv_features(MovieTracking *tracking,
     }
 
     if (ok) {
-      track = BKE_tracking_track_add(tracking, tracksbase, xu, yu, framenr, width, height);
+      MovieTrackingTrack *track = BKE_tracking_track_add(
+          tracking, tracksbase, xu, yu, framenr, width, height);
       track->flag |= SELECT;
       track->pat_flag |= SELECT;
       track->search_flag |= SELECT;
@@ -137,7 +121,7 @@ static void run_configured_detector(MovieTracking *tracking,
     features = libmv_detectFeaturesFloat(ibuf->rect_float, ibuf->x, ibuf->y, 4, options);
   }
   else if (ibuf->rect) {
-    features = libmv_detectFeaturesByte((unsigned char *)ibuf->rect, ibuf->x, ibuf->y, 4, options);
+    features = libmv_detectFeaturesByte((uchar *)ibuf->rect, ibuf->x, ibuf->y, 4, options);
   }
 
   if (features != NULL) {
@@ -148,7 +132,6 @@ static void run_configured_detector(MovieTracking *tracking,
   }
 }
 
-/* Detect features using FAST detector */
 void BKE_tracking_detect_fast(MovieTracking *tracking,
                               ListBase *tracksbase,
                               ImBuf *ibuf,
@@ -170,7 +153,6 @@ void BKE_tracking_detect_fast(MovieTracking *tracking,
       tracking, tracksbase, ibuf, framenr, layer, place_outside_layer, &options);
 }
 
-/* Detect features using Harris detector */
 void BKE_tracking_detect_harris(MovieTracking *tracking,
                                 ListBase *tracksbase,
                                 ImBuf *ibuf,

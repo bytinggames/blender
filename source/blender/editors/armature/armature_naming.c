@@ -1,25 +1,9 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- * Operators and API's for renaming bones both in and out of Edit Mode
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edarmature
+ * Operators and API's for renaming bones both in and out of Edit Mode.
  *
  * This file contains functions/API's for renaming bones and/or working with them.
  */
@@ -29,6 +13,7 @@
 #include "MEM_guardedalloc.h"
 
 #include "DNA_armature_types.h"
+#include "DNA_camera_types.h"
 #include "DNA_constraint_types.h"
 #include "DNA_gpencil_modifier_types.h"
 #include "DNA_gpencil_types.h"
@@ -69,7 +54,7 @@
 /** \name Unique Bone Name Utility (Edit Mode)
  * \{ */
 
-/* note: there's a ed_armature_bone_unique_name() too! */
+/* NOTE: there's a ed_armature_bone_unique_name() too! */
 static bool editbone_unique_check(void *arg, const char *name)
 {
   struct {
@@ -80,7 +65,6 @@ static bool editbone_unique_check(void *arg, const char *name)
   return dupli && dupli != data->bone;
 }
 
-/* If bone is already in list, pass it as param to ignore it. */
 void ED_armature_ebone_unique_name(ListBase *ebones, char *name, EditBone *bone)
 {
   struct {
@@ -126,13 +110,10 @@ static void constraint_bone_name_fix(Object *ob,
   bConstraintTarget *ct;
 
   for (curcon = conlist->first; curcon; curcon = curcon->next) {
-    const bConstraintTypeInfo *cti = BKE_constraint_typeinfo_get(curcon);
     ListBase targets = {NULL, NULL};
 
     /* constraint targets */
-    if (cti && cti->get_constraint_targets) {
-      cti->get_constraint_targets(curcon, &targets);
-
+    if (BKE_constraint_targets_get(curcon, &targets)) {
       for (ct = targets.first; ct; ct = ct->next) {
         if (ct->tar == ob) {
           if (STREQ(ct->subtarget, oldname)) {
@@ -141,9 +122,7 @@ static void constraint_bone_name_fix(Object *ob,
         }
       }
 
-      if (cti->flush_constraint_targets) {
-        cti->flush_constraint_targets(curcon, &targets, 0);
-      }
+      BKE_constraint_targets_flush(curcon, &targets, 0);
     }
 
     /* action constraints */
@@ -154,9 +133,6 @@ static void constraint_bone_name_fix(Object *ob,
   }
 }
 
-/* called by UI for renaming a bone */
-/* warning: make sure the original bone was not renamed yet! */
-/* seems messy, but that's what you get with not using pointers but channel names :) */
 void ED_armature_bone_rename(Main *bmain,
                              bArmature *arm,
                              const char *oldnamep,
@@ -265,10 +241,11 @@ void ED_armature_bone_rename(Main *bmain,
         }
       }
 
-      if (BKE_modifiers_uses_armature(ob, arm)) {
+      if (BKE_modifiers_uses_armature(ob, arm) && BKE_object_supports_vertex_groups(ob)) {
         bDeformGroup *dg = BKE_object_defgroup_find_name(ob, oldname);
         if (dg) {
           BLI_strncpy(dg->name, newname, MAXBONENAME);
+          DEG_id_tag_update(ob->data, ID_RECALC_GEOMETRY);
         }
       }
 
@@ -305,6 +282,17 @@ void ED_armature_bone_rename(Main *bmain,
         }
       }
 
+      /* fix camera focus */
+      if (ob->type == OB_CAMERA) {
+        Camera *cam = (Camera *)ob->data;
+        if ((cam->dof.focus_object != NULL) && (cam->dof.focus_object->data == arm)) {
+          if (STREQ(cam->dof.focus_subtarget, oldname)) {
+            BLI_strncpy(cam->dof.focus_subtarget, newname, MAXBONENAME);
+            DEG_id_tag_update(&cam->id, ID_RECALC_COPY_ON_WRITE);
+          }
+        }
+      }
+
       /* fix grease pencil modifiers and vertex groups */
       if (ob->type == OB_GPENCIL) {
 
@@ -325,6 +313,7 @@ void ED_armature_bone_rename(Main *bmain,
                 bDeformGroup *dg = BKE_object_defgroup_find_name(ob, oldname);
                 if (dg) {
                   BLI_strncpy(dg->name, newname, MAXBONENAME);
+                  DEG_id_tag_update(ob->data, ID_RECALC_GEOMETRY);
                 }
               }
               break;
@@ -393,16 +382,6 @@ typedef struct BoneFlipNameData {
   char name_flip[MAXBONENAME];
 } BoneFlipNameData;
 
-/**
- * Renames (by flipping) all selected bones at once.
- *
- * This way if we are flipping related bones (e.g., Bone.L, Bone.R) at the same time
- * all the bones are safely renamed, without conflicting with each other.
- *
- * \param arm: Armature the bones belong to
- * \param bones_names: List of BoneConflict elems.
- * \param do_strip_numbers: if set, try to get rid of dot-numbers at end of bone names.
- */
 void ED_armature_bones_flip_names(Main *bmain,
                                   bArmature *arm,
                                   ListBase *bones_names,
@@ -450,6 +429,7 @@ void ED_armature_bones_flip_names(Main *bmain,
 static int armature_flip_names_exec(bContext *C, wmOperator *op)
 {
   Main *bmain = CTX_data_main(C);
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Object *ob_active = CTX_data_edit_object(C);
 
@@ -457,7 +437,7 @@ static int armature_flip_names_exec(bContext *C, wmOperator *op)
 
   uint objects_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *ob = objects[ob_index];
     bArmature *arm = ob->data;
@@ -537,6 +517,7 @@ void ARMATURE_OT_flip_names(wmOperatorType *ot)
 
 static int armature_autoside_names_exec(bContext *C, wmOperator *op)
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Main *bmain = CTX_data_main(C);
   char newname[MAXBONENAME];
@@ -545,7 +526,7 @@ static int armature_autoside_names_exec(bContext *C, wmOperator *op)
 
   uint objects_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *ob = objects[ob_index];
     bArmature *arm = ob->data;
@@ -589,7 +570,7 @@ static int armature_autoside_names_exec(bContext *C, wmOperator *op)
     /* Since we renamed stuff... */
     DEG_id_tag_update(&ob->id, ID_RECALC_GEOMETRY);
 
-    /* Note, notifier might evolve. */
+    /* NOTE: notifier might evolve. */
     WM_event_add_notifier(C, NC_OBJECT | ND_POSE, ob);
   }
   MEM_freeN(objects);

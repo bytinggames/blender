@@ -1,19 +1,4 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # --env-system-scripts allows to run without the install target.
 
@@ -62,5 +47,5 @@ endmacro()
 # Tests are disabled because they only work on Windows
 # Tests will be redone completely to work reliable
 #
-# COLLADA_TEST(mesh simple mesh_simple.blend)
-# COLLADA_TEST(animation simple suzannes_parent_inverse.blend)
+# collada_test(mesh simple mesh_simple.blend)
+# collada_test(animation simple suzannes_parent_inverse.blend)

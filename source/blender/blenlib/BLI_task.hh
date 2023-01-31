@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -31,6 +17,9 @@
 #  include <tbb/blocked_range.h>
 #  include <tbb/parallel_for.h>
 #  include <tbb/parallel_for_each.h>
+#  include <tbb/parallel_invoke.h>
+#  include <tbb/parallel_reduce.h>
+#  include <tbb/task_arena.h>
 #  ifdef WIN32
 /* We cannot keep this defined, since other parts of the code deal with this on their own, leading
  * to multiple define warnings unless we un-define this, however we can only undefine this if we
@@ -42,9 +31,10 @@
 #endif
 
 #include "BLI_index_range.hh"
+#include "BLI_lazy_threading.hh"
 #include "BLI_utildefines.h"
 
-namespace blender {
+namespace blender::threading {
 
 template<typename Range, typename Function>
 void parallel_for_each(Range &range, const Function &function)
@@ -65,14 +55,85 @@ void parallel_for(IndexRange range, int64_t grain_size, const Function &function
     return;
   }
 #ifdef WITH_TBB
-  tbb::parallel_for(tbb::blocked_range<int64_t>(range.first(), range.one_after_last(), grain_size),
-                    [&](const tbb::blocked_range<int64_t> &subrange) {
-                      function(IndexRange(subrange.begin(), subrange.size()));
-                    });
+  /* Invoking tbb for small workloads has a large overhead. */
+  if (range.size() >= grain_size) {
+    lazy_threading::send_hint();
+    tbb::parallel_for(
+        tbb::blocked_range<int64_t>(range.first(), range.one_after_last(), grain_size),
+        [&](const tbb::blocked_range<int64_t> &subrange) {
+          function(IndexRange(subrange.begin(), subrange.size()));
+        });
+    return;
+  }
 #else
   UNUSED_VARS(grain_size);
+#endif
   function(range);
+}
+
+template<typename Value, typename Function, typename Reduction>
+Value parallel_reduce(IndexRange range,
+                      int64_t grain_size,
+                      const Value &identity,
+                      const Function &function,
+                      const Reduction &reduction)
+{
+#ifdef WITH_TBB
+  if (range.size() >= grain_size) {
+    lazy_threading::send_hint();
+    return tbb::parallel_reduce(
+        tbb::blocked_range<int64_t>(range.first(), range.one_after_last(), grain_size),
+        identity,
+        [&](const tbb::blocked_range<int64_t> &subrange, const Value &ident) {
+          return function(IndexRange(subrange.begin(), subrange.size()), ident);
+        },
+        reduction);
+  }
+#else
+  UNUSED_VARS(grain_size, reduction);
+#endif
+  return function(range, identity);
+}
+
+/**
+ * Execute all of the provided functions. The functions might be executed in parallel or in serial
+ * or some combination of both.
+ */
+template<typename... Functions> void parallel_invoke(Functions &&...functions)
+{
+#ifdef WITH_TBB
+  tbb::parallel_invoke(std::forward<Functions>(functions)...);
+#else
+  (functions(), ...);
 #endif
 }
 
-}  // namespace blender
+/**
+ * Same #parallel_invoke, but allows disabling threading dynamically. This is useful because when
+ * the individual functions do very little work, there is a lot of overhead from starting parallel
+ * tasks.
+ */
+template<typename... Functions>
+void parallel_invoke(const bool use_threading, Functions &&...functions)
+{
+  if (use_threading) {
+    lazy_threading::send_hint();
+    parallel_invoke(std::forward<Functions>(functions)...);
+  }
+  else {
+    (functions(), ...);
+  }
+}
+
+/** See #BLI_task_isolate for a description of what isolating a task means. */
+template<typename Function> void isolate_task(const Function &function)
+{
+#ifdef WITH_TBB
+  lazy_threading::ReceiverIsolation isolation;
+  tbb::this_task_arena::isolate(function);
+#else
+  function();
+#endif
+}
+
+}  // namespace blender::threading

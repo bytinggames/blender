@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2007 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2007 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup wm
@@ -40,6 +24,7 @@
 #include "CLG_log.h"
 
 #include "DNA_ID.h"
+#include "DNA_armature_types.h"
 #include "DNA_brush_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
@@ -53,10 +38,12 @@
 
 #include "BLI_blenlib.h"
 #include "BLI_dial_2d.h"
-#include "BLI_dynstr.h" /*for WM_operator_pystring */
+#include "BLI_dynstr.h" /* For #WM_operator_pystring. */
 #include "BLI_math.h"
+#include "BLI_string_utils.h"
 #include "BLI_utildefines.h"
 
+#include "BKE_anim_data.h"
 #include "BKE_brush.h"
 #include "BKE_colortools.h"
 #include "BKE_context.h"
@@ -64,6 +51,7 @@
 #include "BKE_icons.h"
 #include "BKE_idprop.h"
 #include "BKE_image.h"
+#include "BKE_image_format.h"
 #include "BKE_lib_id.h"
 #include "BKE_lib_query.h"
 #include "BKE_main.h"
@@ -93,6 +81,8 @@
 #include "RNA_access.h"
 #include "RNA_define.h"
 #include "RNA_enum_types.h"
+#include "RNA_path.h"
+#include "RNA_prototypes.h"
 
 #include "UI_interface.h"
 #include "UI_interface_icons.h"
@@ -113,61 +103,61 @@
 
 #define UNDOCUMENTED_OPERATOR_TIP N_("(undocumented operator)")
 
-/** \} */
-
 /* -------------------------------------------------------------------- */
 /** \name Operator API
  * \{ */
 
-/* SOME_OT_op -> some.op */
-void WM_operator_py_idname(char *to, const char *from)
+#define OP_BL_SEP_STRING "_OT_"
+#define OP_BL_SEP_LEN 4
+
+#define OP_PY_SEP_CHAR '.'
+#define OP_PY_SEP_LEN 1
+
+/* Difference between python 'identifier' and BL/C code one ("." separator replaced by "_OT_"),
+ * and final `\0` char. */
+#define OP_MAX_PY_IDNAME (OP_MAX_TYPENAME - OP_BL_SEP_LEN + OP_PY_SEP_LEN - 1)
+
+size_t WM_operator_py_idname(char *dst, const char *src)
 {
-  const char *sep = strstr(from, "_OT_");
+  const char *sep = strstr(src, OP_BL_SEP_STRING);
   if (sep) {
-    int ofs = (sep - from);
+    const size_t sep_offset = (size_t)(sep - src);
 
-    /* note, we use ascii tolower instead of system tolower, because the
-     * latter depends on the locale, and can lead to idname mismatch */
-    memcpy(to, from, sizeof(char) * ofs);
-    BLI_str_tolower_ascii(to, ofs);
+    /* NOTE: we use ascii `tolower` instead of system `tolower`, because the
+     * latter depends on the locale, and can lead to `idname` mismatch. */
+    memcpy(dst, src, sep_offset);
+    BLI_str_tolower_ascii(dst, sep_offset);
 
-    to[ofs] = '.';
-    BLI_strncpy(to + (ofs + 1), sep + 4, OP_MAX_TYPENAME - (ofs + 1));
+    dst[sep_offset] = OP_PY_SEP_CHAR;
+    return BLI_strncpy_rlen(dst + (sep_offset + OP_PY_SEP_LEN),
+                            sep + OP_BL_SEP_LEN,
+                            OP_MAX_TYPENAME - sep_offset - OP_PY_SEP_LEN) +
+           (sep_offset + OP_PY_SEP_LEN);
   }
-  else {
-    /* should not happen but support just in case */
-    BLI_strncpy(to, from, OP_MAX_TYPENAME);
-  }
+  /* Should not happen but support just in case. */
+  return BLI_strncpy_rlen(dst, src, OP_MAX_TYPENAME);
 }
 
-/* some.op -> SOME_OT_op */
-void WM_operator_bl_idname(char *to, const char *from)
+size_t WM_operator_bl_idname(char *dst, const char *src)
 {
-  if (from) {
-    const char *sep = strchr(from, '.');
+  const size_t from_len = (size_t)strlen(src);
 
-    int from_len;
-    if (sep && (from_len = strlen(from)) < OP_MAX_TYPENAME - 3) {
-      const int ofs = (sep - from);
-      memcpy(to, from, sizeof(char) * ofs);
-      BLI_str_toupper_ascii(to, ofs);
-      memcpy(to + ofs, "_OT_", 4);
-      memcpy(to + (ofs + 4), sep + 1, (from_len - ofs));
-    }
-    else {
-      /* should not happen but support just in case */
-      BLI_strncpy(to, from, OP_MAX_TYPENAME);
-    }
+  const char *sep = strchr(src, OP_PY_SEP_CHAR);
+  if (sep && (from_len <= OP_MAX_PY_IDNAME)) {
+    const size_t sep_offset = (size_t)(sep - src);
+    memcpy(dst, src, sep_offset);
+    BLI_str_toupper_ascii(dst, sep_offset);
+
+    memcpy(dst + sep_offset, OP_BL_SEP_STRING, OP_BL_SEP_LEN);
+    BLI_strncpy(dst + sep_offset + OP_BL_SEP_LEN,
+                sep + OP_PY_SEP_LEN,
+                from_len - sep_offset - OP_PY_SEP_LEN + 1);
+    return from_len + OP_BL_SEP_LEN - OP_PY_SEP_LEN;
   }
-  else {
-    to[0] = 0;
-  }
+  /* Should not happen but support just in case. */
+  return BLI_strncpy_rlen(dst, src, OP_MAX_TYPENAME);
 }
 
-/**
- * Sanity check to ensure #WM_operator_bl_idname won't fail.
- * \returns true when there are no problems with \a idname, otherwise report an error.
- */
 bool WM_operator_py_idname_ok_or_report(ReportList *reports,
                                         const char *classname,
                                         const char *idname)
@@ -193,14 +183,14 @@ bool WM_operator_py_idname_ok_or_report(ReportList *reports,
     }
   }
 
-  if (i > (MAX_NAME - 3)) {
+  if (i > OP_MAX_PY_IDNAME) {
     BKE_reportf(reports,
                 RPT_ERROR,
                 "Registering operator class: '%s', invalid bl_idname '%s', "
                 "is too long, maximum length is %d",
                 classname,
                 idname,
-                MAX_NAME - 3);
+                OP_MAX_PY_IDNAME);
     return false;
   }
 
@@ -216,15 +206,6 @@ bool WM_operator_py_idname_ok_or_report(ReportList *reports,
   return true;
 }
 
-/**
- * Print a string representation of the operator,
- * with the args that it runs so python can run it again.
- *
- * When calling from an existing wmOperator, better to use simple version:
- * `WM_operator_pystring(C, op);`
- *
- * \note Both \a op and \a opptr may be `NULL` (\a op is only used for macro operators).
- */
 char *WM_operator_pystring_ex(bContext *C,
                               wmOperator *op,
                               const bool all_args,
@@ -305,9 +286,6 @@ char *WM_operator_pystring(bContext *C, wmOperator *op, const bool all_args, con
   return WM_operator_pystring_ex(C, op, all_args, macro_args, op->type, op->ptr);
 }
 
-/**
- * \return true if the string was shortened
- */
 bool WM_operator_pystring_abbreviate(char *str, int str_len_max)
 {
   const int str_len = strlen(str);
@@ -323,16 +301,16 @@ bool WM_operator_pystring_abbreviate(char *str, int str_len_max)
       if (parens_len > str_len_max) {
         const char *comma_first = strchr(parens_start, ',');
 
-        /* truncate after the first comma */
+        /* Truncate after the first comma. */
         if (comma_first) {
           const char end_str[] = " ... )";
           const int end_str_len = sizeof(end_str) - 1;
 
-          /* leave a place for the first argument*/
+          /* Leave a place for the first argument. */
           const int new_str_len = (comma_first - parens_start) + 1;
 
           if (str_len >= new_str_len + parens_start_pos + end_str_len + 1) {
-            /* append " ... )" to the string after the comma */
+            /* Append " ... )" to the string after the comma. */
             memcpy(str + new_str_len + parens_start_pos, end_str, end_str_len + 1);
 
             return true;
@@ -347,7 +325,7 @@ bool WM_operator_pystring_abbreviate(char *str, int str_len_max)
 
 /* return NULL if no match is found */
 #if 0
-static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr)
+static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr, bool *r_is_id)
 {
   /* loop over all context items and do 2 checks
    *
@@ -362,6 +340,7 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
 
   const char *member_found = NULL;
   const char *member_id = NULL;
+  bool member_found_is_id = false;
 
   for (link = lb.first; link; link = link->next) {
     const char *identifier = link->data;
@@ -373,14 +352,15 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
     }
 
     if (ptr->owner_id == ctx_item_ptr.owner_id) {
+      const bool is_id = RNA_struct_is_ID(ctx_item_ptr.type);
       if ((ptr->data == ctx_item_ptr.data) && (ptr->type == ctx_item_ptr.type)) {
         /* found! */
         member_found = identifier;
+        member_found_is_id = is_id;
         break;
       }
-      else if (RNA_struct_is_ID(ctx_item_ptr.type)) {
-        /* we found a reference to this ID,
-         * so fallback to it if there is no direct reference */
+      if (is_id) {
+        /* Found a reference to this ID, so fallback to it if there is no direct reference. */
         member_id = identifier;
       }
     }
@@ -388,9 +368,11 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
   BLI_freelistN(&lb);
 
   if (member_found) {
+    *r_is_id = member_found_is_id;
     return member_found;
   }
   else if (member_id) {
+    *r_is_id = true;
     return member_id;
   }
   else {
@@ -402,11 +384,26 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
 
 /* use hard coded checks for now */
 
-static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr)
+/**
+ * \param: r_is_id:
+ * - When set to true, the returned member is an ID type.
+ *   This is a signal that #RNA_path_from_ID_to_struct needs to be used to calculate
+ *   the remainder of the RNA path.
+ * - When set to false, the returned member is not an ID type.
+ *   In this case the context path *must* resolve to `ptr`,
+ *   since there is no convenient way to calculate partial RNA paths.
+ *
+ * \note While the path to the ID is typically sufficient to calculate the remainder of the path,
+ * in practice this would cause #WM_context_path_resolve_property_full to create a path such as:
+ * `object.data.bones["Bones"].use_deform` such paths are not useful for key-shortcuts,
+ * so this function supports returning data-paths directly to context members that aren't ID types.
+ */
+static const char *wm_context_member_from_ptr(const bContext *C,
+                                              const PointerRNA *ptr,
+                                              bool *r_is_id)
 {
   const char *member_id = NULL;
-
-  if (ptr->owner_id) {
+  bool is_id = false;
 
 #  define CTX_TEST_PTR_ID(C, member, idptr) \
     { \
@@ -414,6 +411,7 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
       PointerRNA ctx_item_ptr = CTX_data_pointer_get(C, ctx_member); \
       if (ctx_item_ptr.owner_id == idptr) { \
         member_id = ctx_member; \
+        is_id = true; \
         break; \
       } \
     } \
@@ -426,6 +424,7 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
       PointerRNA ctx_item_ptr = CTX_data_pointer_get(C, ctx_member); \
       if (ctx_item_ptr.owner_id && (ID *)cast(ctx_item_ptr.owner_id) == idptr) { \
         member_id = ctx_member_full; \
+        is_id = true; \
         break; \
       } \
     } \
@@ -441,17 +440,62 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
     } \
     (void)0
 
-    switch (GS(ptr->owner_id->name)) {
+  /* A version of #TEST_PTR_DATA_TYPE that calls `CTX_data_pointer_get_type(C, member)`. */
+#  define TEST_PTR_DATA_TYPE_FROM_CONTEXT(member, rna_type, rna_ptr) \
+    { \
+      const char *ctx_member = member; \
+      if (RNA_struct_is_a((rna_ptr)->type, &(rna_type)) && \
+          (rna_ptr)->data == (CTX_data_pointer_get_type(C, ctx_member, &(rna_type)).data)) { \
+        member_id = ctx_member; \
+        break; \
+      } \
+    } \
+    (void)0
+
+  /* General checks (multiple ID types). */
+  if (ptr->owner_id) {
+    const ID_Type ptr_id_type = GS(ptr->owner_id->name);
+
+    /* Support break in the macros for an early exit. */
+    do {
+      /* Animation Data. */
+      if (id_type_can_have_animdata(ptr_id_type)) {
+        TEST_PTR_DATA_TYPE_FROM_CONTEXT("active_nla_track", RNA_NlaTrack, ptr);
+        TEST_PTR_DATA_TYPE_FROM_CONTEXT("active_nla_strip", RNA_NlaStrip, ptr);
+      }
+    } while (0);
+  }
+
+  /* Specific ID type checks. */
+  if (ptr->owner_id && (member_id == NULL)) {
+
+    const ID_Type ptr_id_type = GS(ptr->owner_id->name);
+    switch (ptr_id_type) {
       case ID_SCE: {
+        TEST_PTR_DATA_TYPE_FROM_CONTEXT("active_sequence_strip", RNA_Sequence, ptr);
+
         CTX_TEST_PTR_ID(C, "scene", ptr->owner_id);
         break;
       }
       case ID_OB: {
+        TEST_PTR_DATA_TYPE_FROM_CONTEXT("active_pose_bone", RNA_PoseBone, ptr);
+
         CTX_TEST_PTR_ID(C, "object", ptr->owner_id);
         break;
       }
       /* from rna_Main_objects_new */
       case OB_DATA_SUPPORT_ID_CASE: {
+
+        if (ptr_id_type == ID_AR) {
+          const bArmature *arm = (bArmature *)ptr->owner_id;
+          if (arm->edbo != NULL) {
+            TEST_PTR_DATA_TYPE("active_bone", RNA_EditBone, ptr, arm->act_edbone);
+          }
+          else {
+            TEST_PTR_DATA_TYPE("active_bone", RNA_Bone, ptr, arm->act_bone);
+          }
+        }
+
 #  define ID_CAST_OBDATA(id_pt) (((Object *)(id_pt))->data)
         CTX_TEST_PTR_ID_CAST(C, "object", "object.data", ID_CAST_OBDATA, ptr->owner_id);
         break;
@@ -474,49 +518,52 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
       case ID_SCR: {
         CTX_TEST_PTR_ID(C, "screen", ptr->owner_id);
 
-        SpaceLink *space_data = CTX_wm_space_data(C);
-
-        TEST_PTR_DATA_TYPE("space_data", RNA_Space, ptr, space_data);
         TEST_PTR_DATA_TYPE("area", RNA_Area, ptr, CTX_wm_area(C));
         TEST_PTR_DATA_TYPE("region", RNA_Region, ptr, CTX_wm_region(C));
 
-        switch (space_data->spacetype) {
-          case SPACE_VIEW3D: {
-            const View3D *v3d = (View3D *)space_data;
-            const View3DShading *shading = &v3d->shading;
+        SpaceLink *space_data = CTX_wm_space_data(C);
+        if (space_data != NULL) {
+          TEST_PTR_DATA_TYPE("space_data", RNA_Space, ptr, space_data);
 
-            TEST_PTR_DATA_TYPE("space_data", RNA_View3DOverlay, ptr, v3d);
-            TEST_PTR_DATA_TYPE("space_data", RNA_View3DShading, ptr, shading);
-            break;
-          }
-          case SPACE_GRAPH: {
-            const SpaceGraph *sipo = (SpaceGraph *)space_data;
-            const bDopeSheet *ads = sipo->ads;
-            TEST_PTR_DATA_TYPE("space_data", RNA_DopeSheet, ptr, ads);
-            break;
-          }
-          case SPACE_FILE: {
-            const SpaceFile *sfile = (SpaceFile *)space_data;
-            const FileSelectParams *params = ED_fileselect_get_active_params(sfile);
-            TEST_PTR_DATA_TYPE("space_data", RNA_FileSelectParams, ptr, params);
-            break;
-          }
-          case SPACE_IMAGE: {
-            const SpaceImage *sima = (SpaceImage *)space_data;
-            TEST_PTR_DATA_TYPE("space_data", RNA_SpaceUVEditor, ptr, sima);
-            break;
-          }
-          case SPACE_NLA: {
-            const SpaceNla *snla = (SpaceNla *)space_data;
-            const bDopeSheet *ads = snla->ads;
-            TEST_PTR_DATA_TYPE("space_data", RNA_DopeSheet, ptr, ads);
-            break;
-          }
-          case SPACE_ACTION: {
-            const SpaceAction *sact = (SpaceAction *)space_data;
-            const bDopeSheet *ads = &sact->ads;
-            TEST_PTR_DATA_TYPE("space_data", RNA_DopeSheet, ptr, ads);
-            break;
+          switch (space_data->spacetype) {
+            case SPACE_VIEW3D: {
+              const View3D *v3d = (View3D *)space_data;
+              const View3DShading *shading = &v3d->shading;
+
+              TEST_PTR_DATA_TYPE("space_data.overlay", RNA_View3DOverlay, ptr, v3d);
+              TEST_PTR_DATA_TYPE("space_data.shading", RNA_View3DShading, ptr, shading);
+              break;
+            }
+            case SPACE_GRAPH: {
+              const SpaceGraph *sipo = (SpaceGraph *)space_data;
+              const bDopeSheet *ads = sipo->ads;
+              TEST_PTR_DATA_TYPE("space_data.dopesheet", RNA_DopeSheet, ptr, ads);
+              break;
+            }
+            case SPACE_FILE: {
+              const SpaceFile *sfile = (SpaceFile *)space_data;
+              const FileSelectParams *params = ED_fileselect_get_active_params(sfile);
+              TEST_PTR_DATA_TYPE("space_data.params", RNA_FileSelectParams, ptr, params);
+              break;
+            }
+            case SPACE_IMAGE: {
+              const SpaceImage *sima = (SpaceImage *)space_data;
+              TEST_PTR_DATA_TYPE("space_data.overlay", RNA_SpaceImageOverlay, ptr, sima);
+              TEST_PTR_DATA_TYPE("space_data.uv_editor", RNA_SpaceUVEditor, ptr, sima);
+              break;
+            }
+            case SPACE_NLA: {
+              const SpaceNla *snla = (SpaceNla *)space_data;
+              const bDopeSheet *ads = snla->ads;
+              TEST_PTR_DATA_TYPE("space_data.dopesheet", RNA_DopeSheet, ptr, ads);
+              break;
+            }
+            case SPACE_ACTION: {
+              const SpaceAction *sact = (SpaceAction *)space_data;
+              const bDopeSheet *ads = &sact->ads;
+              TEST_PTR_DATA_TYPE("space_data.dopesheet", RNA_DopeSheet, ptr, ads);
+              break;
+            }
           }
         }
 
@@ -530,30 +577,77 @@ static const char *wm_context_member_from_ptr(bContext *C, const PointerRNA *ptr
 #  undef TEST_PTR_DATA_TYPE
   }
 
+  *r_is_id = is_id;
+
   return member_id;
 }
 #endif
+
+char *WM_context_path_resolve_property_full(const bContext *C,
+                                            const PointerRNA *ptr,
+                                            PropertyRNA *prop,
+                                            int index)
+{
+  bool is_id;
+  const char *member_id = wm_context_member_from_ptr(C, ptr, &is_id);
+  char *member_id_data_path = NULL;
+  if (member_id != NULL) {
+    if (is_id && !RNA_struct_is_ID(ptr->type)) {
+      char *data_path = RNA_path_from_ID_to_struct(ptr);
+      if (data_path != NULL) {
+        if (prop != NULL) {
+          char *prop_str = RNA_path_property_py(ptr, prop, index);
+          if (prop_str[0] == '[') {
+            member_id_data_path = BLI_string_joinN(member_id, ".", data_path, prop_str);
+          }
+          else {
+            member_id_data_path = BLI_string_join_by_sep_charN(
+                '.', member_id, data_path, prop_str);
+          }
+          MEM_freeN(prop_str);
+        }
+        else {
+          member_id_data_path = BLI_string_join_by_sep_charN('.', member_id, data_path);
+        }
+        MEM_freeN(data_path);
+      }
+    }
+    else {
+      if (prop != NULL) {
+        char *prop_str = RNA_path_property_py(ptr, prop, index);
+        if (prop_str[0] == '[') {
+          member_id_data_path = BLI_string_joinN(member_id, prop_str);
+        }
+        else {
+          member_id_data_path = BLI_string_join_by_sep_charN('.', member_id, prop_str);
+        }
+        MEM_freeN(prop_str);
+      }
+      else {
+        member_id_data_path = BLI_strdup(member_id);
+      }
+    }
+  }
+  return member_id_data_path;
+}
+
+char *WM_context_path_resolve_full(bContext *C, const PointerRNA *ptr)
+{
+  return WM_context_path_resolve_property_full(C, ptr, NULL, -1);
+}
 
 static char *wm_prop_pystring_from_context(bContext *C,
                                            PointerRNA *ptr,
                                            PropertyRNA *prop,
                                            int index)
 {
-  const char *member_id = wm_context_member_from_ptr(C, ptr);
+  char *member_id_data_path = WM_context_path_resolve_property_full(C, ptr, prop, index);
   char *ret = NULL;
-  if (member_id != NULL) {
-    char *prop_str = RNA_path_struct_property_py(ptr, prop, index);
-    if (prop_str) {
-      ret = BLI_sprintfN("bpy.context.%s.%s", member_id, prop_str);
-      MEM_freeN(prop_str);
-    }
+  if (member_id_data_path != NULL) {
+    ret = BLI_sprintfN("bpy.context.%s", member_id_data_path);
+    MEM_freeN(member_id_data_path);
   }
   return ret;
-}
-
-const char *WM_context_member_from_ptr(bContext *C, const PointerRNA *ptr)
-{
-  return wm_context_member_from_ptr(C, ptr);
 }
 
 char *WM_prop_pystring_assign(bContext *C, PointerRNA *ptr, PropertyRNA *prop, int index)
@@ -562,7 +656,7 @@ char *WM_prop_pystring_assign(bContext *C, PointerRNA *ptr, PropertyRNA *prop, i
 
   if (lhs == NULL) {
     /* Fallback to `bpy.data.foo[id]` if we don't find in the context. */
-    lhs = RNA_path_full_property_py(CTX_data_main(C), ptr, prop, index);
+    lhs = RNA_path_full_property_py(ptr, prop, index);
   }
 
   if (!lhs) {
@@ -600,10 +694,14 @@ void WM_operator_properties_create(PointerRNA *ptr, const char *opstring)
   }
 }
 
-/* similar to the function above except its uses ID properties
- * used for keymaps and macros */
 void WM_operator_properties_alloc(PointerRNA **ptr, IDProperty **properties, const char *opstring)
 {
+  IDProperty *tmp_properties = NULL;
+  /* Allow passing NULL for properties, just create the properties here then. */
+  if (properties == NULL) {
+    properties = &tmp_properties;
+  }
+
   if (*properties == NULL) {
     IDPropertyTemplate val = {0};
     *properties = IDP_New(IDP_GROUP, &val, "wmOpItemProp");
@@ -646,14 +744,6 @@ void WM_operator_properties_sanitize(PointerRNA *ptr, const bool no_context)
   RNA_STRUCT_END;
 }
 
-/**
- * Set all props to their default.
- *
- * \param do_update: Only update un-initialized props.
- *
- * \note There's nothing specific to operators here.
- * This could be made a general function.
- */
 bool WM_operator_properties_default(PointerRNA *ptr, const bool do_update)
 {
   bool changed = false;
@@ -681,7 +771,6 @@ bool WM_operator_properties_default(PointerRNA *ptr, const bool do_update)
   return changed;
 }
 
-/* remove all props without PROP_SKIP_SAVE */
 void WM_operator_properties_reset(wmOperator *op)
 {
   if (op->ptr->data) {
@@ -745,7 +834,7 @@ static bool operator_last_properties_init_impl(wmOperator *op, IDProperty *last_
         if (idp_src) {
           IDProperty *idp_dst = IDP_CopyProperty(idp_src);
 
-          /* note - in the future this may need to be done recursively,
+          /* NOTE: in the future this may need to be done recursively,
            * but for now RNA doesn't access nested operators */
           idp_dst->flag |= IDP_FLAG_GHOST;
 
@@ -828,13 +917,6 @@ bool WM_operator_last_properties_store(wmOperator *UNUSED(op))
 /** \name Default Operator Callbacks
  * \{ */
 
-/**
- * Helper to get select and tweak-transform to work conflict free and as desired. See
- * #WM_operator_properties_generic_select() for details.
- *
- * To be used together with #WM_generic_select_invoke() and
- * #WM_operator_properties_generic_select().
- */
 int WM_generic_select_modal(bContext *C, wmOperator *op, const wmEvent *event)
 {
   PropertyRNA *wait_to_deselect_prop = RNA_struct_find_property(op->ptr,
@@ -851,7 +933,6 @@ int WM_generic_select_modal(bContext *C, wmOperator *op, const wmEvent *event)
 
       ret_value = op->type->exec(C, op);
       OPERATOR_RETVAL_CHECK(ret_value);
-
       op->customdata = POINTER_FROM_INT((int)event->type);
       if (ret_value & OPERATOR_RUNNING_MODAL) {
         WM_event_add_modal_handler(C, op);
@@ -876,7 +957,7 @@ int WM_generic_select_modal(bContext *C, wmOperator *op, const wmEvent *event)
 
     return ret_value | OPERATOR_PASS_THROUGH;
   }
-  if (ELEM(event->type, MOUSEMOVE, INBETWEEN_MOUSEMOVE)) {
+  if (ISMOUSE_MOTION(event->type)) {
     const int drag_delta[2] = {
         mval[0] - event->mval[0],
         mval[1] - event->mval[1],
@@ -888,24 +969,22 @@ int WM_generic_select_modal(bContext *C, wmOperator *op, const wmEvent *event)
       return OPERATOR_FINISHED | OPERATOR_PASS_THROUGH;
     }
     /* Important not to return anything other than PASS_THROUGH here,
-     * otherwise it prevents underlying tweak detection code to work properly. */
+     * otherwise it prevents underlying drag detection code to work properly. */
     return OPERATOR_PASS_THROUGH;
   }
 
   return OPERATOR_RUNNING_MODAL | OPERATOR_PASS_THROUGH;
 }
 
-/**
- * Helper to get select and tweak-transform to work conflict free and as desired. See
- * #WM_operator_properties_generic_select() for details.
- *
- * To be used together with #WM_generic_select_modal() and
- * #WM_operator_properties_generic_select().
- */
 int WM_generic_select_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
-  RNA_int_set(op->ptr, "mouse_x", event->mval[0]);
-  RNA_int_set(op->ptr, "mouse_y", event->mval[1]);
+  ARegion *region = CTX_wm_region(C);
+
+  int mval[2];
+  WM_event_drag_start_mval(event, region, mval);
+
+  RNA_int_set(op->ptr, "mouse_x", mval[0]);
+  RNA_int_set(op->ptr, "mouse_y", mval[1]);
 
   op->customdata = POINTER_FROM_INT(0);
 
@@ -946,8 +1025,7 @@ int WM_operator_smooth_viewtx_get(const wmOperator *op)
   return (op->flag & OP_IS_INVOKE) ? U.smooth_viewtx : 0;
 }
 
-/* invoke callback, uses enum property named "type" */
-int WM_menu_invoke_ex(bContext *C, wmOperator *op, int opcontext)
+int WM_menu_invoke_ex(bContext *C, wmOperator *op, wmOperatorCallContext opcontext)
 {
   PropertyRNA *prop = op->type->prop;
 
@@ -1067,10 +1145,6 @@ static uiBlock *wm_enum_search_menu(bContext *C, ARegion *region, void *arg)
   return block;
 }
 
-/**
- * Similar to #WM_enum_search_invoke, but draws previews. Also, this can't
- * be used as invoke callback directly since it needs additional info.
- */
 int WM_enum_search_invoke_previews(bContext *C, wmOperator *op, short prv_cols, short prv_rows)
 {
   static struct EnumSearchMenu search_menu;
@@ -1093,13 +1167,12 @@ int WM_enum_search_invoke(bContext *C, wmOperator *op, const wmEvent *UNUSED(eve
   return OPERATOR_INTERFACE;
 }
 
-/* Can't be used as an invoke directly, needs message arg (can be NULL) */
 int WM_operator_confirm_message_ex(bContext *C,
                                    wmOperator *op,
                                    const char *title,
                                    const int icon,
                                    const char *message,
-                                   const short opcontext)
+                                   const wmOperatorCallContext opcontext)
 {
   IDProperty *properties = op->ptr->data;
 
@@ -1138,7 +1211,6 @@ int WM_operator_confirm_or_exec(bContext *C, wmOperator *op, const wmEvent *UNUS
   return op->type->exec(C, op);
 }
 
-/* op->invoke, opens fileselect if path property not set, otherwise executes */
 int WM_operator_filesel(bContext *C, wmOperator *op, const wmEvent *UNUSED(event))
 {
   if (RNA_struct_property_is_set(op->ptr, "filepath")) {
@@ -1156,14 +1228,13 @@ bool WM_operator_filesel_ensure_ext_imtype(wmOperator *op, const struct ImageFor
   RNA_property_string_get(op->ptr, prop, filepath);
   if (BKE_image_path_ensure_ext_from_imformat(filepath, im_format)) {
     RNA_property_string_set(op->ptr, prop, filepath);
-    /* note, we could check for and update 'filename' here,
+    /* NOTE: we could check for and update 'filename' here,
      * but so far nothing needs this. */
     return true;
   }
   return false;
 }
 
-/* op->poll */
 bool WM_operator_winactive(bContext *C)
 {
   if (CTX_wm_window(C) == NULL) {
@@ -1172,7 +1243,6 @@ bool WM_operator_winactive(bContext *C)
   return 1;
 }
 
-/* return false, if the UI should be disabled */
 bool WM_operator_check_ui_enabled(const bContext *C, const char *idname)
 {
   wmWindowManager *wm = CTX_wm_manager(C);
@@ -1210,13 +1280,11 @@ void WM_operator_last_properties_ensure(wmOperatorType *ot, PointerRNA *ptr)
   RNA_pointer_create(G_MAIN->wm.first, ot->srna, props, ptr);
 }
 
-/**
- * Use for drag & drop a path or name with operators invoke() function.
- */
 ID *WM_operator_drop_load_path(struct bContext *C, wmOperator *op, const short idcode)
 {
   Main *bmain = CTX_data_main(C);
   ID *id = NULL;
+
   /* check input variables */
   if (RNA_struct_property_is_set(op->ptr, "filepath")) {
     const bool is_relative_path = RNA_boolean_get(op->ptr, "relative_path");
@@ -1254,19 +1322,33 @@ ID *WM_operator_drop_load_path(struct bContext *C, wmOperator *op, const short i
         }
       }
     }
+
+    return id;
   }
-  else if (RNA_struct_property_is_set(op->ptr, "name")) {
-    char name[MAX_ID_NAME - 2];
-    RNA_string_get(op->ptr, "name", name);
-    id = BKE_libblock_find_name(bmain, idcode, name);
-    if (!id) {
+
+  if (!WM_operator_properties_id_lookup_is_set(op->ptr)) {
+    return NULL;
+  }
+
+  /* Lookup an already existing ID. */
+  id = WM_operator_properties_id_lookup_from_name_or_session_uuid(bmain, op->ptr, idcode);
+
+  if (!id) {
+    /* Print error with the name if the name is available. */
+
+    if (RNA_struct_property_is_set(op->ptr, "name")) {
+      char name[MAX_ID_NAME - 2];
+      RNA_string_get(op->ptr, "name", name);
       BKE_reportf(
           op->reports, RPT_ERROR, "%s '%s' not found", BKE_idtype_idcode_to_name(idcode), name);
       return NULL;
     }
-    id_us_plus(id);
+
+    BKE_reportf(op->reports, RPT_ERROR, "%s not found", BKE_idtype_idcode_to_name(idcode));
+    return NULL;
   }
 
+  id_us_plus(id);
   return id;
 }
 
@@ -1346,7 +1428,7 @@ static void dialog_exec_cb(bContext *C, void *arg1, void *arg2)
   wmOperator *op;
   {
     /* Execute will free the operator.
-     * In this case, wm_operator_ui_popup_cancel wont run. */
+     * In this case, wm_operator_ui_popup_cancel won't run. */
     wmOpPopUp *data = arg1;
     op = data->op;
     MEM_freeN(data);
@@ -1516,20 +1598,11 @@ static int wm_operator_props_popup_ex(bContext *C,
   return OPERATOR_RUNNING_MODAL;
 }
 
-/**
- * Same as #WM_operator_props_popup but don't use operator redo.
- * just wraps #WM_operator_props_dialog_popup.
- */
 int WM_operator_props_popup_confirm(bContext *C, wmOperator *op, const wmEvent *UNUSED(event))
 {
   return wm_operator_props_popup_ex(C, op, false, false);
 }
 
-/**
- * Same as #WM_operator_props_popup but call the operator first,
- * This way - the button values correspond to the result of the operator.
- * Without this, first access to a button will make the result jump, see T32452.
- */
 int WM_operator_props_popup_call(bContext *C, wmOperator *op, const wmEvent *UNUSED(event))
 {
   return wm_operator_props_popup_ex(C, op, true, true);
@@ -1819,7 +1892,14 @@ static void WM_OT_call_menu(wmOperatorType *ot)
 
   ot->flag = OPTYPE_INTERNAL;
 
-  RNA_def_string(ot->srna, "name", NULL, BKE_ST_MAXNAME, "Name", "Name of the menu");
+  PropertyRNA *prop;
+
+  prop = RNA_def_string(ot->srna, "name", NULL, BKE_ST_MAXNAME, "Name", "Name of the menu");
+  RNA_def_property_string_search_func_runtime(
+      prop,
+      WM_menutype_idname_visit_for_search,
+      /* Only a suggestion as menu items may be referenced from add-ons that have been disabled. */
+      (PROP_STRING_SEARCH_SORT | PROP_STRING_SEARCH_SUGGESTION));
 }
 
 static int wm_call_pie_menu_invoke(bContext *C, wmOperator *op, const wmEvent *event)
@@ -1851,7 +1931,14 @@ static void WM_OT_call_menu_pie(wmOperatorType *ot)
 
   ot->flag = OPTYPE_INTERNAL;
 
-  RNA_def_string(ot->srna, "name", NULL, BKE_ST_MAXNAME, "Name", "Name of the pie menu");
+  PropertyRNA *prop;
+
+  prop = RNA_def_string(ot->srna, "name", NULL, BKE_ST_MAXNAME, "Name", "Name of the pie menu");
+  RNA_def_property_string_search_func_runtime(
+      prop,
+      WM_menutype_idname_visit_for_search,
+      /* Only a suggestion as menu items may be referenced from add-ons that have been disabled. */
+      (PROP_STRING_SEARCH_SORT | PROP_STRING_SEARCH_SUGGESTION));
 }
 
 static int wm_call_panel_exec(bContext *C, wmOperator *op)
@@ -1887,6 +1974,11 @@ static void WM_OT_call_panel(wmOperatorType *ot)
   PropertyRNA *prop;
 
   prop = RNA_def_string(ot->srna, "name", NULL, BKE_ST_MAXNAME, "Name", "Name of the menu");
+  RNA_def_property_string_search_func_runtime(
+      prop,
+      WM_paneltype_idname_visit_for_search,
+      /* Only a suggestion as menu items may be referenced from add-ons that have been disabled. */
+      (PROP_STRING_SEARCH_SORT | PROP_STRING_SEARCH_SUGGESTION));
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
   prop = RNA_def_boolean(ot->srna, "keep_open", true, "Keep Open", "");
   RNA_def_property_flag(prop, PROP_SKIP_SAVE);
@@ -1953,7 +2045,7 @@ static void WM_OT_window_fullscreen_toggle(wmOperatorType *ot)
 {
   ot->name = "Toggle Window Fullscreen";
   ot->idname = "WM_OT_window_fullscreen_toggle";
-  ot->description = "Toggle the current window fullscreen";
+  ot->description = "Toggle the current window full-screen";
 
   ot->exec = wm_window_fullscreen_toggle_exec;
   ot->poll = WM_operator_winactive;
@@ -1998,7 +2090,7 @@ static void WM_OT_quit_blender(wmOperatorType *ot)
 
 static int wm_console_toggle_exec(bContext *UNUSED(C), wmOperator *UNUSED(op))
 {
-  GHOST_toggleConsole(2);
+  GHOST_setConsoleWindowState(GHOST_kConsoleWindowStateToggle);
   return OPERATOR_FINISHED;
 }
 
@@ -2157,11 +2249,8 @@ static void radial_control_set_initial_mouse(RadialControl *rc, const wmEvent *e
   float d[2] = {0, 0};
   float zoom[2] = {1, 1};
 
-  rc->initial_mouse[0] = event->x;
-  rc->initial_mouse[1] = event->y;
-
-  rc->initial_co[0] = event->x;
-  rc->initial_co[1] = event->y;
+  copy_v2_v2_int(rc->initial_mouse, event->xy);
+  copy_v2_v2_int(rc->initial_co, event->xy);
 
   switch (rc->subtype) {
     case PROP_NONE:
@@ -2256,7 +2345,7 @@ static void radial_control_paint_tex(RadialControl *rc, float radius, float alph
       GPU_matrix_rotate_2d(RAD2DEGF(rot));
     }
 
-    immBindBuiltinProgram(GPU_SHADER_2D_IMAGE_COLOR);
+    immBindBuiltinProgram(GPU_SHADER_3D_IMAGE_COLOR);
 
     immUniformColor3fvAlpha(col, alpha);
     immBindTexture("image", rc->texture);
@@ -2287,7 +2376,7 @@ static void radial_control_paint_tex(RadialControl *rc, float radius, float alph
   }
   else {
     /* flat color if no texture available */
-    immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+    immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
     immUniformColor3fvAlpha(col, alpha);
     imm_draw_circle_fill_2d(pos, 0.0f, 0.0f, radius, 40);
   }
@@ -2361,7 +2450,7 @@ static void radial_control_paint_cursor(bContext *UNUSED(C), int x, int y, void 
       strdrawlen = BLI_strlen_utf8(str);
       break;
     default:
-      tex_radius = WM_RADIAL_CONTROL_DISPLAY_SIZE; /* note, this is a dummy value */
+      tex_radius = WM_RADIAL_CONTROL_DISPLAY_SIZE; /* NOTE: this is a dummy value. */
       alpha = 0.75;
       break;
   }
@@ -2399,7 +2488,7 @@ static void radial_control_paint_cursor(bContext *UNUSED(C), int x, int y, void 
   GPUVertFormat *format = immVertexFormat();
   uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
   if (rc->subtype == PROP_ANGLE) {
     GPU_matrix_push();
@@ -2449,7 +2538,7 @@ static void radial_control_paint_cursor(bContext *UNUSED(C), int x, int y, void 
 
   immUnbindProgram();
 
-  BLF_size(fontid, 1.75f * fstyle_points * U.pixelsize, U.dpi);
+  BLF_size(fontid, 1.75f * fstyle_points * U.dpi_fac);
   UI_GetThemeColor4fv(TH_TEXT_HI, text_color);
   BLF_color4fv(fontid, text_color);
 
@@ -2491,7 +2580,7 @@ static int radial_control_get_path(PointerRNA *ctx_ptr,
 
   /* get an rna string path from the operator's properties */
   char *str;
-  if (!(str = RNA_string_get_alloc(op->ptr, name, NULL, 0))) {
+  if (!(str = RNA_string_get_alloc(op->ptr, name, NULL, 0, NULL))) {
     return 1;
   }
 
@@ -2668,7 +2757,7 @@ static int radial_control_invoke(bContext *C, wmOperator *op, const wmEvent *eve
   }
 
   /* get type, initial, min, and max values of the property */
-  switch ((rc->type = RNA_property_type(rc->prop))) {
+  switch (rc->type = RNA_property_type(rc->prop)) {
     case PROP_INT: {
       int value, min, max, step;
 
@@ -2760,10 +2849,7 @@ static void radial_control_cancel(bContext *C, wmOperator *op)
   wmWindowManager *wm = CTX_wm_manager(C);
   ScrArea *area = CTX_wm_area(C);
 
-  if (rc->dial) {
-    MEM_freeN(rc->dial);
-    rc->dial = NULL;
-  }
+  MEM_SAFE_FREE(rc->dial);
 
   ED_area_status_text(area, NULL);
 
@@ -2796,7 +2882,7 @@ static int radial_control_modal(bContext *C, wmOperator *op, const wmEvent *even
   float numValue;
   /* TODO: fix hardcoded events */
 
-  bool snap = event->ctrl != 0;
+  bool snap = (event->modifier & KM_CTRL) != 0;
 
   /* Modal numinput active, try to handle numeric inputs first... */
   if (event->val == KM_PRESS && has_numInput && handleNumInput(C, &rc->num_input, event)) {
@@ -2840,14 +2926,12 @@ static int radial_control_modal(bContext *C, wmOperator *op, const wmEvent *even
       if (!has_numInput) {
         if (rc->slow_mode) {
           if (rc->subtype == PROP_ANGLE) {
-            const float position[2] = {event->x, event->y};
-
             /* calculate the initial angle here first */
             delta[0] = rc->initial_mouse[0] - rc->slow_mouse[0];
             delta[1] = rc->initial_mouse[1] - rc->slow_mouse[1];
 
             /* precision angle gets calculated from dial and gets added later */
-            angle_precision = -0.1f * BLI_dial_angle(rc->dial, position);
+            angle_precision = -0.1f * BLI_dial_angle(rc->dial, (float[2]){UNPACK2(event->xy)});
           }
           else {
             delta[0] = rc->initial_mouse[0] - rc->slow_mouse[0];
@@ -2860,7 +2944,7 @@ static int radial_control_modal(bContext *C, wmOperator *op, const wmEvent *even
 
             dist = len_v2(delta);
 
-            delta[0] = event->x - rc->slow_mouse[0];
+            delta[0] = event->xy[0] - rc->slow_mouse[0];
 
             if (rc->zoom_prop) {
               delta[0] /= zoom[0];
@@ -2870,8 +2954,8 @@ static int radial_control_modal(bContext *C, wmOperator *op, const wmEvent *even
           }
         }
         else {
-          delta[0] = rc->initial_mouse[0] - event->x;
-          delta[1] = rc->initial_mouse[1] - event->y;
+          delta[0] = (float)(rc->initial_mouse[0] - event->xy[0]);
+          delta[1] = (float)(rc->initial_mouse[1] - event->xy[1]);
           if (rc->zoom_prop) {
             RNA_property_float_get_array(&rc->zoom_ptr, rc->zoom_prop, zoom);
             delta[0] /= zoom[0];
@@ -2885,7 +2969,7 @@ static int radial_control_modal(bContext *C, wmOperator *op, const wmEvent *even
           }
         }
 
-        /* calculate new value and apply snapping  */
+        /* Calculate new value and apply snapping. */
         switch (rc->subtype) {
           case PROP_NONE:
           case PROP_DISTANCE:
@@ -2938,8 +3022,8 @@ static int radial_control_modal(bContext *C, wmOperator *op, const wmEvent *even
     case EVT_LEFTSHIFTKEY:
     case EVT_RIGHTSHIFTKEY: {
       if (event->val == KM_PRESS) {
-        rc->slow_mouse[0] = event->x;
-        rc->slow_mouse[1] = event->y;
+        rc->slow_mouse[0] = event->xy[0];
+        rc->slow_mouse[1] = event->xy[1];
         rc->slow_mode = true;
         if (rc->subtype == PROP_ANGLE) {
           const float initial_position[2] = {UNPACK2(rc->initial_mouse)};
@@ -2953,10 +3037,7 @@ static int radial_control_modal(bContext *C, wmOperator *op, const wmEvent *even
       if (event->val == KM_RELEASE) {
         rc->slow_mode = false;
         handled = true;
-        if (rc->dial) {
-          MEM_freeN(rc->dial);
-          rc->dial = NULL;
-        }
+        MEM_SAFE_FREE(rc->dial);
       }
       break;
     }
@@ -3178,10 +3259,11 @@ static void redraw_timer_step(bContext *C,
     LISTBASE_FOREACH (ScrArea *, area_iter, &screen->areabase) {
       CTX_wm_area_set(C, area_iter);
       LISTBASE_FOREACH (ARegion *, region_iter, &area_iter->regionbase) {
-        if (region_iter->visible) {
-          CTX_wm_region_set(C, region_iter);
-          wm_draw_region_test(C, area_iter, region_iter);
+        if (!region_iter->visible) {
+          continue;
         }
+        CTX_wm_region_set(C, region_iter);
+        wm_draw_region_test(C, area_iter, region_iter);
       }
     }
 
@@ -3202,7 +3284,7 @@ static void redraw_timer_step(bContext *C,
     int tot = (scene->r.efra - scene->r.sfra) + 1;
 
     while (tot--) {
-      /* todo, ability to escape! */
+      /* TODO: ability to escape! */
       scene->r.cfra++;
       if (scene->r.cfra > scene->r.efra) {
         scene->r.cfra = scene->r.sfra;
@@ -3220,6 +3302,14 @@ static void redraw_timer_step(bContext *C,
     ED_undo_redo(C);
     wm_event_do_refresh_wm_and_depsgraph(C);
   }
+}
+
+static bool redraw_timer_poll(bContext *C)
+{
+  /* Check background mode as many of these actions use redrawing.
+   * NOTE(@campbellbarton): if it's useful to support undo or animation step this could
+   * be allowed at the moment this seems like a corner case that isn't needed. */
+  return !G.background && WM_operator_winactive(C);
 }
 
 static int redraw_timer_exec(bContext *C, wmOperator *op)
@@ -3283,7 +3373,7 @@ static void WM_OT_redraw_timer(wmOperatorType *ot)
 
   ot->invoke = WM_menu_invoke;
   ot->exec = redraw_timer_exec;
-  ot->poll = WM_operator_winactive;
+  ot->poll = redraw_timer_poll;
 
   ot->prop = RNA_def_enum(ot->srna, "type", redraw_timer_type_items, eRTDrawRegion, "Type", "");
   RNA_def_int(
@@ -3571,8 +3661,11 @@ static int doc_view_manual_ui_context_exec(bContext *C, wmOperator *UNUSED(op))
     WM_operator_properties_create(&ptr_props, "WM_OT_doc_view_manual");
     RNA_string_set(&ptr_props, "doc_id", buf);
 
-    retval = WM_operator_name_call_ptr(
-        C, WM_operatortype_find("WM_OT_doc_view_manual", false), WM_OP_EXEC_DEFAULT, &ptr_props);
+    retval = WM_operator_name_call_ptr(C,
+                                       WM_operatortype_find("WM_OT_doc_view_manual", false),
+                                       WM_OP_EXEC_DEFAULT,
+                                       &ptr_props,
+                                       NULL);
 
     WM_operator_properties_free(&ptr_props);
   }
@@ -3597,7 +3690,7 @@ static void WM_OT_doc_view_manual_ui_context(wmOperatorType *ot)
 /* -------------------------------------------------------------------- */
 /** \name Toggle Stereo 3D Operator
  *
- * Turning it fullscreen if needed.
+ * Turning it full-screen if needed.
  * \{ */
 
 static void WM_OT_stereo3d_set(wmOperatorType *ot)
@@ -3652,87 +3745,6 @@ static void WM_OT_stereo3d_set(wmOperatorType *ot)
 
 /** \} */
 
-#ifdef WITH_XR_OPENXR
-
-static void wm_xr_session_update_screen(Main *bmain, const wmXrData *xr_data)
-{
-  const bool session_exists = WM_xr_session_exists(xr_data);
-
-  for (bScreen *screen = bmain->screens.first; screen; screen = screen->id.next) {
-    LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
-      LISTBASE_FOREACH (SpaceLink *, slink, &area->spacedata) {
-        if (slink->spacetype == SPACE_VIEW3D) {
-          View3D *v3d = (View3D *)slink;
-
-          if (v3d->flag & V3D_XR_SESSION_MIRROR) {
-            ED_view3d_xr_mirror_update(area, v3d, session_exists);
-          }
-
-          if (session_exists) {
-            wmWindowManager *wm = bmain->wm.first;
-            const Scene *scene = WM_windows_scene_get_from_screen(wm, screen);
-
-            ED_view3d_xr_shading_update(wm, v3d, scene);
-          }
-          /* Ensure no 3D View is tagged as session root. */
-          else {
-            v3d->runtime.flag &= ~V3D_RUNTIME_XR_SESSION_ROOT;
-          }
-        }
-      }
-    }
-  }
-
-  WM_main_add_notifier(NC_WM | ND_XR_DATA_CHANGED, NULL);
-}
-
-static void wm_xr_session_update_screen_on_exit_cb(const wmXrData *xr_data)
-{
-  /* Just use G_MAIN here, storing main isn't reliable enough on file read or exit. */
-  wm_xr_session_update_screen(G_MAIN, xr_data);
-}
-
-static int wm_xr_session_toggle_exec(bContext *C, wmOperator *UNUSED(op))
-{
-  Main *bmain = CTX_data_main(C);
-  wmWindowManager *wm = CTX_wm_manager(C);
-  wmWindow *win = CTX_wm_window(C);
-  View3D *v3d = CTX_wm_view3d(C);
-
-  /* Lazy-create xr context - tries to dynlink to the runtime, reading active_runtime.json. */
-  if (wm_xr_init(wm) == false) {
-    return OPERATOR_CANCELLED;
-  }
-
-  v3d->runtime.flag |= V3D_RUNTIME_XR_SESSION_ROOT;
-  wm_xr_session_toggle(wm, win, wm_xr_session_update_screen_on_exit_cb);
-  wm_xr_session_update_screen(bmain, &wm->xr);
-
-  WM_event_add_notifier(C, NC_WM | ND_XR_DATA_CHANGED, NULL);
-
-  return OPERATOR_FINISHED;
-}
-
-static void WM_OT_xr_session_toggle(wmOperatorType *ot)
-{
-  /* identifiers */
-  ot->name = "Toggle VR Session";
-  ot->idname = "WM_OT_xr_session_toggle";
-  ot->description =
-      "Open a view for use with virtual reality headsets, or close it if already "
-      "opened";
-
-  /* callbacks */
-  ot->exec = wm_xr_session_toggle_exec;
-  ot->poll = ED_operator_view3d_active;
-
-  /* XXX INTERNAL just to hide it from the search menu by default, an Add-on will expose it in the
-   * UI instead. Not meant as a permanent solution. */
-  ot->flag = OPTYPE_INTERNAL;
-}
-
-#endif /* WITH_XR_OPENXR */
-
 /* -------------------------------------------------------------------- */
 /** \name Operator Registration & Keymaps
  * \{ */
@@ -3774,15 +3786,16 @@ void wm_operatortypes_register(void)
   WM_operatortype_append(WM_OT_call_panel);
   WM_operatortype_append(WM_OT_radial_control);
   WM_operatortype_append(WM_OT_stereo3d_set);
-#ifdef WITH_XR_OPENXR
-  WM_operatortype_append(WM_OT_xr_session_toggle);
-#endif
 #if defined(WIN32)
   WM_operatortype_append(WM_OT_console_toggle);
 #endif
   WM_operatortype_append(WM_OT_previews_ensure);
   WM_operatortype_append(WM_OT_previews_clear);
   WM_operatortype_append(WM_OT_doc_view_manual_ui_context);
+
+#ifdef WITH_XR_OPENXR
+  wm_xr_operatortypes_register();
+#endif
 
   /* gizmos */
   WM_operatortype_append(GIZMOGROUP_OT_gizmo_select);
@@ -3806,10 +3819,10 @@ static void gesture_circle_modal_keymap(wmKeyConfig *keyconf)
       {0, NULL, 0, NULL, NULL},
   };
 
-  /* WARNING - name is incorrect, use for non-3d views */
+  /* WARNING: Name is incorrect, use for non-3d views. */
   wmKeyMap *keymap = WM_modalkeymap_find(keyconf, "View3D Gesture Circle");
 
-  /* this function is called for each spacetype, only needs to add map once */
+  /* This function is called for each space-type, only needs to add map once. */
   if (keymap && keymap->modal_items) {
     return;
   }
@@ -3842,7 +3855,7 @@ static void gesture_straightline_modal_keymap(wmKeyConfig *keyconf)
 
   wmKeyMap *keymap = WM_modalkeymap_find(keyconf, "Gesture Straight Line");
 
-  /* this function is called for each spacetype, only needs to add map once */
+  /* This function is called for each space-type, only needs to add map once. */
   if (keymap && keymap->modal_items) {
     return;
   }
@@ -3871,7 +3884,7 @@ static void gesture_box_modal_keymap(wmKeyConfig *keyconf)
 
   wmKeyMap *keymap = WM_modalkeymap_find(keyconf, "Gesture Box");
 
-  /* this function is called for each spacetype, only needs to add map once */
+  /* This function is called for each space-type, only needs to add map once. */
   if (keymap && keymap->modal_items) {
     return;
   }
@@ -3907,7 +3920,7 @@ static void gesture_box_modal_keymap(wmKeyConfig *keyconf)
   WM_modalkeymap_assign(keymap, "VIEW3D_OT_clip_border");
   WM_modalkeymap_assign(keymap, "VIEW3D_OT_render_border");
   WM_modalkeymap_assign(keymap, "VIEW3D_OT_select_box");
-  /* XXX TODO: zoom border should perhaps map rightmouse to zoom out instead of in+cancel */
+  /* XXX TODO: zoom border should perhaps map right-mouse to zoom out instead of in+cancel. */
   WM_modalkeymap_assign(keymap, "VIEW3D_OT_zoom_border");
   WM_modalkeymap_assign(keymap, "IMAGE_OT_render_border");
   WM_modalkeymap_assign(keymap, "IMAGE_OT_view_zoom_border");
@@ -3924,7 +3937,7 @@ static void gesture_lasso_modal_keymap(wmKeyConfig *keyconf)
 
   wmKeyMap *keymap = WM_modalkeymap_find(keyconf, "Gesture Lasso");
 
-  /* this function is called for each spacetype, only needs to add map once */
+  /* This function is called for each space-type, only needs to add map once. */
   if (keymap && keymap->modal_items) {
     return;
   }
@@ -3959,7 +3972,7 @@ static void gesture_zoom_border_modal_keymap(wmKeyConfig *keyconf)
 
   wmKeyMap *keymap = WM_modalkeymap_find(keyconf, "Gesture Zoom Border");
 
-  /* this function is called for each spacetype, only needs to add map once */
+  /* This function is called for each space-type, only needs to add map once. */
   if (keymap && keymap->modal_items) {
     return;
   }
@@ -3972,7 +3985,6 @@ static void gesture_zoom_border_modal_keymap(wmKeyConfig *keyconf)
   WM_modalkeymap_assign(keymap, "IMAGE_OT_view_zoom_border");
 }
 
-/* default keymap for windows and screens, only call once per WM */
 void wm_window_keymap(wmKeyConfig *keyconf)
 {
   WM_keymap_ensure(keyconf, "Window", 0, 0);
@@ -4040,7 +4052,8 @@ static const EnumPropertyItem *rna_id_itemf(bool *r_free,
   return item;
 }
 
-/* can add more as needed */
+/* Can add more ID types as needed. */
+
 const EnumPropertyItem *RNA_action_itemf(bContext *C,
                                          PointerRNA *UNUSED(ptr),
                                          PropertyRNA *UNUSED(prop),

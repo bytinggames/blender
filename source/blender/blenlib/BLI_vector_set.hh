@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -131,10 +117,10 @@ class VectorSet {
   uint64_t slot_mask_;
 
   /** This is called to hash incoming keys. */
-  Hash hash_;
+  BLI_NO_UNIQUE_ADDRESS Hash hash_;
 
   /** This is called to check equality of two keys. */
-  IsEqual is_equal_;
+  BLI_NO_UNIQUE_ADDRESS IsEqual is_equal_;
 
   /** The max load factor is 1/2 = 50% by default. */
 #define LOAD_FACTOR 1, 2
@@ -263,7 +249,7 @@ class VectorSet {
   }
 
   /**
-   * Get an Span referencing the keys vector. The referenced memory buffer is only valid as
+   * Get a Span referencing the keys vector. The referenced memory buffer is only valid as
    * long as the vector set is not changed.
    *
    * The keys must not be changed, because this would change their hash value.
@@ -363,6 +349,25 @@ class VectorSet {
   }
 
   /**
+   * Remove all values for which the given predicate is true. This may change the order of elements
+   * in the vector.
+   *
+   * This is similar to std::erase_if.
+   */
+  template<typename Predicate> void remove_if(Predicate &&predicate)
+  {
+    for (Slot &slot : slots_) {
+      if (slot.is_occupied()) {
+        const int64_t index = slot.index();
+        const Key &key = keys_[index];
+        if (predicate(key)) {
+          this->remove_key_internal(slot);
+        }
+      }
+    }
+  }
+
+  /**
    * Delete and return a key from the set. This will remove the last element in the vector. The
    * order of the remaining elements in the set is not changed.
    */
@@ -372,7 +377,7 @@ class VectorSet {
   }
 
   /**
-   * Return the location of the key in the vector. It is assumed, that the key is in the vector
+   * Return the location of the key in the vector. It is assumed that the key is in the vector
    * set. If this is not necessarily the case, use `index_of_try`.
    */
   int64_t index_of(const Key &key) const
@@ -415,6 +420,38 @@ class VectorSet {
   }
 
   /**
+   * Returns the key that is stored in the vector set that compares equal to the given key. This
+   * invokes undefined behavior when the key is not in the set.
+   */
+  const Key &lookup_key(const Key &key) const
+  {
+    return this->lookup_key_as(key);
+  }
+  template<typename ForwardKey> const Key &lookup_key_as(const ForwardKey &key) const
+  {
+    const Key *key_ptr = this->lookup_key_ptr_as(key);
+    BLI_assert(key_ptr != nullptr);
+    return *key_ptr;
+  }
+
+  /**
+   * Returns a pointer to the key that is stored in the vector set that compares equal to the given
+   * key. If the key is not in the set, null is returned.
+   */
+  const Key *lookup_key_ptr(const Key &key) const
+  {
+    return this->lookup_key_ptr_as(key);
+  }
+  template<typename ForwardKey> const Key *lookup_key_ptr_as(const ForwardKey &key) const
+  {
+    const int64_t index = this->index_of_try__impl(key, hash_(key));
+    if (index >= 0) {
+      return keys_ + index;
+    }
+    return nullptr;
+  }
+
+  /**
    * Get a pointer to the beginning of the array containing all keys.
    */
   const Key *data() const
@@ -430,6 +467,14 @@ class VectorSet {
   const Key *end() const
   {
     return keys_ + this->size();
+  }
+
+  /**
+   * Get an index range containing all valid indices for this array.
+   */
+  IndexRange index_range() const
+  {
+    return IndexRange(this->size());
   }
 
   /**
@@ -487,7 +532,7 @@ class VectorSet {
    */
   int64_t size_in_bytes() const
   {
-    return static_cast<int64_t>(sizeof(Slot) * slots_.size() + sizeof(Key) * usable_slots_);
+    return int64_t(sizeof(Slot) * slots_.size() + sizeof(Key) * usable_slots_);
   }
 
   /**
@@ -505,7 +550,14 @@ class VectorSet {
    */
   void clear()
   {
-    this->noexcept_reset();
+    destruct_n(keys_, this->size());
+    for (Slot &slot : slots_) {
+      slot.~Slot();
+      new (&slot) Slot();
+    }
+
+    removed_slots_ = 0;
+    occupied_and_removed_slots_ = 0;
   }
 
   /**
@@ -524,12 +576,16 @@ class VectorSet {
     max_load_factor_.compute_total_and_usable_slots(
         SlotArray::inline_buffer_capacity(), min_usable_slots, &total_slots, &usable_slots);
     BLI_assert(total_slots >= 1);
-    const uint64_t new_slot_mask = static_cast<uint64_t>(total_slots) - 1;
+    const uint64_t new_slot_mask = uint64_t(total_slots) - 1;
 
     /* Optimize the case when the set was empty beforehand. We can avoid some copies here. */
     if (this->size() == 0) {
       try {
         slots_.reinitialize(total_slots);
+        if (keys_ != nullptr) {
+          this->deallocate_keys_array(keys_);
+          keys_ = nullptr;
+        }
         keys_ = this->allocate_keys_array(usable_slots);
       }
       catch (...) {
@@ -802,7 +858,7 @@ class VectorSet {
   Key *allocate_keys_array(const int64_t size)
   {
     return static_cast<Key *>(
-        slots_.allocator().allocate(sizeof(Key) * static_cast<size_t>(size), alignof(Key), AT));
+        slots_.allocator().allocate(sizeof(Key) * size_t(size), alignof(Key), AT));
   }
 
   void deallocate_keys_array(Key *keys)

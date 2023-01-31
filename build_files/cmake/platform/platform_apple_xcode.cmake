@@ -1,22 +1,5 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# The Original Code is Copyright (C) 2016, Blender Foundation
-# All rights reserved.
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright 2016 Blender Foundation. All rights reserved.
 
 # Xcode and system configuration for Apple.
 
@@ -96,7 +79,7 @@ else()
     # Detect SDK version to use.
     if(NOT DEFINED OSX_SYSTEM)
       execute_process(
-          COMMAND xcrun --show-sdk-version
+          COMMAND xcrun --sdk macosx --show-sdk-version
           OUTPUT_VARIABLE OSX_SYSTEM
           OUTPUT_STRIP_TRAILING_WHITESPACE)
     endif()
@@ -168,21 +151,15 @@ endif()
 unset(OSX_SDKROOT)
 
 
-# 10.13 is our min. target, if you use higher sdk, weak linking happens
 if("${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
+  # M1 chips run Big Sur onwards.
   set(OSX_MIN_DEPLOYMENT_TARGET 11.00)
 else()
+  # 10.13 is our min. target, if you use higher sdk, weak linking happens
   set(OSX_MIN_DEPLOYMENT_TARGET 10.13)
 endif()
 
-if(CMAKE_OSX_DEPLOYMENT_TARGET)
-  if(${CMAKE_OSX_DEPLOYMENT_TARGET} VERSION_LESS ${OSX_MIN_DEPLOYMENT_TARGET})
-    message(STATUS "Setting deployment target to ${OSX_MIN_DEPLOYMENT_TARGET}, lower versions are not supported")
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "${OSX_MIN_DEPLOYMENT_TARGET}" CACHE STRING "" FORCE)
-  endif()
-else()
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "${OSX_MIN_DEPLOYMENT_TARGET}" CACHE STRING "" FORCE)
-endif()
+set(CMAKE_OSX_DEPLOYMENT_TARGET "${OSX_MIN_DEPLOYMENT_TARGET}" CACHE STRING "" FORCE)
 
 if(NOT ${CMAKE_GENERATOR} MATCHES "Xcode")
   # Force CMAKE_OSX_DEPLOYMENT_TARGET for makefiles, will not work else (CMake bug?)

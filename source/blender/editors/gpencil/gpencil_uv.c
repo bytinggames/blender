@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edgpencil
@@ -152,7 +138,7 @@ static bool gpencil_uv_transform_init(bContext *C, wmOperator *op)
   opdata->array_loc = NULL;
   opdata->array_rot = NULL;
   opdata->array_scale = NULL;
-  opdata->ob_scale = mat4_to_scale(opdata->ob->obmat);
+  opdata->ob_scale = mat4_to_scale(opdata->ob->object_to_world);
 
   opdata->vinit_rotation[0] = 1.0f;
   opdata->vinit_rotation[1] = 0.0f;
@@ -172,7 +158,7 @@ static bool gpencil_uv_transform_init(bContext *C, wmOperator *op)
       float r_center[3];
       gpencil_stroke_center(gps, r_center);
       /* Add object location. */
-      add_v3_v3(r_center, opdata->ob->obmat[3]);
+      add_v3_v3(r_center, opdata->ob->object_to_world[3]);
       add_v3_v3(center, r_center);
       i++;
     }

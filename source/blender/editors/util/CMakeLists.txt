@@ -1,19 +1,4 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 set(INC
   ../include
@@ -31,8 +16,9 @@ set(INC
   ../../sequencer
   ../../windowmanager
   ../../../../intern/clog
-  ../../../../intern/glew-mx
   ../../../../intern/guardedalloc
+  # RNA_prototypes.h
+  ${CMAKE_BINARY_DIR}/source/blender/makesrna
 )
 
 
@@ -42,6 +28,7 @@ set(SRC
   ed_util.c
   ed_util_imbuf.c
   ed_util_ops.cc
+  ed_viewer_path.cc
   gizmo_utils.c
   numinput.c
   select_utils.c
@@ -54,7 +41,10 @@ set(SRC
   ../include/ED_buttons.h
   ../include/ED_clip.h
   ../include/ED_curve.h
+  ../include/ED_curves.h
+  ../include/ED_curves_sculpt.h
   ../include/ED_datafiles.h
+  ../include/ED_file_indexer.h
   ../include/ED_fileselect.h
   ../include/ED_geometry.h
   ../include/ED_gizmo_library.h
@@ -64,6 +54,7 @@ set(SRC
   ../include/ED_info.h
   ../include/ED_keyframes_draw.h
   ../include/ED_keyframes_edit.h
+  ../include/ED_keyframes_keylist.h
   ../include/ED_keyframing.h
   ../include/ED_lattice.h
   ../include/ED_markers.h
@@ -92,7 +83,6 @@ set(SRC
   ../include/ED_transform.h
   ../include/ED_transform_snap_object_context.h
   ../include/ED_transverts.h
-  ../include/ED_types.h
   ../include/ED_undo.h
   ../include/ED_userpref.h
   ../include/ED_util.h
@@ -100,20 +90,21 @@ set(SRC
   ../include/ED_uvedit.h
   ../include/ED_view3d.h
   ../include/ED_view3d_offscreen.h
+  ../include/ED_viewer_path.hh
+  ../include/UI_abstract_view.hh
+  ../include/UI_grid_view.hh
   ../include/UI_icons.h
   ../include/UI_interface.h
+  ../include/UI_interface.hh
   ../include/UI_interface_icons.h
   ../include/UI_resources.h
+  ../include/UI_tree_view.hh
   ../include/UI_view2d.h
 )
 
 set(LIB
 )
 
-
-if(WITH_INTERNATIONAL)
-  add_definitions(-DWITH_INTERNATIONAL)
-endif()
 
 if(WITH_PYTHON)
   add_definitions(-DWITH_PYTHON)
@@ -123,3 +114,6 @@ if(WITH_PYTHON)
 endif()
 
 blender_add_lib(bf_editor_util "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
+
+# RNA_prototypes.h
+add_dependencies(bf_editor_util bf_rna)

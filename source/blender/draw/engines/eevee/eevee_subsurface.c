@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2016, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Blender Foundation. */
 
 /** \file
  * \ingroup draw_engine
@@ -49,7 +34,7 @@ void EEVEE_subsurface_draw_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
   const int fs_size[2] = {(int)viewport_size[0], (int)viewport_size[1]};
 
   if (effects->enabled_effects & EFFECT_SSS) {
-    /* NOTE : we need another stencil because the stencil buffer is on the same texture
+    /* NOTE: we need another stencil because the stencil buffer is on the same texture
      * as the depth buffer we are sampling from. This could be avoided if the stencil is
      * a separate texture but that needs OpenGL 4.4 or ARB_texture_stencil8.
      * OR OpenGL 4.3 / ARB_ES3_compatibility if using a render-buffer instead. */
@@ -144,7 +129,7 @@ void EEVEE_subsurface_output_init(EEVEE_ViewLayerData *UNUSED(sldata),
   /* Clear texture.
    * Due to the late initialization of the SSS it can happen that the `taa_current_sample` is
    * already higher than one. This is noticeable when loading a file that has the diffuse light
-   * pass in look dev mode active. `texture_created` will make sure that newly created textures
+   * pass in look-dev mode active. `texture_created` will make sure that newly created textures
    * are cleared. */
   if (effects->taa_current_sample == 1 || texture_created) {
     const float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -192,13 +177,13 @@ void EEVEE_subsurface_add_pass(EEVEE_ViewLayerData *sldata,
       gpumat, stl->effects->sss_sample_count, &sss_tex_profile);
 
   if (!sss_profile) {
-    BLI_assert(0 && "SSS pass requested but no SSS data was found");
+    BLI_assert_msg(0, "SSS pass requested but no SSS data was found");
     return;
   }
 
   /* Limit of 8 bit stencil buffer. ID 255 is refraction. */
   if (effects->sss_surface_count >= 254) {
-    /* TODO : display message. */
+    /* TODO: display message. */
     printf("Error: Too many different Subsurface shader in the scene.\n");
     return;
   }
@@ -315,7 +300,7 @@ void EEVEE_subsurface_compute(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
 
     if (!DRW_pass_is_empty(psl->sss_translucency_ps)) {
       /* We sample the shadow-maps using normal sampler. We need to disable Comparison mode.
-       * TODO(fclem): avoid this by using sampler objects.*/
+       * TODO(fclem): avoid this by using sampler objects. */
       GPU_texture_compare_mode(sldata->shadow_cube_pool, false);
       GPU_texture_compare_mode(sldata->shadow_cascade_pool, false);
 

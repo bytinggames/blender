@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -144,10 +130,10 @@ class Map {
   uint64_t slot_mask_;
 
   /** This is called to hash incoming keys. */
-  Hash hash_;
+  BLI_NO_UNIQUE_ADDRESS Hash hash_;
 
   /** This is called to check equality of two keys. */
-  IsEqual is_equal_;
+  BLI_NO_UNIQUE_ADDRESS IsEqual is_equal_;
 
   /** The max load factor is 1/2 = 50% by default. */
 #define LOAD_FACTOR 1, 2
@@ -248,7 +234,7 @@ class Map {
     this->add_new_as(std::move(key), std::move(value));
   }
   template<typename ForwardKey, typename... ForwardValue>
-  void add_new_as(ForwardKey &&key, ForwardValue &&... value)
+  void add_new_as(ForwardKey &&key, ForwardValue &&...value)
   {
     this->add_new__impl(
         std::forward<ForwardKey>(key), hash_(key), std::forward<ForwardValue>(value)...);
@@ -278,7 +264,7 @@ class Map {
     return this->add_as(std::move(key), std::move(value));
   }
   template<typename ForwardKey, typename... ForwardValue>
-  bool add_as(ForwardKey &&key, ForwardValue &&... value)
+  bool add_as(ForwardKey &&key, ForwardValue &&...value)
   {
     return this->add__impl(
         std::forward<ForwardKey>(key), hash_(key), std::forward<ForwardValue>(value)...);
@@ -308,7 +294,7 @@ class Map {
     return this->add_overwrite_as(std::move(key), std::move(value));
   }
   template<typename ForwardKey, typename... ForwardValue>
-  bool add_overwrite_as(ForwardKey &&key, ForwardValue &&... value)
+  bool add_overwrite_as(ForwardKey &&key, ForwardValue &&...value)
   {
     return this->add_overwrite__impl(
         std::forward<ForwardKey>(key), hash_(key), std::forward<ForwardValue>(value)...);
@@ -414,7 +400,7 @@ class Map {
     return this->pop_default_as(key, std::move(default_value));
   }
   template<typename ForwardKey, typename... ForwardValue>
-  Value pop_default_as(const ForwardKey &key, ForwardValue &&... default_value)
+  Value pop_default_as(const ForwardKey &key, ForwardValue &&...default_value)
   {
     Slot *slot = this->lookup_slot_ptr(key, hash_(key));
     if (slot == nullptr) {
@@ -526,7 +512,7 @@ class Map {
     return this->lookup_default_as(key, default_value);
   }
   template<typename ForwardKey, typename... ForwardValue>
-  Value lookup_default_as(const ForwardKey &key, ForwardValue &&... default_value) const
+  Value lookup_default_as(const ForwardKey &key, ForwardValue &&...default_value) const
   {
     const Value *ptr = this->lookup_ptr_as(key);
     if (ptr != nullptr) {
@@ -558,7 +544,7 @@ class Map {
     return this->lookup_or_add_as(std::move(key), std::move(value));
   }
   template<typename ForwardKey, typename... ForwardValue>
-  Value &lookup_or_add_as(ForwardKey &&key, ForwardValue &&... value)
+  Value &lookup_or_add_as(ForwardKey &&key, ForwardValue &&...value)
   {
     return this->lookup_or_add__impl(
         std::forward<ForwardKey>(key), hash_(key), std::forward<ForwardValue>(value)...);
@@ -602,6 +588,37 @@ class Map {
   template<typename ForwardKey> Value &lookup_or_add_default_as(ForwardKey &&key)
   {
     return this->lookup_or_add_cb_as(std::forward<ForwardKey>(key), []() { return Value(); });
+  }
+
+  /**
+   * Returns the key that is stored in the set that compares equal to the given key. This invokes
+   * undefined behavior when the key is not in the map.
+   */
+  const Key &lookup_key(const Key &key) const
+  {
+    return this->lookup_key_as(key);
+  }
+  template<typename ForwardKey> const Key &lookup_key_as(const ForwardKey &key) const
+  {
+    const Slot &slot = this->lookup_slot(key, hash_(key));
+    return *slot.key();
+  }
+
+  /**
+   * Returns a pointer to the key that is stored in the map that compares equal to the given key.
+   * If the key is not in the map, null is returned.
+   */
+  const Key *lookup_key_ptr(const Key &key) const
+  {
+    return this->lookup_key_ptr_as(key);
+  }
+  template<typename ForwardKey> const Key *lookup_key_ptr_as(const ForwardKey &key) const
+  {
+    const Slot *slot = this->lookup_slot_ptr(key, hash_(key));
+    if (slot == nullptr) {
+      return nullptr;
+    }
+    return slot->key();
   }
 
   /**
@@ -652,10 +669,10 @@ class Map {
       return *this;
     }
 
-    BaseIterator operator++(int) const
+    BaseIterator operator++(int)
     {
       BaseIterator copied_iterator = *this;
-      ++copied_iterator;
+      ++(*this);
       return copied_iterator;
     }
 
@@ -870,6 +887,25 @@ class Map {
   }
 
   /**
+   * Remove all key-value-pairs for that the given predicate is true.
+   *
+   * This is similar to std::erase_if.
+   */
+  template<typename Predicate> void remove_if(Predicate &&predicate)
+  {
+    for (Slot &slot : slots_) {
+      if (slot.is_occupied()) {
+        const Key &key = *slot.key();
+        Value &value = *slot.value();
+        if (predicate(MutableItem{key, value})) {
+          slot.remove();
+          removed_slots_++;
+        }
+      }
+    }
+  }
+
+  /**
    * Print common statistics like size and collision count. This is useful for debugging purposes.
    */
   void print_stats(StringRef name = "") const
@@ -926,7 +962,7 @@ class Map {
    */
   int64_t size_in_bytes() const
   {
-    return static_cast<int64_t>(sizeof(Slot) * slots_.size());
+    return int64_t(sizeof(Slot) * slots_.size());
   }
 
   /**
@@ -945,7 +981,13 @@ class Map {
    */
   void clear()
   {
-    this->noexcept_reset();
+    for (Slot &slot : slots_) {
+      slot.~Slot();
+      new (&slot) Slot();
+    }
+
+    removed_slots_ = 0;
+    occupied_and_removed_slots_ = 0;
   }
 
   /**
@@ -964,7 +1006,7 @@ class Map {
     max_load_factor_.compute_total_and_usable_slots(
         SlotArray::inline_buffer_capacity(), min_usable_slots, &total_slots, &usable_slots);
     BLI_assert(total_slots >= 1);
-    const uint64_t new_slot_mask = static_cast<uint64_t>(total_slots) - 1;
+    const uint64_t new_slot_mask = uint64_t(total_slots) - 1;
 
     /**
      * Optimize the case when the map was empty beforehand. We can avoid some copies here.
@@ -1027,7 +1069,7 @@ class Map {
   }
 
   template<typename ForwardKey, typename... ForwardValue>
-  void add_new__impl(ForwardKey &&key, uint64_t hash, ForwardValue &&... value)
+  void add_new__impl(ForwardKey &&key, uint64_t hash, ForwardValue &&...value)
   {
     BLI_assert(!this->contains_as(key));
 
@@ -1044,7 +1086,7 @@ class Map {
   }
 
   template<typename ForwardKey, typename... ForwardValue>
-  bool add__impl(ForwardKey &&key, uint64_t hash, ForwardValue &&... value)
+  bool add__impl(ForwardKey &&key, uint64_t hash, ForwardValue &&...value)
   {
     this->ensure_can_add();
 
@@ -1117,7 +1159,7 @@ class Map {
   }
 
   template<typename ForwardKey, typename... ForwardValue>
-  Value &lookup_or_add__impl(ForwardKey &&key, uint64_t hash, ForwardValue &&... value)
+  Value &lookup_or_add__impl(ForwardKey &&key, uint64_t hash, ForwardValue &&...value)
   {
     this->ensure_can_add();
 
@@ -1135,7 +1177,7 @@ class Map {
   }
 
   template<typename ForwardKey, typename... ForwardValue>
-  bool add_overwrite__impl(ForwardKey &&key, uint64_t hash, ForwardValue &&... value)
+  bool add_overwrite__impl(ForwardKey &&key, uint64_t hash, ForwardValue &&...value)
   {
     auto create_func = [&](Value *ptr) {
       new (static_cast<void *>(ptr)) Value(std::forward<ForwardValue>(value)...);
@@ -1238,7 +1280,7 @@ template<typename Key, typename Value> class StdUnorderedMapWrapper {
  public:
   int64_t size() const
   {
-    return static_cast<int64_t>(map_.size());
+    return int64_t(map_.size());
   }
 
   bool is_empty() const
@@ -1252,13 +1294,13 @@ template<typename Key, typename Value> class StdUnorderedMapWrapper {
   }
 
   template<typename ForwardKey, typename... ForwardValue>
-  void add_new(ForwardKey &&key, ForwardValue &&... value)
+  void add_new(ForwardKey &&key, ForwardValue &&...value)
   {
     map_.insert({std::forward<ForwardKey>(key), Value(std::forward<ForwardValue>(value)...)});
   }
 
   template<typename ForwardKey, typename... ForwardValue>
-  bool add(ForwardKey &&key, ForwardValue &&... value)
+  bool add(ForwardKey &&key, ForwardValue &&...value)
   {
     return map_
         .insert({std::forward<ForwardKey>(key), Value(std::forward<ForwardValue>(value)...)})
@@ -1272,7 +1314,7 @@ template<typename Key, typename Value> class StdUnorderedMapWrapper {
 
   bool remove(const Key &key)
   {
-    return (bool)map_.erase(key);
+    return bool(map_.erase(key));
   }
 
   Value &lookup(const Key &key)
@@ -1290,7 +1332,7 @@ template<typename Key, typename Value> class StdUnorderedMapWrapper {
     map_.clear();
   }
 
-  void print_stats(StringRef UNUSED(name) = "") const
+  void print_stats(StringRef /*name*/ = "") const
   {
   }
 };

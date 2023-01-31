@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2019, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2019 Blender Foundation. */
 
 /** \file
  * \ingroup EEVEE
@@ -123,7 +108,6 @@ void EEVEE_shadows_cache_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
   }
 }
 
-/* Make that object update shadow casting lights inside its influence bounding box. */
 void EEVEE_shadows_caster_register(EEVEE_ViewLayerData *sldata, Object *ob)
 {
   EEVEE_LightsInfo *linfo = sldata->lights;
@@ -163,13 +147,13 @@ void EEVEE_shadows_caster_register(EEVEE_ViewLayerData *sldata, Object *ob)
   }
 
   /* Update World AABB in frontbuffer. */
-  BoundBox *bb = BKE_object_boundbox_get(ob);
+  const BoundBox *bb = BKE_object_boundbox_get(ob);
   float min[3], max[3];
   INIT_MINMAX(min, max);
   for (int i = 0; i < 8; i++) {
     float vec[3];
     copy_v3_v3(vec, bb->vec[i]);
-    mul_m4_v3(ob->obmat, vec);
+    mul_m4_v3(ob->object_to_world, vec);
     minmax_v3v3_v3(min, max, vec);
   }
 
@@ -193,7 +177,7 @@ void EEVEE_shadows_caster_register(EEVEE_ViewLayerData *sldata, Object *ob)
 static bool sphere_bbox_intersect(const BoundSphere *bs, const EEVEE_BoundBox *bb)
 {
   /* We are testing using a rougher AABB vs AABB test instead of full AABB vs Sphere. */
-  /* TODO test speed with AABB vs Sphere. */
+  /* TODO: test speed with AABB vs Sphere. */
   bool x = fabsf(bb->center[0] - bs->center[0]) <= (bb->halfdim[0] + bs->radius);
   bool y = fabsf(bb->center[1] - bs->center[1]) <= (bb->halfdim[1] + bs->radius);
   bool z = fabsf(bb->center[2] - bs->center[2]) <= (bb->halfdim[2] + bs->radius);
@@ -247,7 +231,7 @@ void EEVEE_shadows_update(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
     sldata->shadow_fb = GPU_framebuffer_create("shadow_fb");
   }
 
-  /* Gather all light own update bits. to avoid costly intersection check.  */
+  /* Gather all light own update bits. to avoid costly intersection check. */
   for (int j = 0; j < linfo->cube_len; j++) {
     const EEVEE_Light *evli = linfo->light_data + linfo->shadow_cube_light_indices[j];
     /* Setup shadow cube in UBO and tag for update if necessary. */
@@ -289,18 +273,15 @@ void EEVEE_shadows_update(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
 
   /* Resize shcasters buffers if too big. */
   if (frontbuffer->alloc_count - frontbuffer->count > SH_CASTER_ALLOC_CHUNK) {
-    frontbuffer->alloc_count = (frontbuffer->count / SH_CASTER_ALLOC_CHUNK) *
+    frontbuffer->alloc_count = divide_ceil_u(max_ii(1, frontbuffer->count),
+                                             SH_CASTER_ALLOC_CHUNK) *
                                SH_CASTER_ALLOC_CHUNK;
-    frontbuffer->alloc_count += (frontbuffer->count % SH_CASTER_ALLOC_CHUNK != 0) ?
-                                    SH_CASTER_ALLOC_CHUNK :
-                                    0;
     frontbuffer->bbox = MEM_reallocN(frontbuffer->bbox,
                                      sizeof(EEVEE_BoundBox) * frontbuffer->alloc_count);
     BLI_BITMAP_RESIZE(frontbuffer->update, frontbuffer->alloc_count);
   }
 }
 
-/* this refresh lights shadow buffers */
 void EEVEE_shadows_draw(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata, DRWView *view)
 {
   EEVEE_LightsInfo *linfo = sldata->lights;
@@ -361,11 +342,7 @@ void EEVEE_shadow_output_init(EEVEE_ViewLayerData *sldata,
   EEVEE_FramebufferList *fbl = vedata->fbl;
   EEVEE_TextureList *txl = vedata->txl;
   EEVEE_PassList *psl = vedata->psl;
-  EEVEE_StorageList *stl = vedata->stl;
-  EEVEE_EffectsInfo *effects = stl->effects;
   DefaultTextureList *dtxl = DRW_viewport_texture_list_get();
-
-  const float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
   /* Create FrameBuffer. */
   const eGPUTextureFormat texture_format = GPU_R32F;
@@ -373,12 +350,6 @@ void EEVEE_shadow_output_init(EEVEE_ViewLayerData *sldata,
 
   GPU_framebuffer_ensure_config(&fbl->shadow_accum_fb,
                                 {GPU_ATTACHMENT_NONE, GPU_ATTACHMENT_TEXTURE(txl->shadow_accum)});
-
-  /* Clear texture. */
-  if (effects->taa_current_sample == 1) {
-    GPU_framebuffer_bind(fbl->shadow_accum_fb);
-    GPU_framebuffer_clear_color(fbl->shadow_accum_fb, clear);
-  }
 
   /* Create Pass and shgroup. */
   DRW_PASS_CREATE(psl->shadow_accum_pass,
@@ -404,9 +375,17 @@ void EEVEE_shadow_output_accumulate(EEVEE_ViewLayerData *UNUSED(sldata), EEVEE_D
 {
   EEVEE_FramebufferList *fbl = vedata->fbl;
   EEVEE_PassList *psl = vedata->psl;
+  EEVEE_EffectsInfo *effects = vedata->stl->effects;
 
   if (fbl->shadow_accum_fb != NULL) {
     GPU_framebuffer_bind(fbl->shadow_accum_fb);
+
+    /* Clear texture. */
+    if (effects->taa_current_sample == 1) {
+      const float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+      GPU_framebuffer_clear_color(fbl->shadow_accum_fb, clear);
+    }
+
     DRW_draw_pass(psl->shadow_accum_pass);
 
     /* Restore */

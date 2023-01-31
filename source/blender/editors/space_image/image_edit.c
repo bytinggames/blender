@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spimage
@@ -34,8 +18,10 @@
 #include "BKE_editmesh.h"
 #include "BKE_global.h"
 #include "BKE_image.h"
+#include "BKE_layer.h"
 #include "BKE_lib_id.h"
 #include "BKE_main.h"
+#include "BKE_scene.h"
 
 #include "IMB_imbuf_types.h"
 
@@ -51,21 +37,19 @@
 #include "WM_api.h"
 #include "WM_types.h"
 
-/* note; image_panel_properties() uses pointer to sima->image directly */
-Image *ED_space_image(SpaceImage *sima)
+/* NOTE: image_panel_properties() uses pointer to sima->image directly. */
+Image *ED_space_image(const SpaceImage *sima)
 {
   return sima->image;
 }
 
-void ED_space_image_set(Main *bmain, SpaceImage *sima, Object *obedit, Image *ima, bool automatic)
+void ED_space_image_set(Main *bmain, SpaceImage *sima, Image *ima, bool automatic)
 {
   /* Automatically pin image when manually assigned, otherwise it follows object. */
   if (!automatic && sima->image != ima && sima->mode == SI_MODE_UV) {
     sima->pin = true;
   }
 
-  /* change the space ima after because uvedit_face_visible_test uses the space ima
-   * to check if the face is displayed in UV-localview */
   sima->image = ima;
 
   if (ima == NULL || ima->type == IMA_TYPE_R_RESULT || ima->type == IMA_TYPE_COMPOSITE) {
@@ -79,10 +63,6 @@ void ED_space_image_set(Main *bmain, SpaceImage *sima, Object *obedit, Image *im
   }
 
   id_us_ensure_real((ID *)sima->image);
-
-  if (obedit) {
-    WM_main_add_notifier(NC_GEOM | ND_DATA, obedit->data);
-  }
 
   WM_main_add_notifier(NC_SPACE | ND_SPACE_IMAGE, NULL);
 }
@@ -119,7 +99,7 @@ void ED_space_image_auto_set(const bContext *C, SpaceImage *sima)
   }
 }
 
-Mask *ED_space_image_get_mask(SpaceImage *sima)
+Mask *ED_space_image_get_mask(const SpaceImage *sima)
 {
   return sima->mask_info.mask;
 }
@@ -141,8 +121,10 @@ ImBuf *ED_space_image_acquire_buffer(SpaceImage *sima, void **r_lock, int tile)
   ImBuf *ibuf;
 
   if (sima && sima->image) {
+    const Image *image = sima->image;
+
 #if 0
-    if (sima->image->type == IMA_TYPE_R_RESULT && BIF_show_render_spare()) {
+    if (image->type == IMA_TYPE_R_RESULT && BIF_show_render_spare()) {
       return BIF_render_spare_imbuf();
     }
     else
@@ -154,6 +136,12 @@ ImBuf *ED_space_image_acquire_buffer(SpaceImage *sima, void **r_lock, int tile)
     }
 
     if (ibuf) {
+      if (image->type == IMA_TYPE_R_RESULT && ibuf->x != 0 && ibuf->y != 0) {
+        /* Render result might be lazily allocated. Return ibuf without buffers to indicate that
+         * there is image buffer but it has no data yet. */
+        return ibuf;
+      }
+
       if (ibuf->rect || ibuf->rect_float) {
         return ibuf;
       }
@@ -175,7 +163,6 @@ void ED_space_image_release_buffer(SpaceImage *sima, ImBuf *ibuf, void *lock)
   }
 }
 
-/* Get the SpaceImage flag that is valid for the given ibuf. */
 int ED_space_image_get_display_channel_mask(ImBuf *ibuf)
 {
   int result = (SI_USE_ALPHA | SI_SHOW_ALPHA | SI_SHOW_ZBUF | SI_SHOW_R | SI_SHOW_G | SI_SHOW_B);
@@ -227,13 +214,7 @@ void ED_space_image_get_size(SpaceImage *sima, int *r_width, int *r_height)
   }
   else if (sima->image && sima->image->type == IMA_TYPE_R_RESULT && scene) {
     /* not very important, just nice */
-    *r_width = (scene->r.xsch * scene->r.size) / 100;
-    *r_height = (scene->r.ysch * scene->r.size) / 100;
-
-    if ((scene->r.mode & R_BORDER) && (scene->r.mode & R_CROP)) {
-      *r_width *= BLI_rctf_size_x(&scene->r.border);
-      *r_height *= BLI_rctf_size_y(&scene->r.border);
-    }
+    BKE_render_resolution(&scene->r, true, r_width, r_height);
   }
   /* I know a bit weak... but preview uses not actual image size */
   // XXX else if (image_preview_active(sima, r_width, r_height));
@@ -316,7 +297,6 @@ void ED_image_get_uv_aspect(Image *ima, ImageUser *iuser, float *r_aspx, float *
   }
 }
 
-/* takes event->mval */
 void ED_image_mouse_pos(SpaceImage *sima, const ARegion *region, const int mval[2], float co[2])
 {
   int sx, sy, width, height;
@@ -375,10 +355,6 @@ void ED_image_point_pos__reverse(SpaceImage *sima,
   r_co[1] = (co[1] * height * zoomy) + (float)sy;
 }
 
-/**
- * This is more a user-level functionality, for going to next/prev used slot,
- * Stepping onto the last unused slot too.
- */
 bool ED_image_slot_cycle(struct Image *image, int direction)
 {
   const int cur = image->render_slot;
@@ -407,8 +383,8 @@ bool ED_image_slot_cycle(struct Image *image, int direction)
     image->render_slot = ((cur == 1) ? 0 : 1);
   }
 
-  if ((cur != image->render_slot)) {
-    image->gpuflag |= IMA_GPU_REFRESH;
+  if (cur != image->render_slot) {
+    BKE_image_partial_update_mark_full_update(image);
   }
   return (cur != image->render_slot);
 }
@@ -432,7 +408,7 @@ void ED_space_image_scopes_update(const struct bContext *C,
   /* We also don't update scopes of render result during render. */
   if (G.is_rendering) {
     const Image *image = sima->image;
-    if (image != NULL && (image->type == IMA_TYPE_R_RESULT || image->type == IMA_TYPE_COMPOSITE)) {
+    if (image != NULL && ELEM(image->type, IMA_TYPE_R_RESULT, IMA_TYPE_COMPOSITE)) {
       return;
     }
   }
@@ -443,12 +419,12 @@ void ED_space_image_scopes_update(const struct bContext *C,
                     &scene->display_settings);
 }
 
-bool ED_space_image_show_render(SpaceImage *sima)
+bool ED_space_image_show_render(const SpaceImage *sima)
 {
   return (sima->image && ELEM(sima->image->type, IMA_TYPE_R_RESULT, IMA_TYPE_COMPOSITE));
 }
 
-bool ED_space_image_show_paint(SpaceImage *sima)
+bool ED_space_image_show_paint(const SpaceImage *sima)
 {
   if (ED_space_image_show_render(sima)) {
     return false;
@@ -457,7 +433,7 @@ bool ED_space_image_show_paint(SpaceImage *sima)
   return (sima->mode == SI_MODE_PAINT);
 }
 
-bool ED_space_image_show_uvedit(SpaceImage *sima, Object *obedit)
+bool ED_space_image_show_uvedit(const SpaceImage *sima, Object *obedit)
 {
   if (sima) {
     if (ED_space_image_show_render(sima)) {
@@ -480,7 +456,6 @@ bool ED_space_image_show_uvedit(SpaceImage *sima, Object *obedit)
   return false;
 }
 
-/* matches clip function */
 bool ED_space_image_check_show_maskedit(SpaceImage *sima, Object *obedit)
 {
   /* check editmode - this is reserved for UV editing */
@@ -496,12 +471,24 @@ bool ED_space_image_maskedit_poll(bContext *C)
   SpaceImage *sima = CTX_wm_space_image(C);
 
   if (sima) {
+    Scene *scene = CTX_data_scene(C);
     ViewLayer *view_layer = CTX_data_view_layer(C);
-    Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+    BKE_view_layer_synced_ensure(scene, view_layer);
+    Object *obedit = BKE_view_layer_edit_object_get(view_layer);
     return ED_space_image_check_show_maskedit(sima, obedit);
   }
 
   return false;
+}
+
+bool ED_space_image_maskedit_visible_splines_poll(bContext *C)
+{
+  if (!ED_space_image_maskedit_poll(C)) {
+    return false;
+  }
+
+  const SpaceImage *space_image = CTX_wm_space_image(C);
+  return space_image->mask_info.draw_flag & MASK_DRAWFLAG_SPLINE;
 }
 
 bool ED_space_image_paint_curve(const bContext *C)
@@ -527,6 +514,16 @@ bool ED_space_image_maskedit_mask_poll(bContext *C)
   }
 
   return false;
+}
+
+bool ED_space_image_maskedit_mask_visible_splines_poll(bContext *C)
+{
+  if (!ED_space_image_maskedit_mask_poll(C)) {
+    return false;
+  }
+
+  const SpaceImage *space_image = CTX_wm_space_image(C);
+  return space_image->mask_info.draw_flag & MASK_DRAWFLAG_SPLINE;
 }
 
 bool ED_space_image_cursor_poll(bContext *C)

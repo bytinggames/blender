@@ -1,27 +1,7 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# The Original Code is Copyright (C) 2016, Blender Foundation
-# All rights reserved.
-#
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright 2016 Blender Foundation. All rights reserved.
 # The Original Code is: all of this file.
-#
-# Contributor(s): Sebastian Barschkis (sebbas)
-#
-# ***** END GPL LICENSE BLOCK *****
+# Contributor(s): Sebastian Barschkis (sebbas).
 
 # Mantaflow triggers a clang-cl compiler error with versions before 9.0.1
 # Since mantaflow does not appear to be using OpenMP at this point in time,
@@ -45,7 +25,8 @@ set(MANTAVERSION "0.13")
 add_definitions(-DWITH_FLUID=1)
 
 # Compile Mantaflow dependencies too (e.g. cnpy for numpy file IO).
-# Make sure that dependencies exist before enabling this option by updating the source files in extern/
+# Make sure that dependencies exist before enabling this option
+# by updating the source files in `extern/`.
 set(WITH_MANTA_DEPENDENCIES 0)
 
 # Enable Mantaflow numpy support
@@ -279,3 +260,10 @@ set(LIB
 )
 
 blender_add_lib(extern_mantaflow "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")
+
+# The VDB libs above are only added to as INTERFACE libs by blender_add_lib,
+# meaning extern_mantaflow itself actually does not have a dependency on the
+# openvdb libraries, and CMAKE is free to link the vdb libs before
+# extern_mantaflow causing linker errors on linux. By explicitly declaring
+# a dependency here, cmake will do the right thing.
+target_link_libraries(extern_mantaflow PRIVATE ${OPENVDB_LIBRARIES})

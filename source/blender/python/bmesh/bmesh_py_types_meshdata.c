@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2012 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2012 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup pybmesh
@@ -72,6 +56,7 @@ static int bpy_bmloopuv_uv_set(BPy_BMLoopUV *self, PyObject *value, void *UNUSED
 
 PyDoc_STRVAR(bpy_bmloopuv_flag__pin_uv_doc, "UV pin state.\n\n:type: boolean");
 PyDoc_STRVAR(bpy_bmloopuv_flag__select_doc, "UV select state.\n\n:type: boolean");
+PyDoc_STRVAR(bpy_bmloopuv_flag__select_edge_doc, "UV edge select state.\n\n:type: boolean");
 
 static PyObject *bpy_bmloopuv_flag_get(BPy_BMLoopUV *self, void *flag_p)
 {
@@ -97,7 +82,7 @@ static int bpy_bmloopuv_flag_set(BPy_BMLoopUV *self, PyObject *value, void *flag
 }
 
 static PyGetSetDef bpy_bmloopuv_getseters[] = {
-    /* attributes match rna_def_mloopuv  */
+    /* attributes match rna_def_mloopuv. */
     {"uv", (getter)bpy_bmloopuv_uv_get, (setter)bpy_bmloopuv_uv_set, bpy_bmloopuv_uv_doc, NULL},
     {"pin_uv",
      (getter)bpy_bmloopuv_flag_get,
@@ -109,6 +94,11 @@ static PyGetSetDef bpy_bmloopuv_getseters[] = {
      (setter)bpy_bmloopuv_flag_set,
      bpy_bmloopuv_flag__select_doc,
      (void *)MLOOPUV_VERTSEL},
+    {"select_edge",
+     (getter)bpy_bmloopuv_flag_get,
+     (setter)bpy_bmloopuv_flag_set,
+     bpy_bmloopuv_flag__select_edge_doc,
+     (void *)MLOOPUV_EDGESEL},
 
     {NULL, NULL, NULL, NULL, NULL} /* Sentinel */
 };
@@ -207,7 +197,7 @@ static int bpy_bmvertskin_flag_set(BPy_BMVertSkin *self, PyObject *value, void *
 }
 
 static PyGetSetDef bpy_bmvertskin_getseters[] = {
-    /* attributes match rna_mesh_gen  */
+    /* attributes match rna_mesh_gen. */
     {"radius",
      (getter)bpy_bmvertskin_radius_get,
      (setter)bpy_bmvertskin_radius_set,
@@ -308,7 +298,7 @@ static int mathutils_bmloopcol_set(BaseMathObject *bmo, int UNUSED(subtype))
 
 static int mathutils_bmloopcol_get_index(BaseMathObject *bmo, int subtype, int UNUSED(index))
 {
-  /* lazy, avoid repeteing the case statement */
+  /* Lazy, avoid repeating the case statement. */
   if (mathutils_bmloopcol_get(bmo, subtype) == -1) {
     return -1;
   }
@@ -319,7 +309,7 @@ static int mathutils_bmloopcol_set_index(BaseMathObject *bmo, int subtype, int i
 {
   const float f = bmo->data[index];
 
-  /* lazy, avoid repeteing the case statement */
+  /* Lazy, avoid repeating the case statement. */
   if (mathutils_bmloopcol_get(bmo, subtype) == -1) {
     return -1;
   }
@@ -401,7 +391,7 @@ typedef struct BPy_BMDeformVert {
 /* Mapping Protocols
  * ================= */
 
-static int bpy_bmdeformvert_len(BPy_BMDeformVert *self)
+static Py_ssize_t bpy_bmdeformvert_len(BPy_BMDeformVert *self)
 {
   return self->data->totweight;
 }
@@ -443,7 +433,7 @@ static int bpy_bmdeformvert_ass_subscript(BPy_BMDeformVert *self, PyObject *key,
     }
 
     if (value) {
-      /* dvert[group_index] = 0.5 */
+      /* Handle `dvert[group_index] = 0.5`. */
       if (i < 0) {
         PyErr_SetString(PyExc_KeyError,
                         "BMDeformVert[key] = x: "
@@ -453,7 +443,7 @@ static int bpy_bmdeformvert_ass_subscript(BPy_BMDeformVert *self, PyObject *key,
 
       MDeformWeight *dw = BKE_defvert_ensure_index(self->data, i);
       const float f = PyFloat_AsDouble(value);
-      if (f == -1 && PyErr_Occurred()) {  // parsed key not a number
+      if (f == -1 && PyErr_Occurred()) { /* Parsed key not a number. */
         PyErr_SetString(PyExc_TypeError,
                         "BMDeformVert[key] = x: "
                         "assigned value not a number");
@@ -463,7 +453,7 @@ static int bpy_bmdeformvert_ass_subscript(BPy_BMDeformVert *self, PyObject *key,
       dw->weight = clamp_f(f, 0.0f, 1.0f);
     }
     else {
-      /* del dvert[group_index] */
+      /* Handle `del dvert[group_index]`. */
       MDeformWeight *dw = BKE_defvert_find_index(self->data, i);
 
       if (dw == NULL) {
@@ -500,7 +490,7 @@ static PySequenceMethods bpy_bmdeformvert_as_sequence = {
     NULL,                          /* sq_concat */
     NULL,                          /* sq_repeat */
 
-    /* Note: if this is set #PySequence_Check() returns True,
+    /* NOTE: if this is set #PySequence_Check() returns True,
      * but in this case we don't want to be treated as a seq. */
     NULL, /* sq_item */
 
@@ -683,7 +673,6 @@ PyObject *BPy_BMDeformVert_CreatePyObject(struct MDeformVert *dvert)
 
 /* --- End Mesh Deform Vert --- */
 
-/* call to init all types */
 void BPy_BM_init_types_meshdata(void)
 {
   bm_init_types_bmloopuv();

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edinterface
@@ -27,6 +13,7 @@
 
 #include "DNA_brush_types.h"
 #include "DNA_cachefile_types.h"
+#include "DNA_collection_types.h"
 #include "DNA_constraint_types.h"
 #include "DNA_curveprofile_types.h"
 #include "DNA_gpencil_modifier_types.h"
@@ -84,7 +71,10 @@
 #include "ED_screen.h"
 #include "ED_undo.h"
 
+#include "RE_engine.h"
+
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "WM_api.h"
 #include "WM_types.h"
@@ -344,7 +334,7 @@ typedef struct TemplateID {
   float scale;
 } TemplateID;
 
-/* Search browse menu, assign  */
+/* Search browse menu, assign. */
 static void template_ID_set_property_exec_fn(bContext *C, void *arg_template, void *item)
 {
   TemplateID *template_ui = (TemplateID *)arg_template;
@@ -395,7 +385,7 @@ static bool id_search_add(const bContext *C, TemplateID *template_ui, uiSearchIt
   char name_ui[MAX_ID_FULL_NAME_UI];
   int iconid = ui_id_icon_get(C, id, template_ui->preview);
   const bool use_lib_prefix = template_ui->preview || iconid;
-  const bool has_sep_char = (id->lib != NULL);
+  const bool has_sep_char = ID_IS_LINKED(id);
 
   /* When using previews, the library hint (linked, overridden, missing) is added with a
    * character prefix, otherwise we can use a icon. */
@@ -433,7 +423,7 @@ static void id_search_cb(const bContext *C,
   /* ID listbase */
   LISTBASE_FOREACH (ID *, id, lb) {
     if (id_search_allows_id(template_ui, flag, id, str)) {
-      BLI_string_search_add(search, id->name + 2, id);
+      BLI_string_search_add(search, id->name + 2, id, 0);
     }
   }
 
@@ -468,7 +458,7 @@ static void id_search_cb_tagged(const bContext *C,
   LISTBASE_FOREACH (ID *, id, lb) {
     if (id->tag & LIB_TAG_DOIT) {
       if (id_search_allows_id(template_ui, flag, id, str)) {
-        BLI_string_search_add(search, id->name + 2, id);
+        BLI_string_search_add(search, id->name + 2, id, 0);
       }
       id->tag &= ~LIB_TAG_DOIT;
     }
@@ -581,9 +571,11 @@ static uiBlock *id_search_menu(bContext *C, ARegion *region, void *arg_litem)
 /** \name ID Template
  * \{ */
 
-/* This is for browsing and editing the ID-blocks used */
+static void template_id_cb(bContext *C, void *arg_litem, void *arg_event);
 
-/* for new/open operators */
+/**
+ * This is for browsing and editing the ID-blocks used.
+ */
 void UI_context_active_but_prop_get_templateID(bContext *C,
                                                PointerRNA *r_ptr,
                                                PropertyRNA **r_prop)
@@ -593,10 +585,324 @@ void UI_context_active_but_prop_get_templateID(bContext *C,
   memset(r_ptr, 0, sizeof(*r_ptr));
   *r_prop = NULL;
 
-  if (but && but->func_argN) {
+  if (but && (but->funcN == template_id_cb) && but->func_argN) {
     TemplateID *template_ui = but->func_argN;
     *r_ptr = template_ui->ptr;
     *r_prop = template_ui->prop;
+  }
+}
+
+static void template_id_liboverride_hierarchy_collection_root_find_recursive(
+    Collection *collection,
+    const int parent_level,
+    Collection **r_collection_parent_best,
+    int *r_parent_level_best)
+{
+  if (!ID_IS_LINKED(collection) && !ID_IS_OVERRIDE_LIBRARY_REAL(collection)) {
+    return;
+  }
+  if (ID_IS_OVERRIDABLE_LIBRARY(collection) || ID_IS_OVERRIDE_LIBRARY_REAL(collection)) {
+    if (parent_level > *r_parent_level_best) {
+      *r_parent_level_best = parent_level;
+      *r_collection_parent_best = collection;
+    }
+  }
+  for (CollectionParent *iter = collection->parents.first; iter != NULL; iter = iter->next) {
+    if (iter->collection->id.lib != collection->id.lib && ID_IS_LINKED(iter->collection)) {
+      continue;
+    }
+    template_id_liboverride_hierarchy_collection_root_find_recursive(
+        iter->collection, parent_level + 1, r_collection_parent_best, r_parent_level_best);
+  }
+}
+
+static void template_id_liboverride_hierarchy_collections_tag_recursive(
+    Collection *root_collection, ID *target_id, const bool do_parents)
+{
+  root_collection->id.tag |= LIB_TAG_DOIT;
+
+  /* Tag all local parents of the root collection, so that usages of the root collection and other
+   * linked ones can be replaced by the local overrides in those parents too. */
+  if (do_parents) {
+    for (CollectionParent *iter = root_collection->parents.first; iter != NULL;
+         iter = iter->next) {
+      if (ID_IS_LINKED(iter->collection)) {
+        continue;
+      }
+      iter->collection->id.tag |= LIB_TAG_DOIT;
+    }
+  }
+
+  for (CollectionChild *iter = root_collection->children.first; iter != NULL; iter = iter->next) {
+    if (iter->collection->id.lib != root_collection->id.lib && ID_IS_LINKED(root_collection)) {
+      continue;
+    }
+    if (ID_IS_LINKED(iter->collection) && iter->collection->id.lib != target_id->lib) {
+      continue;
+    }
+    if (GS(target_id->name) == ID_OB &&
+        !BKE_collection_has_object_recursive(iter->collection, (Object *)target_id)) {
+      continue;
+    }
+    if (GS(target_id->name) == ID_GR &&
+        !BKE_collection_has_collection(iter->collection, (Collection *)target_id)) {
+      continue;
+    }
+    template_id_liboverride_hierarchy_collections_tag_recursive(
+        iter->collection, target_id, false);
+  }
+}
+
+ID *ui_template_id_liboverride_hierarchy_make(
+    bContext *C, Main *bmain, ID *owner_id, ID *id, const char **r_undo_push_label)
+{
+  const char *undo_push_label;
+  if (r_undo_push_label == NULL) {
+    r_undo_push_label = &undo_push_label;
+  }
+
+  /* If this is called on an already local override, 'toggle' between user-editable state, and
+   * system override with reset. */
+  if (!ID_IS_LINKED(id) && ID_IS_OVERRIDE_LIBRARY(id)) {
+    if (!ID_IS_OVERRIDE_LIBRARY_REAL(id)) {
+      BKE_lib_override_library_get(bmain, id, NULL, &id);
+    }
+    if (id->override_library->flag & IDOVERRIDE_LIBRARY_FLAG_SYSTEM_DEFINED) {
+      id->override_library->flag &= ~IDOVERRIDE_LIBRARY_FLAG_SYSTEM_DEFINED;
+      *r_undo_push_label = "Make Library Override Hierarchy Editable";
+    }
+    else {
+      BKE_lib_override_library_id_reset(bmain, id, true);
+      *r_undo_push_label = "Clear Library Override Hierarchy";
+    }
+
+    WM_event_add_notifier(C, NC_WM | ND_DATACHANGED, NULL);
+    WM_event_add_notifier(C, NC_WM | ND_LIB_OVERRIDE_CHANGED, NULL);
+    WM_event_add_notifier(C, NC_SPACE | ND_SPACE_VIEW3D, NULL);
+    return id;
+  }
+
+  /* Attempt to perform a hierarchy override, based on contextual data available.
+   * NOTE: do not attempt to perform such hierarchy override at all cost, if there is not enough
+   * context, better to abort than create random overrides all over the place. */
+  if (!ID_IS_OVERRIDABLE_LIBRARY_HIERARCHY(id)) {
+    WM_reportf(RPT_ERROR, "The data-block %s is not overridable", id->name);
+    return NULL;
+  }
+
+  Object *object_active = CTX_data_active_object(C);
+  if (object_active == NULL && GS(owner_id->name) == ID_OB) {
+    object_active = (Object *)owner_id;
+  }
+  if (object_active != NULL) {
+    if (ID_IS_LINKED(object_active)) {
+      if (object_active->id.lib != id->lib ||
+          !ID_IS_OVERRIDABLE_LIBRARY_HIERARCHY(object_active)) {
+        /* The active object is from a different library than the overridden ID, or otherwise
+         * cannot be used in hierarchy. */
+        object_active = NULL;
+      }
+    }
+    else if (!ID_IS_OVERRIDE_LIBRARY_REAL(object_active)) {
+      /* Fully local object cannot be used in override hierarchy either. */
+      object_active = NULL;
+    }
+  }
+
+  Collection *collection_active = CTX_data_collection(C);
+  if (collection_active == NULL && GS(owner_id->name) == ID_GR) {
+    collection_active = (Collection *)owner_id;
+  }
+  if (collection_active != NULL) {
+    if (ID_IS_LINKED(collection_active)) {
+      if (collection_active->id.lib != id->lib ||
+          !ID_IS_OVERRIDABLE_LIBRARY_HIERARCHY(collection_active)) {
+        /* The active collection is from a different library than the overridden ID, or otherwise
+         * cannot be used in hierarchy. */
+        collection_active = NULL;
+      }
+      else {
+        int parent_level_best = -1;
+        Collection *collection_parent_best = NULL;
+        template_id_liboverride_hierarchy_collection_root_find_recursive(
+            collection_active, 0, &collection_parent_best, &parent_level_best);
+        collection_active = collection_parent_best;
+      }
+    }
+    else if (!ID_IS_OVERRIDE_LIBRARY_REAL(collection_active)) {
+      /* Fully local collection cannot be used in override hierarchy either. */
+      collection_active = NULL;
+    }
+  }
+  if (collection_active == NULL && object_active != NULL &&
+      (ID_IS_LINKED(object_active) || ID_IS_OVERRIDE_LIBRARY_REAL(object_active))) {
+    /* If we failed to find a valid 'active' collection so far for our override hierarchy, but do
+     * have a valid 'active' object, try to find a collection from that object. */
+    LISTBASE_FOREACH (Collection *, collection_iter, &bmain->collections) {
+      if (!(ID_IS_LINKED(collection_iter) || ID_IS_OVERRIDE_LIBRARY_REAL(collection_iter))) {
+        continue;
+      }
+      if (!BKE_collection_has_object_recursive(collection_iter, object_active)) {
+        continue;
+      }
+      int parent_level_best = -1;
+      Collection *collection_parent_best = NULL;
+      template_id_liboverride_hierarchy_collection_root_find_recursive(
+          collection_iter, 0, &collection_parent_best, &parent_level_best);
+      collection_active = collection_parent_best;
+      break;
+    }
+  }
+
+  ID *id_override = NULL;
+  Scene *scene = CTX_data_scene(C);
+  ViewLayer *view_layer = CTX_data_view_layer(C);
+  switch (GS(id->name)) {
+    case ID_GR:
+      if (collection_active != NULL &&
+          BKE_collection_has_collection(collection_active, (Collection *)id)) {
+        template_id_liboverride_hierarchy_collections_tag_recursive(collection_active, id, true);
+        if (object_active != NULL) {
+          object_active->id.tag |= LIB_TAG_DOIT;
+        }
+        BKE_lib_override_library_create(
+            bmain, scene, view_layer, NULL, id, &collection_active->id, NULL, &id_override, false);
+      }
+      else if (object_active != NULL && !ID_IS_LINKED(object_active) &&
+               &object_active->instance_collection->id == id) {
+        object_active->id.tag |= LIB_TAG_DOIT;
+        BKE_lib_override_library_create(bmain,
+                                        scene,
+                                        view_layer,
+                                        id->lib,
+                                        id,
+                                        &object_active->id,
+                                        &object_active->id,
+                                        &id_override,
+                                        false);
+      }
+      break;
+    case ID_OB:
+      if (collection_active != NULL &&
+          BKE_collection_has_object_recursive(collection_active, (Object *)id)) {
+        template_id_liboverride_hierarchy_collections_tag_recursive(collection_active, id, true);
+        if (object_active != NULL) {
+          object_active->id.tag |= LIB_TAG_DOIT;
+        }
+        BKE_lib_override_library_create(
+            bmain, scene, view_layer, NULL, id, &collection_active->id, NULL, &id_override, false);
+      }
+      else {
+        if (object_active != NULL) {
+          object_active->id.tag |= LIB_TAG_DOIT;
+        }
+        BKE_lib_override_library_create(
+            bmain, scene, view_layer, NULL, id, NULL, NULL, &id_override, false);
+        BKE_scene_collections_object_remove(bmain, scene, (Object *)id, true);
+        WM_event_add_notifier(C, NC_ID | NA_REMOVED, NULL);
+      }
+      break;
+    case ID_ME:
+    case ID_CU_LEGACY:
+    case ID_MB:
+    case ID_LT:
+    case ID_LA:
+    case ID_CA:
+    case ID_SPK:
+    case ID_AR:
+    case ID_GD:
+    case ID_CV:
+    case ID_PT:
+    case ID_VO:
+    case ID_NT: /* Essentially geometry nodes from modifier currently. */
+      if (object_active != NULL) {
+        if (collection_active != NULL &&
+            BKE_collection_has_object_recursive(collection_active, object_active)) {
+          template_id_liboverride_hierarchy_collections_tag_recursive(collection_active, id, true);
+          if (object_active != NULL) {
+            object_active->id.tag |= LIB_TAG_DOIT;
+          }
+          BKE_lib_override_library_create(bmain,
+                                          scene,
+                                          view_layer,
+                                          NULL,
+                                          id,
+                                          &collection_active->id,
+                                          NULL,
+                                          &id_override,
+                                          false);
+        }
+        else {
+          object_active->id.tag |= LIB_TAG_DOIT;
+          BKE_lib_override_library_create(
+              bmain, scene, view_layer, NULL, id, &object_active->id, NULL, &id_override, false);
+        }
+      }
+      else {
+        BKE_lib_override_library_create(
+            bmain, scene, view_layer, NULL, id, id, NULL, &id_override, false);
+      }
+      break;
+    case ID_MA:
+    case ID_TE:
+    case ID_IM:
+      WM_reportf(RPT_WARNING, "The type of data-block %s is not yet implemented", id->name);
+      break;
+    case ID_WO:
+      WM_reportf(RPT_WARNING, "The type of data-block %s is not yet implemented", id->name);
+      break;
+    case ID_PA:
+      WM_reportf(RPT_WARNING, "The type of data-block %s is not yet implemented", id->name);
+      break;
+    default:
+      WM_reportf(RPT_WARNING, "The type of data-block %s is not yet implemented", id->name);
+      break;
+  }
+
+  if (id_override != NULL) {
+    id_override->override_library->flag &= ~IDOVERRIDE_LIBRARY_FLAG_SYSTEM_DEFINED;
+    *r_undo_push_label = "Make Library Override Hierarchy";
+
+    /* In theory we could rely on setting/updating the RNA ID pointer property (as done by calling
+     * code) to be enough.
+     *
+     * However, some rare ID pointers properties (like the 'active object in viewlayer' one used
+     * for the Object templateID in the Object properties) use notifiers that do not enforce a
+     * rebuild of outliner trees, leading to crashes.
+     *
+     * So for now, add some extra notifiers here. */
+    WM_event_add_notifier(C, NC_ID | NA_ADDED, NULL);
+    WM_event_add_notifier(C, NC_SPACE | ND_SPACE_OUTLINER, NULL);
+  }
+  return id_override;
+}
+
+static void template_id_liboverride_hierarchy_make(bContext *C,
+                                                   Main *bmain,
+                                                   TemplateID *template_ui,
+                                                   PointerRNA *idptr,
+                                                   const char **r_undo_push_label)
+{
+  ID *id = idptr->data;
+  ID *owner_id = template_ui->ptr.owner_id;
+
+  ID *id_override = ui_template_id_liboverride_hierarchy_make(
+      C, bmain, owner_id, id, r_undo_push_label);
+
+  if (id_override != NULL) {
+    /* `idptr` is re-assigned to owner property to ensure proper updates etc. Here we also use it
+     * to ensure remapping of the owner property from the linked data to the newly created
+     * liboverride (note that in theory this remapping has already been done by code above), but
+     * only in case owner ID was already local ID (override or pure local data).
+     *
+     * Otherwise, owner ID will also have been overridden, and remapped already to use it's
+     * override of the data too. */
+    if (!ID_IS_LINKED(owner_id)) {
+      RNA_id_pointer_create(id_override, idptr);
+    }
+  }
+  else {
+    WM_reportf(RPT_ERROR, "The data-block %s could not be overridden", id->name);
   }
 }
 
@@ -609,6 +915,11 @@ static void template_id_cb(bContext *C, void *arg_litem, void *arg_event)
   const char *undo_push_label = NULL;
 
   switch (event) {
+    case UI_ID_NOP:
+      /* Don't do anything, typically set for buttons that execute an operator instead. They may
+       * still assign the callback so the button can be identified as part of an ID-template. See
+       * #UI_context_active_but_prop_get_templateID(). */
+      break;
     case UI_ID_BROWSE:
     case UI_ID_PIN:
       RNA_warning("warning, id event %d shouldn't come here", event);
@@ -622,7 +933,7 @@ static void template_id_cb(bContext *C, void *arg_litem, void *arg_event)
       RNA_property_pointer_set(&template_ui->ptr, template_ui->prop, idptr, NULL);
       RNA_property_update(C, &template_ui->ptr, template_ui->prop);
 
-      if (id && CTX_wm_window(C)->eventstate->shift) {
+      if (id && CTX_wm_window(C)->eventstate->modifier & KM_SHIFT) {
         /* only way to force-remove data (on save) */
         id_us_clear_real(id);
         id_fake_user_clear(id);
@@ -648,33 +959,14 @@ static void template_id_cb(bContext *C, void *arg_litem, void *arg_event)
     case UI_ID_LOCAL:
       if (id) {
         Main *bmain = CTX_data_main(C);
-        if (CTX_wm_window(C)->eventstate->shift) {
-          if (ID_IS_OVERRIDABLE_LIBRARY(id)) {
-            /* Only remap that specific ID usage to overriding local data-block. */
-            ID *override_id = BKE_lib_override_library_create_from_id(bmain, id, false);
-            if (override_id != NULL) {
-              BKE_main_id_clear_newpoins(bmain);
-
-              if (GS(override_id->name) == ID_OB) {
-                Scene *scene = CTX_data_scene(C);
-                if (!BKE_collection_has_object_recursive(scene->master_collection,
-                                                         (Object *)override_id)) {
-                  BKE_collection_object_add_from(
-                      bmain, scene, (Object *)id, (Object *)override_id);
-                }
-              }
-
-              /* Assign new pointer, takes care of updates/notifiers */
-              RNA_id_pointer_create(override_id, &idptr);
-            }
-            undo_push_label = "Make Library Override";
-          }
+        if (CTX_wm_window(C)->eventstate->modifier & KM_SHIFT) {
+          template_id_liboverride_hierarchy_make(C, bmain, template_ui, &idptr, &undo_push_label);
         }
         else {
-          if (BKE_lib_id_make_local(bmain, id, false, 0)) {
-            BKE_main_id_clear_newpoins(bmain);
+          if (BKE_lib_id_make_local(bmain, id, 0)) {
+            BKE_id_newptr_and_tag_clear(id);
 
-            /* reassign to get get proper updates/notifiers */
+            /* Reassign to get proper updates/notifiers. */
             idptr = RNA_property_pointer_get(&template_ui->ptr, template_ui->prop);
             undo_push_label = "Make Local";
           }
@@ -687,12 +979,18 @@ static void template_id_cb(bContext *C, void *arg_litem, void *arg_event)
       break;
     case UI_ID_OVERRIDE:
       if (id && ID_IS_OVERRIDE_LIBRARY(id)) {
-        BKE_lib_override_library_free(&id->override_library, true);
-        /* reassign to get get proper updates/notifiers */
-        idptr = RNA_property_pointer_get(&template_ui->ptr, template_ui->prop);
-        RNA_property_pointer_set(&template_ui->ptr, template_ui->prop, idptr, NULL);
-        RNA_property_update(C, &template_ui->ptr, template_ui->prop);
-        undo_push_label = "Override Data-Block";
+        Main *bmain = CTX_data_main(C);
+        if (CTX_wm_window(C)->eventstate->modifier & KM_SHIFT) {
+          template_id_liboverride_hierarchy_make(C, bmain, template_ui, &idptr, &undo_push_label);
+        }
+        else {
+          BKE_lib_override_library_make_local(id);
+          /* Reassign to get proper updates/notifiers. */
+          idptr = RNA_property_pointer_get(&template_ui->ptr, template_ui->prop);
+          RNA_property_pointer_set(&template_ui->ptr, template_ui->prop, idptr, NULL);
+          RNA_property_update(C, &template_ui->ptr, template_ui->prop);
+          undo_push_label = "Make Local";
+        }
       }
       break;
     case UI_ID_ALONE:
@@ -737,7 +1035,7 @@ static const char *template_id_browse_tip(const StructRNA *type)
         return N_("Browse Object to be linked");
       case ID_ME:
         return N_("Browse Mesh Data to be linked");
-      case ID_CU:
+      case ID_CU_LEGACY:
         return N_("Browse Curve Data to be linked");
       case ID_MB:
         return N_("Browse Metaball Data to be linked");
@@ -791,8 +1089,8 @@ static const char *template_id_browse_tip(const StructRNA *type)
         return N_("Browse Workspace to be linked");
       case ID_LP:
         return N_("Browse LightProbe to be linked");
-      case ID_HA:
-        return N_("Browse Hair Data to be linked");
+      case ID_CV:
+        return N_("Browse Curves Data to be linked");
       case ID_PT:
         return N_("Browse Point Cloud Data to be linked");
       case ID_VO:
@@ -811,6 +1109,26 @@ static const char *template_id_browse_tip(const StructRNA *type)
     }
   }
   return N_("Browse ID data to be linked");
+}
+
+/**
+ * Add a superimposed extra icon to \a but, for workspace pinning.
+ * Rather ugly special handling, but this is really a special case at this point, nothing worth
+ * generalizing.
+ */
+static void template_id_workspace_pin_extra_icon(const TemplateID *template_ui, uiBut *but)
+{
+  if ((template_ui->idcode != ID_SCE) || (template_ui->ptr.type != &RNA_Window)) {
+    return;
+  }
+
+  const wmWindow *win = template_ui->ptr.data;
+  const WorkSpace *workspace = WM_window_get_active_workspace(win);
+  UI_but_extra_operator_icon_add(but,
+                                 "WORKSPACE_OT_scene_pin_toggle",
+                                 WM_OP_INVOKE_DEFAULT,
+                                 (workspace->flags & WORKSPACE_USE_PIN_SCENE) ? ICON_PINNED :
+                                                                                ICON_UNPINNED);
 }
 
 /**
@@ -850,7 +1168,7 @@ static uiBut *template_id_def_new_but(uiBlock *block,
                             BLT_I18NCONTEXT_ID_SCENE,
                             BLT_I18NCONTEXT_ID_OBJECT,
                             BLT_I18NCONTEXT_ID_MESH,
-                            BLT_I18NCONTEXT_ID_CURVE,
+                            BLT_I18NCONTEXT_ID_CURVE_LEGACY,
                             BLT_I18NCONTEXT_ID_METABALL,
                             BLT_I18NCONTEXT_ID_MATERIAL,
                             BLT_I18NCONTEXT_ID_TEXTURE,
@@ -873,11 +1191,11 @@ static uiBut *template_id_def_new_but(uiBlock *block,
                             BLT_I18NCONTEXT_ID_FREESTYLELINESTYLE,
                             BLT_I18NCONTEXT_ID_WORKSPACE,
                             BLT_I18NCONTEXT_ID_LIGHTPROBE,
-                            BLT_I18NCONTEXT_ID_HAIR,
+                            BLT_I18NCONTEXT_ID_CURVES,
                             BLT_I18NCONTEXT_ID_POINTCLOUD,
                             BLT_I18NCONTEXT_ID_VOLUME,
                             BLT_I18NCONTEXT_ID_SIMULATION, );
-  /* Note: BLT_I18N_MSGID_MULTI_CTXT takes a maximum number of parameters,
+  /* NOTE: BLT_I18N_MSGID_MULTI_CTXT takes a maximum number of parameters,
    * check the definition to see if a new call must be added when the limit
    * is exceeded. */
 
@@ -1010,7 +1328,10 @@ static void template_ID(const bContext *C,
       UI_but_flag_enable(but, UI_BUT_REDALERT);
     }
 
-    if (id->lib) {
+    template_id_workspace_pin_extra_icon(template_ui, but);
+
+    if (ID_IS_LINKED(id)) {
+      const bool disabled = !BKE_idtype_idcode_is_localizable(GS(id->name));
       if (id->tag & LIB_TAG_INDIRECT) {
         but = uiDefIconBut(block,
                            UI_BTYPE_BUT,
@@ -1025,12 +1346,10 @@ static void template_ID(const bContext *C,
                            0,
                            0,
                            0,
-                           TIP_("Indirect library data-block, cannot change"));
-        UI_but_flag_enable(but, UI_BUT_DISABLED);
+                           TIP_("Indirect library data-block, cannot be made local, "
+                                "Shift + Click to create a library override hierarchy"));
       }
       else {
-        const bool disabled = (!BKE_lib_id_make_local(CTX_data_main(C), id, true /* test */, 0) ||
-                               (idfrom && idfrom->lib));
         but = uiDefIconBut(block,
                            UI_BTYPE_BUT,
                            0,
@@ -1046,30 +1365,32 @@ static void template_ID(const bContext *C,
                            0,
                            TIP_("Direct linked library data-block, click to make local, "
                                 "Shift + Click to create a library override"));
-        if (disabled) {
-          UI_but_flag_enable(but, UI_BUT_DISABLED);
-        }
-        else {
-          UI_but_funcN_set(
-              but, template_id_cb, MEM_dupallocN(template_ui), POINTER_FROM_INT(UI_ID_LOCAL));
-        }
+      }
+      if (disabled) {
+        UI_but_flag_enable(but, UI_BUT_DISABLED);
+      }
+      else {
+        UI_but_funcN_set(
+            but, template_id_cb, MEM_dupallocN(template_ui), POINTER_FROM_INT(UI_ID_LOCAL));
       }
     }
     else if (ID_IS_OVERRIDE_LIBRARY(id)) {
-      but = uiDefIconBut(block,
-                         UI_BTYPE_BUT,
-                         0,
-                         ICON_LIBRARY_DATA_OVERRIDE,
-                         0,
-                         0,
-                         UI_UNIT_X,
-                         UI_UNIT_Y,
-                         NULL,
-                         0,
-                         0,
-                         0,
-                         0,
-                         TIP_("Library override of linked data-block, click to make fully local"));
+      but = uiDefIconBut(
+          block,
+          UI_BTYPE_BUT,
+          0,
+          ICON_LIBRARY_DATA_OVERRIDE,
+          0,
+          0,
+          UI_UNIT_X,
+          UI_UNIT_Y,
+          NULL,
+          0,
+          0,
+          0,
+          0,
+          TIP_("Library override of linked data-block, click to make fully local, "
+               "Shift + Click to clear the library override and toggle if it can be edited"));
       UI_but_funcN_set(
           but, template_id_cb, MEM_dupallocN(template_ui), POINTER_FROM_INT(UI_ID_OVERRIDE));
     }
@@ -1078,7 +1399,7 @@ static void template_ID(const bContext *C,
       char numstr[32];
       short numstr_len;
 
-      numstr_len = BLI_snprintf(numstr, sizeof(numstr), "%d", ID_REAL_USERS(id));
+      numstr_len = BLI_snprintf_rlen(numstr, sizeof(numstr), "%d", ID_REAL_USERS(id));
 
       but = uiDefBut(
           block,
@@ -1099,7 +1420,7 @@ static void template_ID(const bContext *C,
 
       UI_but_funcN_set(
           but, template_id_cb, MEM_dupallocN(template_ui), POINTER_FROM_INT(UI_ID_ALONE));
-      if ((!BKE_id_copy_is_allowed(id)) || (idfrom && idfrom->lib) || (!editable) ||
+      if (!BKE_id_copy_is_allowed(id) || (idfrom && idfrom->lib) || (!editable) ||
           /* object in editmode - don't change data */
           (idfrom && GS(idfrom->name) == ID_OB && (((Object *)idfrom)->mode & OB_MODE_EDIT))) {
         UI_but_flag_enable(but, UI_BUT_DISABLED);
@@ -1110,24 +1431,41 @@ static void template_ID(const bContext *C,
       UI_but_flag_enable(but, UI_BUT_REDALERT);
     }
 
-    if (id->lib == NULL && !(ELEM(GS(id->name), ID_GR, ID_SCE, ID_SCR, ID_OB, ID_WS)) &&
-        (hide_buttons == false)) {
-      uiDefIconButR(block,
-                    UI_BTYPE_ICON_TOGGLE,
-                    0,
-                    ICON_FAKE_USER_OFF,
-                    0,
-                    0,
-                    UI_UNIT_X,
-                    UI_UNIT_Y,
-                    &idptr,
-                    "use_fake_user",
-                    -1,
-                    0,
-                    0,
-                    -1,
-                    -1,
-                    NULL);
+    if (!ID_IS_LINKED(id)) {
+      if (ID_IS_ASSET(id)) {
+        uiDefIconButO(block,
+                      /* Using `_N` version allows us to get the 'active' state by default. */
+                      UI_BTYPE_ICON_TOGGLE_N,
+                      "ASSET_OT_clear",
+                      WM_OP_INVOKE_DEFAULT,
+                      /* 'active' state of a toggle button uses icon + 1, so to get proper asset
+                       * icon we need to pass its value - 1 here. */
+                      ICON_ASSET_MANAGER - 1,
+                      0,
+                      0,
+                      UI_UNIT_X,
+                      UI_UNIT_Y,
+                      NULL);
+      }
+      else if (!ELEM(GS(id->name), ID_GR, ID_SCE, ID_SCR, ID_OB, ID_WS) &&
+               (hide_buttons == false)) {
+        uiDefIconButR(block,
+                      UI_BTYPE_ICON_TOGGLE,
+                      0,
+                      ICON_FAKE_USER_OFF,
+                      0,
+                      0,
+                      UI_UNIT_X,
+                      UI_UNIT_Y,
+                      &idptr,
+                      "use_fake_user",
+                      -1,
+                      0,
+                      0,
+                      -1,
+                      -1,
+                      NULL);
+      }
     }
   }
 
@@ -1215,7 +1553,8 @@ static void template_ID(const bContext *C,
                           UI_UNIT_Y,
                           NULL);
       /* so we can access the template from operators, font unlinking needs this */
-      UI_but_funcN_set(but, NULL, MEM_dupallocN(template_ui), NULL);
+      UI_but_funcN_set(
+          but, template_id_cb, MEM_dupallocN(template_ui), POINTER_FROM_INT(UI_ID_NOP));
     }
     else {
       if ((RNA_property_flag(template_ui->prop) & PROP_NEVER_UNLINK) == 0) {
@@ -1310,8 +1649,8 @@ static void template_ID_tabs(const bContext *C,
                                                0.0f,
                                                "");
     UI_but_funcN_set(&tab->but, template_ID_set_property_exec_fn, MEM_dupallocN(template), id);
+    UI_but_drag_set_id(&tab->but, id);
     tab->but.custom_data = (void *)id;
-    tab->but.dragpoin = id;
     tab->menu = mt;
 
     UI_but_drawflag_enable(&tab->but, but_align);
@@ -1537,9 +1876,6 @@ void uiTemplateGpencilColorPreview(uiLayout *layout,
                  false);
 }
 
-/**
- * Version of #uiTemplateID using tabs.
- */
 void uiTemplateIDTabs(uiLayout *layout,
                       bContext *C,
                       PointerRNA *ptr,
@@ -1573,14 +1909,6 @@ void uiTemplateIDTabs(uiLayout *layout,
 /** \name ID Chooser Template
  * \{ */
 
-/**
- * This is for selecting the type of ID-block to use,
- * and then from the relevant type choosing the block to use.
- *
- * \param propname: property identifier for property that ID-pointer gets stored to.
- * \param proptypename: property identifier for property
- * used to determine the type of ID-pointer that can be used.
- */
 void uiTemplateAnyID(uiLayout *layout,
                      PointerRNA *ptr,
                      const char *propname,
@@ -1722,7 +2050,7 @@ static void template_search_add_button_name(uiBlock *block,
 
 static void template_search_add_button_operator(uiBlock *block,
                                                 const char *const operator_name,
-                                                const int opcontext,
+                                                const wmOperatorCallContext opcontext,
                                                 const int icon,
                                                 const bool editable)
 {
@@ -1836,10 +2164,6 @@ static TemplateSearch *template_search_setup(PointerRNA *ptr,
   return template_search;
 }
 
-/**
- * Search menu to pick an item from a collection.
- * A version of uiTemplateID that works for non-ID types.
- */
 void uiTemplateSearch(uiLayout *layout,
                       bContext *C,
                       PointerRNA *ptr,
@@ -1890,13 +2214,6 @@ void uiTemplateSearchPreview(uiLayout *layout,
 
 /* ---------- */
 
-/**
- * This is creating/editing RNA-Paths
- *
- * - ptr: struct which holds the path property
- * - propname: property identifier for property that path gets stored to
- * - root_ptr: struct that path gets built from
- */
 void uiTemplatePathBuilder(uiLayout *layout,
                            PointerRNA *ptr,
                            const char *propname,
@@ -2024,7 +2341,7 @@ static void constraint_reorder(bContext *C, Panel *panel, int new_index)
   RNA_int_set(&props_ptr, "index", new_index);
   /* Set owner to #EDIT_CONSTRAINT_OWNER_OBJECT or #EDIT_CONSTRAINT_OWNER_BONE. */
   RNA_enum_set(&props_ptr, "owner", constraint_from_bone ? 1 : 0);
-  WM_operator_name_call_ptr(C, ot, WM_OP_INVOKE_DEFAULT, &props_ptr);
+  WM_operator_name_call_ptr(C, ot, WM_OP_INVOKE_DEFAULT, &props_ptr, NULL);
   WM_operator_properties_free(&props_ptr);
 }
 
@@ -2083,9 +2400,6 @@ static void bone_constraint_panel_id(void *md_link, char *r_name)
   strcat(r_name, cti->structName);
 }
 
-/**
- * Check if the constraint panels don't match the data and rebuild the panels if so.
- */
 void uiTemplateConstraints(uiLayout *UNUSED(layout), bContext *C, bool use_bone_constraints)
 {
   ARegion *region = CTX_wm_region(C);
@@ -2241,8 +2555,6 @@ void uiTemplateGpencilModifiers(uiLayout *UNUSED(layout), bContext *C)
 
 /** \} */
 
-/** \} */
-
 #define ERROR_LIBDATA_MESSAGE TIP_("Can't edit external library data")
 
 /* -------------------------------------------------------------------- */
@@ -2261,9 +2573,6 @@ static void shaderfx_panel_id(void *fx_v, char *r_idname)
   BKE_shaderfxType_panel_id(fx->type, r_idname);
 }
 
-/**
- * Check if the shader effect panels don't match the data and rebuild the panels if so.
- */
 void uiTemplateShaderFx(uiLayout *UNUSED(layout), bContext *C)
 {
   ARegion *region = CTX_wm_region(C);
@@ -2362,7 +2671,7 @@ static eAutoPropButsReturn template_operator_property_buts_draw_single(
   /* poll() on this operator may still fail,
    * at the moment there is no nice feedback when this happens just fails silently. */
   if (!WM_operator_repeat_check(C, op)) {
-    UI_block_lock_set(block, true, "Operator can't' redo");
+    UI_block_lock_set(block, true, "Operator can't redo");
     return return_info;
   }
 
@@ -2399,8 +2708,8 @@ static eAutoPropButsReturn template_operator_property_buts_draw_single(
     op->type->ui((bContext *)C, op);
     op->layout = NULL;
 
-    /* UI_LAYOUT_OP_SHOW_EMPTY ignored. retun_info is ignored too. We could
-     * allow ot.ui callback to return this, but not needed right now. */
+    /* #UI_LAYOUT_OP_SHOW_EMPTY ignored. retun_info is ignored too.
+     * We could allow #wmOperatorType.ui callback to return this, but not needed right now. */
   }
   else {
     wmWindowManager *wm = CTX_wm_manager(C);
@@ -2545,18 +2854,13 @@ static bool ui_layout_operator_properties_only_booleans(const bContext *C,
   return true;
 }
 
-/**
- * Draw Operator property buttons for redoing execution with different settings.
- * This function does not initialize the layout,
- * functions can be called on the layout before and after.
- */
 void uiTemplateOperatorPropertyButs(
     const bContext *C, uiLayout *layout, wmOperator *op, eButLabelAlign label_align, short flag)
 {
   wmWindowManager *wm = CTX_wm_manager(C);
 
   /* If there are only checkbox items, don't use split layout by default. It looks weird if the
-   * checkboxes only use half the width. */
+   * check-boxes only use half the width. */
   if (ui_layout_operator_properties_only_booleans(C, wm, op, flag)) {
     flag |= UI_TEMPLATE_OP_PROPS_NO_SPLIT_LAYOUT;
   }
@@ -2621,20 +2925,74 @@ static void constraint_active_func(bContext *UNUSED(C), void *ob_v, void *con_v)
   ED_object_constraint_active_set(ob_v, con_v);
 }
 
+static void constraint_ops_extra_draw(bContext *C, uiLayout *layout, void *con_v)
+{
+  PointerRNA op_ptr;
+  uiLayout *row;
+  bConstraint *con = (bConstraint *)con_v;
+
+  PointerRNA ptr;
+  Object *ob = ED_object_active_context(C);
+
+  RNA_pointer_create(&ob->id, &RNA_Constraint, con, &ptr);
+  uiLayoutSetContextPointer(layout, "constraint", &ptr);
+  uiLayoutSetOperatorContext(layout, WM_OP_INVOKE_DEFAULT);
+
+  uiLayoutSetUnitsX(layout, 4.0f);
+
+  /* Apply. */
+  uiItemO(layout,
+          CTX_IFACE_(BLT_I18NCONTEXT_OPERATOR_DEFAULT, "Apply"),
+          ICON_CHECKMARK,
+          "CONSTRAINT_OT_apply");
+
+  /* Duplicate. */
+  uiItemO(layout,
+          CTX_IFACE_(BLT_I18NCONTEXT_OPERATOR_DEFAULT, "Duplicate"),
+          ICON_DUPLICATE,
+          "CONSTRAINT_OT_copy");
+
+  uiItemO(layout,
+          CTX_IFACE_(BLT_I18NCONTEXT_OPERATOR_DEFAULT, "Copy to Selected"),
+          0,
+          "CONSTRAINT_OT_copy_to_selected");
+
+  uiItemS(layout);
+
+  /* Move to first. */
+  row = uiLayoutColumn(layout, false);
+  uiItemFullO(row,
+              "CONSTRAINT_OT_move_to_index",
+              IFACE_("Move to First"),
+              ICON_TRIA_UP,
+              NULL,
+              WM_OP_INVOKE_DEFAULT,
+              0,
+              &op_ptr);
+  RNA_int_set(&op_ptr, "index", 0);
+  if (!con->prev) {
+    uiLayoutSetEnabled(row, false);
+  }
+
+  /* Move to last. */
+  row = uiLayoutColumn(layout, false);
+  uiItemFullO(row,
+              "CONSTRAINT_OT_move_to_index",
+              IFACE_("Move to Last"),
+              ICON_TRIA_DOWN,
+              NULL,
+              WM_OP_INVOKE_DEFAULT,
+              0,
+              &op_ptr);
+  ListBase *constraint_list = ED_object_constraint_list_from_constraint(ob, con, NULL);
+  RNA_int_set(&op_ptr, "index", BLI_listbase_count(constraint_list) - 1);
+  if (!con->next) {
+    uiLayoutSetEnabled(row, false);
+  }
+}
+
 static void draw_constraint_header(uiLayout *layout, Object *ob, bConstraint *con)
 {
-  bPoseChannel *pchan = BKE_pose_channel_active(ob);
-  short proxy_protected, xco = 0, yco = 0;
-  // int rb_col; // UNUSED
-
-  /* determine whether constraint is proxy protected or not */
-  if (BKE_constraints_proxylocked_owner(ob, pchan)) {
-    proxy_protected = (con->flag & CONSTRAINT_PROXY_LOCAL) == 0;
-  }
-  else {
-    proxy_protected = 0;
-  }
-
   /* unless button has own callback, it adds this callback to button */
   uiBlock *block = uiLayoutGetBlock(layout);
   UI_block_func_set(block, constraint_active_func, ob, con);
@@ -2642,7 +3000,12 @@ static void draw_constraint_header(uiLayout *layout, Object *ob, bConstraint *co
   PointerRNA ptr;
   RNA_pointer_create(&ob->id, &RNA_Constraint, con, &ptr);
 
-  uiLayoutSetContextPointer(layout, "constraint", &ptr);
+  if (block->panel) {
+    UI_panel_context_pointer_set(block->panel, "constraint", &ptr);
+  }
+  else {
+    uiLayoutSetContextPointer(layout, "constraint", &ptr);
+  }
 
   /* Constraint type icon. */
   uiLayout *sub = uiLayoutRow(layout, false);
@@ -2652,71 +3015,24 @@ static void draw_constraint_header(uiLayout *layout, Object *ob, bConstraint *co
 
   UI_block_emboss_set(block, UI_EMBOSS);
 
-  if (proxy_protected == 0) {
-    uiItemR(layout, &ptr, "name", 0, "", ICON_NONE);
-  }
-  else {
-    uiItemL(layout, con->name, ICON_NONE);
-  }
+  uiLayout *row = uiLayoutRow(layout, true);
 
-  /* proxy-protected constraints cannot be edited, so hide up/down + close buttons */
-  if (proxy_protected) {
-    UI_block_emboss_set(block, UI_EMBOSS_NONE);
+  uiItemR(row, &ptr, "name", 0, "", ICON_NONE);
 
-    /* draw a ghost icon (for proxy) and also a lock beside it,
-     * to show that constraint is "proxy locked" */
-    uiDefIconBut(block,
-                 UI_BTYPE_BUT,
-                 0,
-                 ICON_GHOST_ENABLED,
-                 xco + 12.2f * UI_UNIT_X,
-                 yco,
-                 0.95f * UI_UNIT_X,
-                 0.95f * UI_UNIT_Y,
-                 NULL,
-                 0.0,
-                 0.0,
-                 0.0,
-                 0.0,
-                 TIP_("Proxy Protected"));
-    uiDefIconBut(block,
-                 UI_BTYPE_BUT,
-                 0,
-                 ICON_LOCKED,
-                 xco + 13.1f * UI_UNIT_X,
-                 yco,
-                 0.95f * UI_UNIT_X,
-                 0.95f * UI_UNIT_Y,
-                 NULL,
-                 0.0,
-                 0.0,
-                 0.0,
-                 0.0,
-                 TIP_("Proxy Protected"));
+  /* Enabled eye icon. */
+  uiItemR(row, &ptr, "enabled", 0, "", ICON_NONE);
 
-    UI_block_emboss_set(block, UI_EMBOSS);
-  }
-  else {
-    /* enabled */
-    UI_block_emboss_set(block, UI_EMBOSS_NONE_OR_STATUS);
-    uiItemR(layout, &ptr, "mute", 0, "", 0);
-    UI_block_emboss_set(block, UI_EMBOSS);
+  /* Extra operators menu. */
+  uiItemMenuF(row, "", ICON_DOWNARROW_HLT, constraint_ops_extra_draw, con);
 
-    uiLayoutSetOperatorContext(layout, WM_OP_INVOKE_DEFAULT);
+  /* Close 'button' - emboss calls here disable drawing of 'button' behind X */
+  sub = uiLayoutRow(row, false);
+  uiLayoutSetEmboss(sub, UI_EMBOSS_NONE);
+  uiLayoutSetOperatorContext(sub, WM_OP_INVOKE_DEFAULT);
+  uiItemO(sub, "", ICON_X, "CONSTRAINT_OT_delete");
 
-    /* Close 'button' - emboss calls here disable drawing of 'button' behind X */
-    UI_block_emboss_set(block, UI_EMBOSS_NONE);
-    uiItemO(layout, "", ICON_X, "CONSTRAINT_OT_delete");
-    UI_block_emboss_set(block, UI_EMBOSS);
-
-    /* Some extra padding at the end, so the 'x' icon isn't too close to drag button. */
-    uiItemS(layout);
-  }
-
-  /* Set but-locks for protected settings (magic numbers are used here!) */
-  if (proxy_protected) {
-    UI_block_lock_set(block, true, TIP_("Cannot edit Proxy-Protected Constraint"));
-  }
+  /* Some extra padding at the end, so the 'x' icon isn't too close to drag button. */
+  uiItemS(layout);
 
   /* clear any locks set up for proxies/lib-linking */
   UI_block_lock_clear(block);
@@ -2958,7 +3274,7 @@ void uiTemplatePreview(uiLayout *layout,
         uiDefButS(block,
                   UI_BTYPE_ROW,
                   B_MATPRV,
-                  IFACE_("World"),
+                  CTX_IFACE_(BLT_I18NCONTEXT_ID_WORLD, "World"),
                   0,
                   0,
                   UI_UNIT_X * 10,
@@ -3050,7 +3366,7 @@ static void colorband_flip_cb(bContext *C, ColorBand *coba)
     coba->data[a] = data_tmp[a];
   }
 
-  /* may as well flip the cur*/
+  /* May as well flip the `cur`. */
   coba->cur = coba->tot - (coba->cur + 1);
 
   ED_undo_push(C, "Flip Color Ramp");
@@ -3354,7 +3670,7 @@ static void colorband_buttons_layout(uiLayout *layout,
                      UI_UNIT_Y,
                      &coba->cur,
                      0.0,
-                     (float)(MAX2(0, coba->tot - 1)),
+                     (float)MAX2(0, coba->tot - 1),
                      0,
                      0,
                      TIP_("Choose active color stop"));
@@ -3362,13 +3678,9 @@ static void colorband_buttons_layout(uiLayout *layout,
 
       row = uiLayoutRow(split, false);
       uiItemR(row, &ptr, "position", 0, IFACE_("Pos"), ICON_NONE);
-      bt = block->buttons.last;
-      UI_but_func_set(bt, colorband_update_cb, bt, coba);
 
       row = uiLayoutRow(layout, false);
       uiItemR(row, &ptr, "color", 0, "", ICON_NONE);
-      bt = block->buttons.last;
-      UI_but_funcN_set(bt, rna_update_cb, MEM_dupallocN(cb), NULL);
     }
     else {
       split = uiLayoutSplit(layout, 0.5f, false);
@@ -3385,7 +3697,7 @@ static void colorband_buttons_layout(uiLayout *layout,
                      UI_UNIT_Y,
                      &coba->cur,
                      0.0,
-                     (float)(MAX2(0, coba->tot - 1)),
+                     (float)MAX2(0, coba->tot - 1),
                      0,
                      0,
                      TIP_("Choose active color stop"));
@@ -3393,13 +3705,28 @@ static void colorband_buttons_layout(uiLayout *layout,
 
       row = uiLayoutRow(subsplit, false);
       uiItemR(row, &ptr, "position", UI_ITEM_R_SLIDER, IFACE_("Pos"), ICON_NONE);
-      bt = block->buttons.last;
-      UI_but_func_set(bt, colorband_update_cb, bt, coba);
 
       row = uiLayoutRow(split, false);
       uiItemR(row, &ptr, "color", 0, "", ICON_NONE);
-      bt = block->buttons.last;
-      UI_but_funcN_set(bt, rna_update_cb, MEM_dupallocN(cb), NULL);
+    }
+
+    /* Some special (rather awkward) treatment to update UI state on certain property changes. */
+    LISTBASE_FOREACH_BACKWARD (uiBut *, but, &block->buttons) {
+      if (but->rnapoin.data != ptr.data) {
+        continue;
+      }
+      if (!but->rnaprop) {
+        continue;
+      }
+
+      const char *prop_identifier = RNA_property_identifier(but->rnaprop);
+      if (STREQ(prop_identifier, "position")) {
+        UI_but_func_set(but, colorband_update_cb, but, coba);
+      }
+
+      if (STREQ(prop_identifier, "color")) {
+        UI_but_funcN_set(but, rna_update_cb, MEM_dupallocN(cb), NULL);
+      }
     }
   }
 }
@@ -3445,9 +3772,6 @@ void uiTemplateColorRamp(uiLayout *layout, PointerRNA *ptr, const char *propname
 /** \name Icon Template
  * \{ */
 
-/**
- * \param icon_scale: Scale of the icon, 1x == button height.
- */
 void uiTemplateIcon(uiLayout *layout, int icon_value, float icon_scale)
 {
   uiBlock *block = uiLayoutAbsoluteBlock(layout);
@@ -3556,9 +3880,6 @@ static uiBlock *ui_icon_view_menu_cb(bContext *C, ARegion *region, void *arg_lit
   return block;
 }
 
-/**
- * \param icon_scale: Scale of the icon, 1x == button height.
- */
 void uiTemplateIconView(uiLayout *layout,
                         PointerRNA *ptr,
                         const char *propname,
@@ -4015,23 +4336,23 @@ static void curvemap_tools_dofunc(bContext *C, void *cumap_v, int event)
     case UICURVE_FUNC_RESET_VIEW:
       BKE_curvemapping_reset_view(cumap);
       break;
-    case UICURVE_FUNC_HANDLE_VECTOR: /* set vector */
+    case UICURVE_FUNC_HANDLE_VECTOR: /* Set vector. */
       BKE_curvemap_handle_set(cuma, HD_VECT);
       BKE_curvemapping_changed(cumap, false);
       break;
-    case UICURVE_FUNC_HANDLE_AUTO: /* set auto */
+    case UICURVE_FUNC_HANDLE_AUTO: /* Set auto. */
       BKE_curvemap_handle_set(cuma, HD_AUTO);
       BKE_curvemapping_changed(cumap, false);
       break;
-    case UICURVE_FUNC_HANDLE_AUTO_ANIM: /* set auto-clamped */
+    case UICURVE_FUNC_HANDLE_AUTO_ANIM: /* Set auto-clamped. */
       BKE_curvemap_handle_set(cuma, HD_AUTO_ANIM);
       BKE_curvemapping_changed(cumap, false);
       break;
-    case UICURVE_FUNC_EXTEND_HOZ: /* extend horiz */
+    case UICURVE_FUNC_EXTEND_HOZ: /* Extend horizontal. */
       cumap->flag &= ~CUMA_EXTEND_EXTRAPOLATE;
       BKE_curvemapping_changed(cumap, false);
       break;
-    case UICURVE_FUNC_EXTEND_EXP: /* extend extrapolate */
+    case UICURVE_FUNC_EXTEND_EXP: /* Extend extrapolate. */
       cumap->flag |= CUMA_EXTEND_EXTRAPOLATE;
       BKE_curvemapping_changed(cumap, false);
       break;
@@ -4064,51 +4385,6 @@ static uiBlock *curvemap_tools_func(
                      0.0,
                      0,
                      UICURVE_FUNC_RESET_VIEW,
-                     "");
-    uiDefIconTextBut(block,
-                     UI_BTYPE_BUT_MENU,
-                     1,
-                     ICON_BLANK1,
-                     IFACE_("Vector Handle"),
-                     0,
-                     yco -= UI_UNIT_Y,
-                     menuwidth,
-                     UI_UNIT_Y,
-                     NULL,
-                     0.0,
-                     0.0,
-                     0,
-                     UICURVE_FUNC_HANDLE_VECTOR,
-                     "");
-    uiDefIconTextBut(block,
-                     UI_BTYPE_BUT_MENU,
-                     1,
-                     ICON_BLANK1,
-                     IFACE_("Auto Handle"),
-                     0,
-                     yco -= UI_UNIT_Y,
-                     menuwidth,
-                     UI_UNIT_Y,
-                     NULL,
-                     0.0,
-                     0.0,
-                     0,
-                     UICURVE_FUNC_HANDLE_AUTO,
-                     "");
-    uiDefIconTextBut(block,
-                     UI_BTYPE_BUT_MENU,
-                     1,
-                     ICON_BLANK1,
-                     IFACE_("Auto Clamped Handle"),
-                     0,
-                     yco -= UI_UNIT_Y,
-                     menuwidth,
-                     UI_UNIT_Y,
-                     NULL,
-                     0.0,
-                     0.0,
-                     0,
-                     UICURVE_FUNC_HANDLE_AUTO_ANIM,
                      "");
   }
 
@@ -4189,6 +4465,21 @@ static uiBlock *curvemap_brush_tools_negslope_func(bContext *C, ARegion *region,
   return curvemap_tools_func(C, region, cumap_v, false, UICURVE_FUNC_RESET_POS);
 }
 
+static void curvemap_tools_handle_vector(bContext *C, void *cumap_v, void *UNUSED(arg))
+{
+  curvemap_tools_dofunc(C, cumap_v, UICURVE_FUNC_HANDLE_VECTOR);
+}
+
+static void curvemap_tools_handle_auto(bContext *C, void *cumap_v, void *UNUSED(arg))
+{
+  curvemap_tools_dofunc(C, cumap_v, UICURVE_FUNC_HANDLE_AUTO);
+}
+
+static void curvemap_tools_handle_auto_clamped(bContext *C, void *cumap_v, void *UNUSED(arg))
+{
+  curvemap_tools_dofunc(C, cumap_v, UICURVE_FUNC_HANDLE_AUTO_ANIM);
+}
+
 static void curvemap_buttons_redraw(bContext *C, void *UNUSED(arg1), void *UNUSED(arg2))
 {
   ED_region_tag_redraw(CTX_wm_region(C));
@@ -4239,6 +4530,8 @@ static void curvemap_buttons_layout(uiLayout *layout,
   int bg = -1;
 
   uiBlock *block = uiLayoutGetBlock(layout);
+
+  UI_block_emboss_set(block, UI_EMBOSS);
 
   if (tone) {
     uiLayout *split = uiLayoutSplit(layout, 0.0f, false);
@@ -4325,10 +4618,11 @@ static void curvemap_buttons_layout(uiLayout *layout,
   }
 
   /* operation buttons */
-  uiLayoutRow(row, true);
+  /* (Right aligned) */
+  uiLayout *sub = uiLayoutRow(row, true);
+  uiLayoutSetAlignment(sub, UI_LAYOUT_ALIGN_RIGHT);
 
-  UI_block_emboss_set(block, UI_EMBOSS_NONE);
-
+  /* Zoom in */
   bt = uiDefIconBut(block,
                     UI_BTYPE_BUT,
                     0,
@@ -4345,6 +4639,7 @@ static void curvemap_buttons_layout(uiLayout *layout,
                     TIP_("Zoom in"));
   UI_but_func_set(bt, curvemap_buttons_zoom_in, cumap, NULL);
 
+  /* Zoom out */
   bt = uiDefIconBut(block,
                     UI_BTYPE_BUT,
                     0,
@@ -4361,96 +4656,52 @@ static void curvemap_buttons_layout(uiLayout *layout,
                     TIP_("Zoom out"));
   UI_but_func_set(bt, curvemap_buttons_zoom_out, cumap, NULL);
 
-  if (brush && neg_slope) {
-    bt = uiDefIconBlockBut(block,
-                           curvemap_brush_tools_negslope_func,
-                           cumap,
-                           0,
-                           ICON_DOWNARROW_HLT,
-                           0,
-                           0,
-                           dx,
-                           dx,
-                           TIP_("Tools"));
-  }
-  else if (brush) {
-    bt = uiDefIconBlockBut(block,
-                           curvemap_brush_tools_func,
-                           cumap,
-                           0,
-                           ICON_DOWNARROW_HLT,
-                           0,
-                           0,
-                           dx,
-                           dx,
-                           TIP_("Tools"));
-  }
-  else if (neg_slope) {
-    bt = uiDefIconBlockBut(block,
-                           curvemap_tools_negslope_func,
-                           cumap,
-                           0,
-                           ICON_DOWNARROW_HLT,
-                           0,
-                           0,
-                           dx,
-                           dx,
-                           TIP_("Tools"));
-  }
-  else {
-    bt = uiDefIconBlockBut(block,
-                           curvemap_tools_posslope_func,
-                           cumap,
-                           0,
-                           ICON_DOWNARROW_HLT,
-                           0,
-                           0,
-                           dx,
-                           dx,
-                           TIP_("Tools"));
-  }
-
-  UI_but_funcN_set(bt, rna_update_cb, MEM_dupallocN(cb), NULL);
-
+  /* Clippoing button. */
   const int icon = (cumap->flag & CUMA_DO_CLIP) ? ICON_CLIPUV_HLT : ICON_CLIPUV_DEHLT;
   bt = uiDefIconBlockBut(
       block, curvemap_clipping_func, cumap, 0, icon, 0, 0, dx, dx, TIP_("Clipping Options"));
+  bt->drawflag &= ~UI_BUT_ICON_LEFT;
   UI_but_funcN_set(bt, rna_update_cb, MEM_dupallocN(cb), NULL);
 
-  bt = uiDefIconBut(block,
-                    UI_BTYPE_BUT,
-                    0,
-                    ICON_X,
-                    0,
-                    0,
-                    dx,
-                    dx,
-                    NULL,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    TIP_("Delete points"));
-  UI_but_funcN_set(bt, curvemap_buttons_delete, MEM_dupallocN(cb), cumap);
-
-  UI_block_emboss_set(block, UI_EMBOSS);
+  if (brush && neg_slope) {
+    bt = uiDefIconBlockBut(
+        block, curvemap_brush_tools_negslope_func, cumap, 0, 0, 0, 0, dx, dx, TIP_("Tools"));
+  }
+  else if (brush) {
+    bt = uiDefIconBlockBut(
+        block, curvemap_brush_tools_func, cumap, 0, 0, 0, 0, dx, dx, TIP_("Tools"));
+  }
+  else if (neg_slope) {
+    bt = uiDefIconBlockBut(
+        block, curvemap_tools_negslope_func, cumap, 0, 0, 0, 0, dx, dx, TIP_("Tools"));
+  }
+  else {
+    bt = uiDefIconBlockBut(
+        block, curvemap_tools_posslope_func, cumap, 0, 0, 0, 0, dx, dx, TIP_("Tools"));
+  }
+  UI_but_funcN_set(bt, rna_update_cb, MEM_dupallocN(cb), NULL);
 
   UI_block_funcN_set(block, rna_update_cb, MEM_dupallocN(cb), NULL);
 
-  /* curve itself */
+  /* Curve itself. */
   const int size = max_ii(uiLayoutGetWidth(layout), UI_UNIT_X);
   row = uiLayoutRow(layout, false);
   uiButCurveMapping *curve_but = (uiButCurveMapping *)uiDefBut(
-      block, UI_BTYPE_CURVE, 0, "", 0, 0, size, 8.0f * UI_UNIT_X, cumap, 0.0f, 1.0f, 0, 0, "");
+      block, UI_BTYPE_CURVE, 0, "", 0, 0, size, 8.0f * UI_UNIT_X, cumap, 0.0f, 1.0f, -1, 0, "");
   curve_but->gradient_type = bg;
 
-  /* sliders for selected point */
+  /* Sliders for selected curve point. */
+  int i;
   CurveMapPoint *cmp = NULL;
-  for (int i = 0; i < cm->totpoint; i++) {
+  bool point_last_or_first = false;
+  for (i = 0; i < cm->totpoint; i++) {
     if (cm->curve[i].flag & CUMA_SELECT) {
       cmp = &cm->curve[i];
       break;
     }
+  }
+  if (ELEM(i, 0, cm->totpoint - 1)) {
+    point_last_or_first = true;
   }
 
   if (cmp) {
@@ -4463,12 +4714,75 @@ static void curvemap_buttons_layout(uiLayout *layout,
       bounds.xmax = bounds.ymax = 1000.0;
     }
 
+    UI_block_emboss_set(block, UI_EMBOSS);
+
     uiLayoutRow(layout, true);
+
+    /* Curve handle buttons. */
+    bt = uiDefIconBut(block,
+                      UI_BTYPE_BUT,
+                      1,
+                      ICON_HANDLE_AUTO,
+                      0,
+                      UI_UNIT_Y,
+                      UI_UNIT_X,
+                      UI_UNIT_Y,
+                      NULL,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      TIP_("Auto Handle"));
+    UI_but_func_set(bt, curvemap_tools_handle_auto, cumap, NULL);
+    if (((cmp->flag & CUMA_HANDLE_AUTO_ANIM) == false) &&
+        ((cmp->flag & CUMA_HANDLE_VECTOR) == false)) {
+      bt->flag |= UI_SELECT_DRAW;
+    }
+
+    bt = uiDefIconBut(block,
+                      UI_BTYPE_BUT,
+                      1,
+                      ICON_HANDLE_VECTOR,
+                      0,
+                      UI_UNIT_Y,
+                      UI_UNIT_X,
+                      UI_UNIT_Y,
+                      NULL,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      TIP_("Vector Handle"));
+    UI_but_func_set(bt, curvemap_tools_handle_vector, cumap, NULL);
+    if (cmp->flag & CUMA_HANDLE_VECTOR) {
+      bt->flag |= UI_SELECT_DRAW;
+    }
+
+    bt = uiDefIconBut(block,
+                      UI_BTYPE_BUT,
+                      1,
+                      ICON_HANDLE_AUTOCLAMPED,
+                      0,
+                      UI_UNIT_Y,
+                      UI_UNIT_X,
+                      UI_UNIT_Y,
+                      NULL,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      TIP_("Auto Clamped"));
+    UI_but_func_set(bt, curvemap_tools_handle_auto_clamped, cumap, NULL);
+    if (cmp->flag & CUMA_HANDLE_AUTO_ANIM) {
+      bt->flag |= UI_SELECT_DRAW;
+    }
+
+    /* Curve handle position */
     UI_block_funcN_set(block, curvemap_buttons_update, MEM_dupallocN(cb), cumap);
     bt = uiDefButF(block,
                    UI_BTYPE_NUM,
                    0,
-                   "X",
+                   "X:",
                    0,
                    2 * UI_UNIT_Y,
                    UI_UNIT_X * 10,
@@ -4484,7 +4798,7 @@ static void curvemap_buttons_layout(uiLayout *layout,
     bt = uiDefButF(block,
                    UI_BTYPE_NUM,
                    0,
-                   "Y",
+                   "Y:",
                    0,
                    1 * UI_UNIT_Y,
                    UI_UNIT_X * 10,
@@ -4497,6 +4811,26 @@ static void curvemap_buttons_layout(uiLayout *layout,
                    "");
     UI_but_number_step_size_set(bt, 1);
     UI_but_number_precision_set(bt, 5);
+
+    /* Curve handle delete point */
+    bt = uiDefIconBut(block,
+                      UI_BTYPE_BUT,
+                      0,
+                      ICON_X,
+                      0,
+                      0,
+                      dx,
+                      dx,
+                      NULL,
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0,
+                      TIP_("Delete points"));
+    UI_but_funcN_set(bt, curvemap_buttons_delete, MEM_dupallocN(cb), cumap);
+    if (point_last_or_first) {
+      UI_but_flag_enable(bt, UI_BUT_DISABLED);
+    }
   }
 
   /* black/white levels */
@@ -4894,7 +5228,7 @@ static void CurveProfile_buttons_layout(uiLayout *layout, PointerRNA *ptr, RNAUp
                             0.0,
                             0.0,
                             0.0,
-                            "Reapply and update the preset, removing changes");
+                            TIP_("Reapply and update the preset, removing changes"));
       UI_but_funcN_set(bt, CurveProfile_buttons_reset, MEM_dupallocN(cb), profile);
     }
   }
@@ -4943,11 +5277,6 @@ static void CurveProfile_buttons_layout(uiLayout *layout, PointerRNA *ptr, RNAUp
   sub = uiLayoutRow(row, true);
   uiLayoutSetAlignment(sub, UI_LAYOUT_ALIGN_RIGHT);
 
-  /* Reset view, reset curve */
-  bt = uiDefIconBlockBut(
-      block, CurveProfile_buttons_tools, profile, 0, 0, 0, 0, UI_UNIT_X, UI_UNIT_X, TIP_("Tools"));
-  UI_but_funcN_set(bt, rna_update_cb, MEM_dupallocN(cb), NULL);
-
   /* Flip path */
   bt = uiDefIconBut(block,
                     UI_BTYPE_BUT,
@@ -4982,6 +5311,11 @@ static void CurveProfile_buttons_layout(uiLayout *layout, PointerRNA *ptr, RNAUp
                     0.0,
                     TIP_("Toggle Profile Clipping"));
   UI_but_funcN_set(bt, CurveProfile_clipping_toggle, MEM_dupallocN(cb), profile);
+
+  /* Reset view, reset curve */
+  bt = uiDefIconBlockBut(
+      block, CurveProfile_buttons_tools, profile, 0, 0, 0, 0, UI_UNIT_X, UI_UNIT_X, TIP_("Tools"));
+  UI_but_funcN_set(bt, rna_update_cb, MEM_dupallocN(cb), NULL);
 
   UI_block_funcN_set(block, rna_update_cb, MEM_dupallocN(cb), NULL);
 
@@ -5126,10 +5460,6 @@ static void CurveProfile_buttons_layout(uiLayout *layout, PointerRNA *ptr, RNAUp
   UI_block_funcN_set(block, NULL, NULL, NULL);
 }
 
-/**
- * Template for a path creation widget intended for custom bevel profiles.
- * This section is quite similar to #uiTemplateCurveMapping, but with reduced complexity.
- */
 void uiTemplateCurveProfile(uiLayout *layout, PointerRNA *ptr, const char *propname)
 {
   PropertyRNA *prop = RNA_struct_find_property(ptr, propname);
@@ -5176,7 +5506,6 @@ void uiTemplateCurveProfile(uiLayout *layout, PointerRNA *ptr, const char *propn
 
 #define WHEEL_SIZE (5 * U.widget_unit)
 
-/* This template now follows User Preference for type - name is not correct anymore... */
 void uiTemplateColorPicker(uiLayout *layout,
                            PointerRNA *ptr,
                            const char *propname,
@@ -5549,7 +5878,7 @@ static void handle_layer_buttons(bContext *C, void *arg1, void *arg2)
   uiBut *but = arg1;
   const int cur = POINTER_AS_INT(arg2);
   wmWindow *win = CTX_wm_window(C);
-  const int shift = win->eventstate->shift;
+  const bool shift = win->eventstate->modifier & KM_SHIFT;
 
   if (!shift) {
     const int tot = RNA_property_array_length(&but->rnapoin, but->rnaprop);
@@ -5567,10 +5896,6 @@ static void handle_layer_buttons(bContext *C, void *arg1, void *arg2)
   /* see view3d_header.c */
 }
 
-/**
- * \todo for now, grouping of layers is determined by dividing up the length of
- * the array of layer bitflags
- */
 void uiTemplateLayers(uiLayout *layout,
                       PointerRNA *ptr,
                       const char *propname,
@@ -5645,887 +5970,6 @@ void uiTemplateLayers(uiLayout *layout,
 /** \} */
 
 /* -------------------------------------------------------------------- */
-/** \name List Template
- * \{ */
-
-static void uilist_draw_item_default(struct uiList *ui_list,
-                                     struct bContext *UNUSED(C),
-                                     struct uiLayout *layout,
-                                     struct PointerRNA *UNUSED(dataptr),
-                                     struct PointerRNA *itemptr,
-                                     int icon,
-                                     struct PointerRNA *UNUSED(active_dataptr),
-                                     const char *UNUSED(active_propname),
-                                     int UNUSED(index),
-                                     int UNUSED(flt_flag))
-{
-  PropertyRNA *nameprop = RNA_struct_name_property(itemptr->type);
-
-  /* Simplest one! */
-  switch (ui_list->layout_type) {
-    case UILST_LAYOUT_GRID:
-      uiItemL(layout, "", icon);
-      break;
-    case UILST_LAYOUT_DEFAULT:
-    case UILST_LAYOUT_COMPACT:
-    default:
-      if (nameprop) {
-        uiItemFullR(layout, itemptr, nameprop, RNA_NO_INDEX, 0, UI_ITEM_R_NO_BG, "", icon);
-      }
-      else {
-        uiItemL(layout, "", icon);
-      }
-      break;
-  }
-}
-
-static void uilist_draw_filter_default(struct uiList *ui_list,
-                                       struct bContext *UNUSED(C),
-                                       struct uiLayout *layout)
-{
-  PointerRNA listptr;
-  RNA_pointer_create(NULL, &RNA_UIList, ui_list, &listptr);
-
-  uiLayout *row = uiLayoutRow(layout, false);
-
-  uiLayout *subrow = uiLayoutRow(row, true);
-  uiItemR(subrow, &listptr, "filter_name", 0, "", ICON_NONE);
-  uiItemR(subrow,
-          &listptr,
-          "use_filter_invert",
-          UI_ITEM_R_TOGGLE | UI_ITEM_R_ICON_ONLY,
-          "",
-          ICON_ARROW_LEFTRIGHT);
-
-  if ((ui_list->filter_sort_flag & UILST_FLT_SORT_LOCK) == 0) {
-    subrow = uiLayoutRow(row, true);
-    uiItemR(subrow,
-            &listptr,
-            "use_filter_sort_alpha",
-            UI_ITEM_R_TOGGLE | UI_ITEM_R_ICON_ONLY,
-            "",
-            ICON_NONE);
-    uiItemR(subrow,
-            &listptr,
-            "use_filter_sort_reverse",
-            UI_ITEM_R_TOGGLE | UI_ITEM_R_ICON_ONLY,
-            "",
-            (ui_list->filter_sort_flag & UILST_FLT_SORT_REVERSE) ? ICON_SORT_DESC : ICON_SORT_ASC);
-  }
-}
-
-typedef struct {
-  char name[MAX_IDPROP_NAME];
-  int org_idx;
-} StringCmp;
-
-static int cmpstringp(const void *p1, const void *p2)
-{
-  /* Case-insensitive comparison. */
-  return BLI_strcasecmp(((StringCmp *)p1)->name, ((StringCmp *)p2)->name);
-}
-
-static void uilist_filter_items_default(struct uiList *ui_list,
-                                        struct bContext *UNUSED(C),
-                                        struct PointerRNA *dataptr,
-                                        const char *propname)
-{
-  uiListDyn *dyn_data = ui_list->dyn_data;
-  PropertyRNA *prop = RNA_struct_find_property(dataptr, propname);
-
-  const char *filter_raw = ui_list->filter_byname;
-  char *filter = (char *)filter_raw, filter_buff[32], *filter_dyn = NULL;
-  const bool filter_exclude = (ui_list->filter_flag & UILST_FLT_EXCLUDE) != 0;
-  const bool order_by_name = (ui_list->filter_sort_flag & UILST_FLT_SORT_MASK) ==
-                             UILST_FLT_SORT_ALPHA;
-  const int len = RNA_property_collection_length(dataptr, prop);
-
-  dyn_data->items_shown = dyn_data->items_len = len;
-
-  if (len && (order_by_name || filter_raw[0])) {
-    StringCmp *names = NULL;
-    int order_idx = 0, i = 0;
-
-    if (order_by_name) {
-      names = MEM_callocN(sizeof(StringCmp) * len, "StringCmp");
-    }
-    if (filter_raw[0]) {
-      const size_t slen = strlen(filter_raw);
-
-      dyn_data->items_filter_flags = MEM_callocN(sizeof(int) * len, "items_filter_flags");
-      dyn_data->items_shown = 0;
-
-      /* Implicitly add heading/trailing wildcards if needed. */
-      if (slen + 3 <= sizeof(filter_buff)) {
-        filter = filter_buff;
-      }
-      else {
-        filter = filter_dyn = MEM_mallocN((slen + 3) * sizeof(char), "filter_dyn");
-      }
-      BLI_strncpy_ensure_pad(filter, filter_raw, '*', slen + 3);
-    }
-
-    RNA_PROP_BEGIN (dataptr, itemptr, prop) {
-      bool do_order = false;
-
-      char *namebuf = RNA_struct_name_get_alloc(&itemptr, NULL, 0, NULL);
-      const char *name = namebuf ? namebuf : "";
-
-      if (filter[0]) {
-        /* Case-insensitive! */
-        if (fnmatch(filter, name, FNM_CASEFOLD) == 0) {
-          dyn_data->items_filter_flags[i] = UILST_FLT_ITEM;
-          if (!filter_exclude) {
-            dyn_data->items_shown++;
-            do_order = order_by_name;
-          }
-          // printf("%s: '%s' matches '%s'\n", __func__, name, filter);
-        }
-        else if (filter_exclude) {
-          dyn_data->items_shown++;
-          do_order = order_by_name;
-        }
-      }
-      else {
-        do_order = order_by_name;
-      }
-
-      if (do_order) {
-        names[order_idx].org_idx = order_idx;
-        BLI_strncpy(names[order_idx++].name, name, MAX_IDPROP_NAME);
-      }
-
-      /* free name */
-      if (namebuf) {
-        MEM_freeN(namebuf);
-      }
-      i++;
-    }
-    RNA_PROP_END;
-
-    if (order_by_name) {
-      int new_idx;
-      /* note: order_idx equals either to ui_list->items_len if no filtering done,
-       *       or to ui_list->items_shown if filter is enabled,
-       *       or to (ui_list->items_len - ui_list->items_shown) if filtered items are excluded.
-       *       This way, we only sort items we actually intend to draw!
-       */
-      qsort(names, order_idx, sizeof(StringCmp), cmpstringp);
-
-      dyn_data->items_filter_neworder = MEM_mallocN(sizeof(int) * order_idx,
-                                                    "items_filter_neworder");
-      for (new_idx = 0; new_idx < order_idx; new_idx++) {
-        dyn_data->items_filter_neworder[names[new_idx].org_idx] = new_idx;
-      }
-    }
-
-    if (filter_dyn) {
-      MEM_freeN(filter_dyn);
-    }
-    if (names) {
-      MEM_freeN(names);
-    }
-  }
-}
-
-typedef struct {
-  PointerRNA item;
-  int org_idx;
-  int flt_flag;
-} _uilist_item;
-
-typedef struct {
-  int visual_items; /* Visual number of items (i.e. number of items we have room to display). */
-  int start_idx;    /* Index of first item to display. */
-  int end_idx;      /* Index of last item to display + 1. */
-} uiListLayoutdata;
-
-static void uilist_prepare(uiList *ui_list,
-                           int len,
-                           int activei,
-                           int rows,
-                           int maxrows,
-                           int columns,
-                           uiListLayoutdata *layoutdata)
-{
-  uiListDyn *dyn_data = ui_list->dyn_data;
-  const bool use_auto_size = (ui_list->list_grip < (rows - UI_LIST_AUTO_SIZE_THRESHOLD));
-
-  /* default rows */
-  if (rows <= 0) {
-    rows = 5;
-  }
-  dyn_data->visual_height_min = rows;
-  if (maxrows < rows) {
-    maxrows = max_ii(rows, 5);
-  }
-  if (columns <= 0) {
-    columns = 9;
-  }
-
-  int activei_row;
-  if (columns > 1) {
-    dyn_data->height = (int)ceil((double)len / (double)columns);
-    activei_row = (int)floor((double)activei / (double)columns);
-  }
-  else {
-    dyn_data->height = len;
-    activei_row = activei;
-  }
-
-  if (!use_auto_size) {
-    /* No auto-size, yet we clamp at min size! */
-    maxrows = rows = max_ii(ui_list->list_grip, rows);
-  }
-  else if ((rows != maxrows) && (dyn_data->height > rows)) {
-    /* Expand size if needed and possible. */
-    rows = min_ii(dyn_data->height, maxrows);
-  }
-
-  /* If list length changes or list is tagged to check this,
-   * and active is out of view, scroll to it .*/
-  if (ui_list->list_last_len != len || ui_list->flag & UILST_SCROLL_TO_ACTIVE_ITEM) {
-    if (activei_row < ui_list->list_scroll) {
-      ui_list->list_scroll = activei_row;
-    }
-    else if (activei_row >= ui_list->list_scroll + rows) {
-      ui_list->list_scroll = activei_row - rows + 1;
-    }
-    ui_list->flag &= ~UILST_SCROLL_TO_ACTIVE_ITEM;
-  }
-
-  const int max_scroll = max_ii(0, dyn_data->height - rows);
-  CLAMP(ui_list->list_scroll, 0, max_scroll);
-  ui_list->list_last_len = len;
-  dyn_data->visual_height = rows;
-  layoutdata->visual_items = rows * columns;
-  layoutdata->start_idx = ui_list->list_scroll * columns;
-  layoutdata->end_idx = min_ii(layoutdata->start_idx + rows * columns, len);
-}
-
-static void uilist_resize_update_cb(bContext *C, void *arg1, void *UNUSED(arg2))
-{
-  uiList *ui_list = arg1;
-  uiListDyn *dyn_data = ui_list->dyn_data;
-
-  /* This way we get diff in number of additional items to show (positive) or hide (negative). */
-  const int diff = round_fl_to_int((float)(dyn_data->resize - dyn_data->resize_prev) /
-                                   (float)UI_UNIT_Y);
-
-  if (diff != 0) {
-    ui_list->list_grip += diff;
-    dyn_data->resize_prev += diff * UI_UNIT_Y;
-    ui_list->flag |= UILST_SCROLL_TO_ACTIVE_ITEM;
-  }
-
-  /* In case uilist is in popup, we need special refreshing */
-  ED_region_tag_refresh_ui(CTX_wm_menu(C));
-}
-
-static void *uilist_item_use_dynamic_tooltip(PointerRNA *itemptr, const char *propname)
-{
-  if (propname && propname[0] && itemptr && itemptr->data) {
-    PropertyRNA *prop = RNA_struct_find_property(itemptr, propname);
-
-    if (prop && (RNA_property_type(prop) == PROP_STRING)) {
-      return RNA_property_string_get_alloc(itemptr, prop, NULL, 0, NULL);
-    }
-  }
-  return NULL;
-}
-
-static char *uilist_item_tooltip_func(bContext *UNUSED(C), void *argN, const char *tip)
-{
-  char *dyn_tooltip = argN;
-  return BLI_sprintfN("%s - %s", tip, dyn_tooltip);
-}
-
-void uiTemplateList(uiLayout *layout,
-                    bContext *C,
-                    const char *listtype_name,
-                    const char *list_id,
-                    PointerRNA *dataptr,
-                    const char *propname,
-                    PointerRNA *active_dataptr,
-                    const char *active_propname,
-                    const char *item_dyntip_propname,
-                    int rows,
-                    int maxrows,
-                    int layout_type,
-                    int columns,
-                    bool sort_reverse,
-                    bool sort_lock)
-{
-  PropertyRNA *prop = NULL, *activeprop;
-  _uilist_item *items_ptr = NULL;
-  uiLayout *glob = NULL, *box, *row, *col, *subrow, *sub, *overlap;
-  uiBut *but;
-
-  uiListLayoutdata layoutdata;
-  char ui_list_id[UI_MAX_NAME_STR];
-  char numstr[32];
-  int rnaicon = ICON_NONE, icon = ICON_NONE;
-  int i = 0, activei = 0;
-  int len = 0;
-
-  /* validate arguments */
-  /* Forbid default UI_UL_DEFAULT_CLASS_NAME list class without a custom list_id! */
-  if (STREQ(UI_UL_DEFAULT_CLASS_NAME, listtype_name) && !(list_id && list_id[0])) {
-    RNA_warning("template_list using default '%s' UIList class must provide a custom list_id",
-                UI_UL_DEFAULT_CLASS_NAME);
-    return;
-  }
-
-  uiBlock *block = uiLayoutGetBlock(layout);
-
-  if (!active_dataptr->data) {
-    RNA_warning("No active data");
-    return;
-  }
-
-  if (dataptr->data) {
-    prop = RNA_struct_find_property(dataptr, propname);
-    if (!prop) {
-      RNA_warning("Property not found: %s.%s", RNA_struct_identifier(dataptr->type), propname);
-      return;
-    }
-  }
-
-  activeprop = RNA_struct_find_property(active_dataptr, active_propname);
-  if (!activeprop) {
-    RNA_warning(
-        "Property not found: %s.%s", RNA_struct_identifier(active_dataptr->type), active_propname);
-    return;
-  }
-
-  if (prop) {
-    const PropertyType type = RNA_property_type(prop);
-    if (type != PROP_COLLECTION) {
-      RNA_warning("Expected a collection data property");
-      return;
-    }
-  }
-
-  const PropertyType activetype = RNA_property_type(activeprop);
-  if (activetype != PROP_INT) {
-    RNA_warning("Expected an integer active data property");
-    return;
-  }
-
-  /* get icon */
-  if (dataptr->data && prop) {
-    StructRNA *ptype = RNA_property_pointer_type(dataptr, prop);
-    rnaicon = RNA_struct_ui_icon(ptype);
-  }
-
-  /* get active data */
-  activei = RNA_property_int_get(active_dataptr, activeprop);
-
-  /* Find the uiList type. */
-  uiListType *ui_list_type = WM_uilisttype_find(listtype_name, false);
-
-  if (ui_list_type == NULL) {
-    RNA_warning("List type %s not found", listtype_name);
-    return;
-  }
-
-  uiListDrawItemFunc draw_item = ui_list_type->draw_item ? ui_list_type->draw_item :
-                                                           uilist_draw_item_default;
-  uiListDrawFilterFunc draw_filter = ui_list_type->draw_filter ? ui_list_type->draw_filter :
-                                                                 uilist_draw_filter_default;
-  uiListFilterItemsFunc filter_items = ui_list_type->filter_items ? ui_list_type->filter_items :
-                                                                    uilist_filter_items_default;
-
-  /* Find or add the uiList to the current Region. */
-  /* We tag the list id with the list type... */
-  BLI_snprintf(
-      ui_list_id, sizeof(ui_list_id), "%s_%s", ui_list_type->idname, list_id ? list_id : "");
-
-  /* Allows to work in popups. */
-  ARegion *region = CTX_wm_menu(C);
-  if (region == NULL) {
-    region = CTX_wm_region(C);
-  }
-  uiList *ui_list = BLI_findstring(&region->ui_lists, ui_list_id, offsetof(uiList, list_id));
-
-  if (!ui_list) {
-    ui_list = MEM_callocN(sizeof(uiList), "uiList");
-    BLI_strncpy(ui_list->list_id, ui_list_id, sizeof(ui_list->list_id));
-    BLI_addtail(&region->ui_lists, ui_list);
-    ui_list->list_grip = -UI_LIST_AUTO_SIZE_THRESHOLD; /* Force auto size by default. */
-    if (sort_reverse) {
-      ui_list->filter_sort_flag |= UILST_FLT_SORT_REVERSE;
-    }
-    if (sort_lock) {
-      ui_list->filter_sort_flag |= UILST_FLT_SORT_LOCK;
-    }
-  }
-
-  if (!ui_list->dyn_data) {
-    ui_list->dyn_data = MEM_callocN(sizeof(uiListDyn), "uiList.dyn_data");
-  }
-  uiListDyn *dyn_data = ui_list->dyn_data;
-
-  /* Because we can't actually pass type across save&load... */
-  ui_list->type = ui_list_type;
-  ui_list->layout_type = layout_type;
-
-  /* Reset filtering data. */
-  MEM_SAFE_FREE(dyn_data->items_filter_flags);
-  MEM_SAFE_FREE(dyn_data->items_filter_neworder);
-  dyn_data->items_len = dyn_data->items_shown = -1;
-
-  /* When active item changed since last draw, scroll to it. */
-  if (activei != ui_list->list_last_activei) {
-    ui_list->flag |= UILST_SCROLL_TO_ACTIVE_ITEM;
-    ui_list->list_last_activei = activei;
-  }
-
-  /* Filter list items! (not for compact layout, though) */
-  if (dataptr->data && prop) {
-    const int filter_exclude = ui_list->filter_flag & UILST_FLT_EXCLUDE;
-    const bool order_reverse = (ui_list->filter_sort_flag & UILST_FLT_SORT_REVERSE) != 0;
-    int items_shown, idx = 0;
-#if 0
-    int prev_ii = -1, prev_i;
-#endif
-
-    if (layout_type == UILST_LAYOUT_COMPACT) {
-      dyn_data->items_len = dyn_data->items_shown = RNA_property_collection_length(dataptr, prop);
-    }
-    else {
-      // printf("%s: filtering...\n", __func__);
-      filter_items(ui_list, C, dataptr, propname);
-      // printf("%s: filtering done.\n", __func__);
-    }
-
-    items_shown = dyn_data->items_shown;
-    if (items_shown >= 0) {
-      bool activei_mapping_pending = true;
-      items_ptr = MEM_mallocN(sizeof(_uilist_item) * items_shown, __func__);
-      // printf("%s: items shown: %d.\n", __func__, items_shown);
-      RNA_PROP_BEGIN (dataptr, itemptr, prop) {
-        if (!dyn_data->items_filter_flags ||
-            ((dyn_data->items_filter_flags[i] & UILST_FLT_ITEM) ^ filter_exclude)) {
-          int ii;
-          if (dyn_data->items_filter_neworder) {
-            ii = dyn_data->items_filter_neworder[idx++];
-            ii = order_reverse ? items_shown - ii - 1 : ii;
-          }
-          else {
-            ii = order_reverse ? items_shown - ++idx : idx++;
-          }
-          // printf("%s: ii: %d\n", __func__, ii);
-          items_ptr[ii].item = itemptr;
-          items_ptr[ii].org_idx = i;
-          items_ptr[ii].flt_flag = dyn_data->items_filter_flags ? dyn_data->items_filter_flags[i] :
-                                                                  0;
-
-          if (activei_mapping_pending && activei == i) {
-            activei = ii;
-            /* So that we do not map again activei! */
-            activei_mapping_pending = false;
-          }
-#if 0 /* For now, do not alter active element, even if it will be hidden... */
-          else if (activei < i) {
-            /* We do not want an active but invisible item!
-             * Only exception is when all items are filtered out...
-             */
-            if (prev_ii >= 0) {
-              activei = prev_ii;
-              RNA_property_int_set(active_dataptr, activeprop, prev_i);
-            }
-            else {
-              activei = ii;
-              RNA_property_int_set(active_dataptr, activeprop, i);
-            }
-          }
-          prev_i = i;
-          prev_ii = ii;
-#endif
-        }
-        i++;
-      }
-      RNA_PROP_END;
-
-      if (activei_mapping_pending) {
-        /* No active item found, set to 'invalid' -1 value... */
-        activei = -1;
-      }
-    }
-    if (dyn_data->items_shown >= 0) {
-      len = dyn_data->items_shown;
-    }
-    else {
-      len = dyn_data->items_len;
-    }
-  }
-
-  switch (layout_type) {
-    case UILST_LAYOUT_DEFAULT:
-      /* layout */
-      box = uiLayoutListBox(layout, ui_list, active_dataptr, activeprop);
-      glob = uiLayoutColumn(box, true);
-      row = uiLayoutRow(glob, false);
-      col = uiLayoutColumn(row, true);
-
-      /* init numbers */
-      uilist_prepare(ui_list, len, activei, rows, maxrows, 1, &layoutdata);
-
-      if (dataptr->data && prop) {
-        /* create list items */
-        for (i = layoutdata.start_idx; i < layoutdata.end_idx; i++) {
-          PointerRNA *itemptr = &items_ptr[i].item;
-          void *dyntip_data;
-          const int org_i = items_ptr[i].org_idx;
-          const int flt_flag = items_ptr[i].flt_flag;
-          uiBlock *subblock = uiLayoutGetBlock(col);
-
-          overlap = uiLayoutOverlap(col);
-
-          UI_block_flag_enable(subblock, UI_BLOCK_LIST_ITEM);
-
-          /* list item behind label & other buttons */
-          sub = uiLayoutRow(overlap, false);
-
-          but = uiDefButR_prop(subblock,
-                               UI_BTYPE_LISTROW,
-                               0,
-                               "",
-                               0,
-                               0,
-                               UI_UNIT_X * 10,
-                               UI_UNIT_Y,
-                               active_dataptr,
-                               activeprop,
-                               0,
-                               0,
-                               org_i,
-                               0,
-                               0,
-                               TIP_("Double click to rename"));
-          if ((dyntip_data = uilist_item_use_dynamic_tooltip(itemptr, item_dyntip_propname))) {
-            UI_but_func_tooltip_set(but, uilist_item_tooltip_func, dyntip_data);
-          }
-
-          sub = uiLayoutRow(overlap, false);
-
-          icon = UI_icon_from_rnaptr(C, itemptr, rnaicon, false);
-          if (icon == ICON_DOT) {
-            icon = ICON_NONE;
-          }
-          draw_item(ui_list,
-                    C,
-                    sub,
-                    dataptr,
-                    itemptr,
-                    icon,
-                    active_dataptr,
-                    active_propname,
-                    org_i,
-                    flt_flag);
-
-          /* Items should be able to set context pointers for the layout. But the list-row button
-           * swallows events, so it needs the context storage too for handlers to see it. */
-          but->context = uiLayoutGetContextStore(sub);
-
-          /* If we are "drawing" active item, set all labels as active. */
-          if (i == activei) {
-            ui_layout_list_set_labels_active(sub);
-          }
-
-          UI_block_flag_disable(subblock, UI_BLOCK_LIST_ITEM);
-        }
-      }
-
-      /* add dummy buttons to fill space */
-      for (; i < layoutdata.start_idx + layoutdata.visual_items; i++) {
-        uiItemL(col, "", ICON_NONE);
-      }
-
-      /* add scrollbar */
-      if (len > layoutdata.visual_items) {
-        col = uiLayoutColumn(row, false);
-        uiDefButI(block,
-                  UI_BTYPE_SCROLL,
-                  0,
-                  "",
-                  0,
-                  0,
-                  V2D_SCROLL_WIDTH,
-                  UI_UNIT_Y * dyn_data->visual_height,
-                  &ui_list->list_scroll,
-                  0,
-                  dyn_data->height - dyn_data->visual_height,
-                  dyn_data->visual_height,
-                  0,
-                  "");
-      }
-      break;
-    case UILST_LAYOUT_COMPACT:
-      row = uiLayoutRow(layout, true);
-
-      if ((dataptr->data && prop) && (dyn_data->items_shown > 0) && (activei >= 0) &&
-          (activei < dyn_data->items_shown)) {
-        PointerRNA *itemptr = &items_ptr[activei].item;
-        const int org_i = items_ptr[activei].org_idx;
-
-        icon = UI_icon_from_rnaptr(C, itemptr, rnaicon, false);
-        if (icon == ICON_DOT) {
-          icon = ICON_NONE;
-        }
-        draw_item(
-            ui_list, C, row, dataptr, itemptr, icon, active_dataptr, active_propname, org_i, 0);
-      }
-      /* if list is empty, add in dummy button */
-      else {
-        uiItemL(row, "", ICON_NONE);
-      }
-
-      /* next/prev button */
-      BLI_snprintf(numstr, sizeof(numstr), "%d :", dyn_data->items_shown);
-      but = uiDefIconTextButR_prop(block,
-                                   UI_BTYPE_NUM,
-                                   0,
-                                   0,
-                                   numstr,
-                                   0,
-                                   0,
-                                   UI_UNIT_X * 5,
-                                   UI_UNIT_Y,
-                                   active_dataptr,
-                                   activeprop,
-                                   0,
-                                   0,
-                                   0,
-                                   0,
-                                   0,
-                                   "");
-      if (dyn_data->items_shown == 0) {
-        UI_but_flag_enable(but, UI_BUT_DISABLED);
-      }
-      break;
-    case UILST_LAYOUT_GRID:
-      box = uiLayoutListBox(layout, ui_list, active_dataptr, activeprop);
-      glob = uiLayoutColumn(box, true);
-      row = uiLayoutRow(glob, false);
-      col = uiLayoutColumn(row, true);
-      subrow = NULL; /* Quite gcc warning! */
-
-      uilist_prepare(ui_list, len, activei, rows, maxrows, columns, &layoutdata);
-
-      if (dataptr->data && prop) {
-        /* create list items */
-        for (i = layoutdata.start_idx; i < layoutdata.end_idx; i++) {
-          PointerRNA *itemptr = &items_ptr[i].item;
-          const int org_i = items_ptr[i].org_idx;
-          const int flt_flag = items_ptr[i].flt_flag;
-
-          /* create button */
-          if (!(i % columns)) {
-            subrow = uiLayoutRow(col, false);
-          }
-
-          uiBlock *subblock = uiLayoutGetBlock(subrow);
-          overlap = uiLayoutOverlap(subrow);
-
-          UI_block_flag_enable(subblock, UI_BLOCK_LIST_ITEM);
-
-          /* list item behind label & other buttons */
-          sub = uiLayoutRow(overlap, false);
-
-          but = uiDefButR_prop(subblock,
-                               UI_BTYPE_LISTROW,
-                               0,
-                               "",
-                               0,
-                               0,
-                               UI_UNIT_X * 10,
-                               UI_UNIT_Y,
-                               active_dataptr,
-                               activeprop,
-                               0,
-                               0,
-                               org_i,
-                               0,
-                               0,
-                               NULL);
-          UI_but_drawflag_enable(but, UI_BUT_NO_TOOLTIP);
-
-          sub = uiLayoutRow(overlap, false);
-
-          icon = UI_icon_from_rnaptr(C, itemptr, rnaicon, false);
-          draw_item(ui_list,
-                    C,
-                    sub,
-                    dataptr,
-                    itemptr,
-                    icon,
-                    active_dataptr,
-                    active_propname,
-                    org_i,
-                    flt_flag);
-
-          /* If we are "drawing" active item, set all labels as active. */
-          if (i == activei) {
-            ui_layout_list_set_labels_active(sub);
-          }
-
-          UI_block_flag_disable(subblock, UI_BLOCK_LIST_ITEM);
-        }
-      }
-
-      /* add dummy buttons to fill space */
-      for (; i < layoutdata.start_idx + layoutdata.visual_items; i++) {
-        if (!(i % columns)) {
-          subrow = uiLayoutRow(col, false);
-        }
-        uiItemL(subrow, "", ICON_NONE);
-      }
-
-      /* add scrollbar */
-      if (len > layoutdata.visual_items) {
-        /* col = */ uiLayoutColumn(row, false);
-        uiDefButI(block,
-                  UI_BTYPE_SCROLL,
-                  0,
-                  "",
-                  0,
-                  0,
-                  V2D_SCROLL_WIDTH,
-                  UI_UNIT_Y * dyn_data->visual_height,
-                  &ui_list->list_scroll,
-                  0,
-                  dyn_data->height - dyn_data->visual_height,
-                  dyn_data->visual_height,
-                  0,
-                  "");
-      }
-      break;
-  }
-
-  if (glob) {
-    /* About #UI_BTYPE_GRIP drag-resize:
-     * We can't directly use results from a grip button, since we have a
-     * rather complex behavior here (sizing by discrete steps and, overall, auto-size feature).
-     * Since we *never* know whether we are grip-resizing or not
-     * (because there is no callback for when a button enters/leaves its "edit mode"),
-     * we use the fact that grip-controlled value (dyn_data->resize) is completely handled
-     * by the grip during the grab resize, so settings its value here has no effect at all.
-     *
-     * It is only meaningful when we are not resizing,
-     * in which case this gives us the correct "init drag" value.
-     * Note we cannot affect `dyn_data->resize_prev here`,
-     * since this value is not controlled by the grip!
-     */
-    dyn_data->resize = dyn_data->resize_prev +
-                       (dyn_data->visual_height - ui_list->list_grip) * UI_UNIT_Y;
-
-    row = uiLayoutRow(glob, true);
-    uiBlock *subblock = uiLayoutGetBlock(row);
-    UI_block_emboss_set(subblock, UI_EMBOSS_NONE);
-
-    if (ui_list->filter_flag & UILST_FLT_SHOW) {
-      but = uiDefIconButBitI(subblock,
-                             UI_BTYPE_TOGGLE,
-                             UILST_FLT_SHOW,
-                             0,
-                             ICON_DISCLOSURE_TRI_DOWN,
-                             0,
-                             0,
-                             UI_UNIT_X,
-                             UI_UNIT_Y * 0.5f,
-                             &(ui_list->filter_flag),
-                             0,
-                             0,
-                             0,
-                             0,
-                             TIP_("Hide filtering options"));
-      UI_but_flag_disable(but, UI_BUT_UNDO); /* skip undo on screen buttons */
-
-      but = uiDefIconButI(subblock,
-                          UI_BTYPE_GRIP,
-                          0,
-                          ICON_GRIP,
-                          0,
-                          0,
-                          UI_UNIT_X * 10.0f,
-                          UI_UNIT_Y * 0.5f,
-                          &dyn_data->resize,
-                          0.0,
-                          0.0,
-                          0,
-                          0,
-                          "");
-      UI_but_func_set(but, uilist_resize_update_cb, ui_list, NULL);
-
-      UI_block_emboss_set(subblock, UI_EMBOSS);
-
-      col = uiLayoutColumn(glob, false);
-      subblock = uiLayoutGetBlock(col);
-      uiDefBut(subblock,
-               UI_BTYPE_SEPR,
-               0,
-               "",
-               0,
-               0,
-               UI_UNIT_X,
-               UI_UNIT_Y * 0.05f,
-               NULL,
-               0.0,
-               0.0,
-               0,
-               0,
-               "");
-
-      draw_filter(ui_list, C, col);
-    }
-    else {
-      but = uiDefIconButBitI(subblock,
-                             UI_BTYPE_TOGGLE,
-                             UILST_FLT_SHOW,
-                             0,
-                             ICON_DISCLOSURE_TRI_RIGHT,
-                             0,
-                             0,
-                             UI_UNIT_X,
-                             UI_UNIT_Y * 0.5f,
-                             &(ui_list->filter_flag),
-                             0,
-                             0,
-                             0,
-                             0,
-                             TIP_("Show filtering options"));
-      UI_but_flag_disable(but, UI_BUT_UNDO); /* skip undo on screen buttons */
-
-      but = uiDefIconButI(subblock,
-                          UI_BTYPE_GRIP,
-                          0,
-                          ICON_GRIP,
-                          0,
-                          0,
-                          UI_UNIT_X * 10.0f,
-                          UI_UNIT_Y * 0.5f,
-                          &dyn_data->resize,
-                          0.0,
-                          0.0,
-                          0,
-                          0,
-                          "");
-      UI_but_func_set(but, uilist_resize_update_cb, ui_list, NULL);
-
-      UI_block_emboss_set(subblock, UI_EMBOSS);
-    }
-  }
-
-  if (items_ptr) {
-    MEM_freeN(items_ptr);
-  }
-}
-
-/** \} */
-
-/* -------------------------------------------------------------------- */
 /** \name Running Jobs Template
  * \{ */
 
@@ -6548,7 +5992,7 @@ static void do_running_jobs(bContext *C, void *UNUSED(arg), int event)
       WM_jobs_stop(CTX_wm_manager(C), CTX_wm_screen(C), NULL);
       break;
     case B_STOPANIM:
-      WM_operator_name_call(C, "SCREEN_OT_animation_play", WM_OP_INVOKE_SCREEN, NULL);
+      WM_operator_name_call(C, "SCREEN_OT_animation_play", WM_OP_INVOKE_SCREEN, NULL, NULL);
       break;
     case B_STOPCOMPO:
       WM_jobs_stop(CTX_wm_manager(C), CTX_data_scene(C), NULL);
@@ -6630,6 +6074,11 @@ void uiTemplateRunningJobs(uiLayout *layout, bContext *C)
       break;
     }
     if (WM_jobs_test(wm, scene, WM_JOB_TYPE_SEQ_BUILD_PREVIEW)) {
+      handle_event = B_STOPSEQ;
+      icon = ICON_SEQUENCE;
+      break;
+    }
+    if (WM_jobs_test(wm, scene, WM_JOB_TYPE_SEQ_DRAW_THUMBNAIL)) {
       handle_event = B_STOPSEQ;
       icon = ICON_SEQUENCE;
       break;
@@ -6762,7 +6211,7 @@ void uiTemplateRunningJobs(uiLayout *layout, bContext *C)
                                                                             NULL);
 
       but_progress->progress = progress;
-      UI_but_func_tooltip_set(&but_progress->but, progress_tooltip_func, tip_arg);
+      UI_but_func_tooltip_set(&but_progress->but, progress_tooltip_func, tip_arg, MEM_freeN);
     }
 
     if (!wm->is_interface_locked) {
@@ -6830,6 +6279,7 @@ void uiTemplateReportsBanner(uiLayout *layout, bContext *C)
 
   uiLayout *ui_abs = uiLayoutAbsolute(layout, false);
   uiBlock *block = uiLayoutGetBlock(ui_abs);
+  eUIEmbossType previous_emboss = UI_block_emboss_get(block);
 
   UI_fontstyle_set(&style->widgetlabel);
   int width = BLF_width(style->widgetlabel.uifont_id, report->message, report->len);
@@ -6903,7 +6353,9 @@ void uiTemplateReportsBanner(uiLayout *layout, bContext *C)
                   0,
                   width + UI_UNIT_X,
                   UI_UNIT_Y,
-                  "Show in Info Log");
+                  TIP_("Show in Info Log"));
+
+  UI_block_emboss_set(block, previous_emboss);
 }
 
 void uiTemplateInputStatus(uiLayout *layout, struct bContext *C)
@@ -6928,8 +6380,10 @@ void uiTemplateInputStatus(uiLayout *layout, struct bContext *C)
     uiLayout *row = uiLayoutRow(col, true);
     uiLayoutSetAlignment(row, UI_LAYOUT_ALIGN_LEFT);
 
-    const char *msg = WM_window_cursor_keymap_status_get(win, i, 0);
-    const char *msg_drag = WM_window_cursor_keymap_status_get(win, i, 1);
+    const char *msg = CTX_TIP_(BLT_I18NCONTEXT_OPERATOR_DEFAULT,
+                               WM_window_cursor_keymap_status_get(win, i, 0));
+    const char *msg_drag = CTX_TIP_(BLT_I18NCONTEXT_OPERATOR_DEFAULT,
+                                    WM_window_cursor_keymap_status_get(win, i, 1));
 
     if (msg || (msg_drag == NULL)) {
       uiItemL(row, msg ? msg : "", (ICON_MOUSE_LMB + i));
@@ -7059,13 +6513,13 @@ bool uiTemplateEventFromKeymapItem(struct uiLayout *layout,
     for (int j = 0; j < ARRAY_SIZE(icon_mod) && icon_mod[j]; j++) {
       uiItemL(layout, "", icon_mod[j]);
     }
-    uiItemL(layout, text, icon);
+    uiItemL(layout, CTX_TIP_(BLT_I18NCONTEXT_ID_WINDOWMANAGER, text), icon);
     ok = true;
   }
   else if (text_fallback) {
     const char *event_text = WM_key_event_string(kmi->type, true);
     uiItemL(layout, event_text, ICON_NONE);
-    uiItemL(layout, text, ICON_NONE);
+    uiItemL(layout, CTX_TIP_(BLT_I18NCONTEXT_ID_WINDOWMANAGER, text), ICON_NONE);
     ok = true;
   }
   return ok;
@@ -7109,15 +6563,12 @@ void uiTemplateColormanagedViewSettings(uiLayout *layout,
   ColorManagedViewSettings *view_settings = view_transform_ptr.data;
 
   uiLayout *col = uiLayoutColumn(layout, false);
-
-  uiLayout *row = uiLayoutRow(col, false);
-  uiItemR(row, &view_transform_ptr, "view_transform", 0, IFACE_("View"), ICON_NONE);
+  uiItemR(col, &view_transform_ptr, "view_transform", 0, IFACE_("View"), ICON_NONE);
+  uiItemR(col, &view_transform_ptr, "look", 0, IFACE_("Look"), ICON_NONE);
 
   col = uiLayoutColumn(layout, false);
   uiItemR(col, &view_transform_ptr, "exposure", 0, NULL, ICON_NONE);
   uiItemR(col, &view_transform_ptr, "gamma", 0, NULL, ICON_NONE);
-
-  uiItemR(col, &view_transform_ptr, "look", 0, IFACE_("Look"), ICON_NONE);
 
   col = uiLayoutColumn(layout, false);
   uiItemR(col, &view_transform_ptr, "use_curve_mapping", 0, NULL, ICON_NONE);
@@ -7214,6 +6665,184 @@ void uiTemplateNodeSocket(uiLayout *layout, bContext *UNUSED(C), float color[4])
 /** \name Cache File Template
  * \{ */
 
+void uiTemplateCacheFileVelocity(uiLayout *layout, PointerRNA *fileptr)
+{
+  if (RNA_pointer_is_null(fileptr)) {
+    return;
+  }
+
+  /* Ensure that the context has a CacheFile as this may not be set inside of modifiers panels. */
+  uiLayoutSetContextPointer(layout, "edit_cachefile", fileptr);
+
+  uiItemR(layout, fileptr, "velocity_name", 0, NULL, ICON_NONE);
+  uiItemR(layout, fileptr, "velocity_unit", 0, NULL, ICON_NONE);
+}
+
+void uiTemplateCacheFileProcedural(uiLayout *layout, const bContext *C, PointerRNA *fileptr)
+{
+  if (RNA_pointer_is_null(fileptr)) {
+    return;
+  }
+
+  /* Ensure that the context has a CacheFile as this may not be set inside of modifiers panels. */
+  uiLayoutSetContextPointer(layout, "edit_cachefile", fileptr);
+
+  uiLayout *row, *sub;
+
+  /* Only enable render procedural option if the active engine supports it. */
+  const struct RenderEngineType *engine_type = CTX_data_engine_type(C);
+
+  Scene *scene = CTX_data_scene(C);
+  const bool engine_supports_procedural = RE_engine_supports_alembic_procedural(engine_type,
+                                                                                scene);
+
+  if (!engine_supports_procedural) {
+    row = uiLayoutRow(layout, false);
+    /* For Cycles, verify that experimental features are enabled. */
+    if (BKE_scene_uses_cycles(scene) && !BKE_scene_uses_cycles_experimental_features(scene)) {
+      uiItemL(
+          row,
+          TIP_(
+              "The Cycles Alembic Procedural is only available with the experimental feature set"),
+          ICON_INFO);
+    }
+    else {
+      uiItemL(
+          row, TIP_("The active render engine does not have an Alembic Procedural"), ICON_INFO);
+    }
+  }
+
+  row = uiLayoutRow(layout, false);
+  uiLayoutSetActive(row, engine_supports_procedural);
+  uiItemR(row, fileptr, "use_render_procedural", 0, NULL, ICON_NONE);
+
+  const bool use_render_procedural = RNA_boolean_get(fileptr, "use_render_procedural");
+  const bool use_prefetch = RNA_boolean_get(fileptr, "use_prefetch");
+
+  row = uiLayoutRow(layout, false);
+  uiLayoutSetEnabled(row, use_render_procedural);
+  uiItemR(row, fileptr, "use_prefetch", 0, NULL, ICON_NONE);
+
+  sub = uiLayoutRow(layout, false);
+  uiLayoutSetEnabled(sub, use_prefetch && use_render_procedural);
+  uiItemR(sub, fileptr, "prefetch_cache_size", 0, NULL, ICON_NONE);
+}
+
+void uiTemplateCacheFileTimeSettings(uiLayout *layout, PointerRNA *fileptr)
+{
+  if (RNA_pointer_is_null(fileptr)) {
+    return;
+  }
+
+  /* Ensure that the context has a CacheFile as this may not be set inside of modifiers panels. */
+  uiLayoutSetContextPointer(layout, "edit_cachefile", fileptr);
+
+  uiLayout *row, *sub, *subsub;
+
+  row = uiLayoutRow(layout, false);
+  uiItemR(row, fileptr, "is_sequence", 0, NULL, ICON_NONE);
+
+  row = uiLayoutRowWithHeading(layout, true, IFACE_("Override Frame"));
+  sub = uiLayoutRow(row, true);
+  uiLayoutSetPropDecorate(sub, false);
+  uiItemR(sub, fileptr, "override_frame", 0, "", ICON_NONE);
+  subsub = uiLayoutRow(sub, true);
+  uiLayoutSetActive(subsub, RNA_boolean_get(fileptr, "override_frame"));
+  uiItemR(subsub, fileptr, "frame", 0, "", ICON_NONE);
+  uiItemDecoratorR(row, fileptr, "frame", 0);
+
+  row = uiLayoutRow(layout, false);
+  uiItemR(row, fileptr, "frame_offset", 0, NULL, ICON_NONE);
+  uiLayoutSetActive(row, !RNA_boolean_get(fileptr, "is_sequence"));
+}
+
+static void cache_file_layer_item(uiList *UNUSED(ui_list),
+                                  const bContext *UNUSED(C),
+                                  uiLayout *layout,
+                                  PointerRNA *UNUSED(dataptr),
+                                  PointerRNA *itemptr,
+                                  int UNUSED(icon),
+                                  PointerRNA *UNUSED(active_dataptr),
+                                  const char *UNUSED(active_propname),
+                                  int UNUSED(index),
+                                  int UNUSED(flt_flag))
+{
+  uiLayout *row = uiLayoutRow(layout, true);
+  uiItemR(row, itemptr, "hide_layer", UI_ITEM_R_NO_BG, "", ICON_NONE);
+  uiItemR(row, itemptr, "filepath", UI_ITEM_R_NO_BG, "", ICON_NONE);
+}
+
+uiListType *UI_UL_cache_file_layers()
+{
+  uiListType *list_type = (uiListType *)MEM_callocN(sizeof(*list_type), __func__);
+
+  BLI_strncpy(list_type->idname, "UI_UL_cache_file_layers", sizeof(list_type->idname));
+  list_type->draw_item = cache_file_layer_item;
+
+  return list_type;
+}
+
+void uiTemplateCacheFileLayers(uiLayout *layout, const bContext *C, PointerRNA *fileptr)
+{
+  if (RNA_pointer_is_null(fileptr)) {
+    return;
+  }
+
+  /* Ensure that the context has a CacheFile as this may not be set inside of modifiers panels. */
+  uiLayoutSetContextPointer(layout, "edit_cachefile", fileptr);
+
+  uiLayout *row = uiLayoutRow(layout, false);
+  uiLayout *col = uiLayoutColumn(row, true);
+
+  uiTemplateList(col,
+                 (bContext *)C,
+                 "UI_UL_cache_file_layers",
+                 "cache_file_layers",
+                 fileptr,
+                 "layers",
+                 fileptr,
+                 "active_index",
+                 "",
+                 1,
+                 5,
+                 UILST_LAYOUT_DEFAULT,
+                 1,
+                 UI_TEMPLATE_LIST_FLAG_NONE);
+
+  col = uiLayoutColumn(row, true);
+  uiItemO(col, "", ICON_ADD, "cachefile.layer_add");
+  uiItemO(col, "", ICON_REMOVE, "cachefile.layer_remove");
+
+  CacheFile *file = fileptr->data;
+  if (BLI_listbase_count(&file->layers) > 1) {
+    uiItemS_ex(col, 1.0f);
+    uiItemO(col, "", ICON_TRIA_UP, "cachefile.layer_move");
+    uiItemO(col, "", ICON_TRIA_DOWN, "cachefile.layer_move");
+  }
+}
+
+bool uiTemplateCacheFilePointer(PointerRNA *ptr, const char *propname, PointerRNA *r_file_ptr)
+{
+  PropertyRNA *prop = RNA_struct_find_property(ptr, propname);
+
+  if (!prop) {
+    printf(
+        "%s: property not found: %s.%s\n", __func__, RNA_struct_identifier(ptr->type), propname);
+    return false;
+  }
+
+  if (RNA_property_type(prop) != PROP_POINTER) {
+    printf("%s: expected pointer property for %s.%s\n",
+           __func__,
+           RNA_struct_identifier(ptr->type),
+           propname);
+    return false;
+  }
+
+  *r_file_ptr = RNA_property_pointer_get(ptr, prop);
+  return true;
+}
+
 void uiTemplateCacheFile(uiLayout *layout,
                          const bContext *C,
                          PointerRNA *ptr,
@@ -7223,23 +6852,11 @@ void uiTemplateCacheFile(uiLayout *layout,
     return;
   }
 
-  PropertyRNA *prop = RNA_struct_find_property(ptr, propname);
-
-  if (!prop) {
-    printf(
-        "%s: property not found: %s.%s\n", __func__, RNA_struct_identifier(ptr->type), propname);
+  PointerRNA fileptr;
+  if (!uiTemplateCacheFilePointer(ptr, propname, &fileptr)) {
     return;
   }
 
-  if (RNA_property_type(prop) != PROP_POINTER) {
-    printf("%s: expected pointer property for %s.%s\n",
-           __func__,
-           RNA_struct_identifier(ptr->type),
-           propname);
-    return;
-  }
-
-  PointerRNA fileptr = RNA_property_pointer_get(ptr, prop);
   CacheFile *file = fileptr.data;
 
   uiLayoutSetContextPointer(layout, "edit_cachefile", &fileptr);
@@ -7261,7 +6878,7 @@ void uiTemplateCacheFile(uiLayout *layout,
 
   SpaceProperties *sbuts = CTX_wm_space_properties(C);
 
-  uiLayout *row, *sub, *subsub;
+  uiLayout *row, *sub;
 
   uiLayoutSetPropSep(layout, true);
 
@@ -7270,29 +6887,10 @@ void uiTemplateCacheFile(uiLayout *layout,
   sub = uiLayoutRow(row, true);
   uiItemO(sub, "", ICON_FILE_REFRESH, "cachefile.reload");
 
-  row = uiLayoutRow(layout, false);
-  uiItemR(row, &fileptr, "is_sequence", 0, NULL, ICON_NONE);
-
-  row = uiLayoutRowWithHeading(layout, true, IFACE_("Override Frame"));
-  sub = uiLayoutRow(row, true);
-  uiLayoutSetPropDecorate(sub, false);
-  uiItemR(sub, &fileptr, "override_frame", 0, "", ICON_NONE);
-  subsub = uiLayoutRow(sub, true);
-  uiLayoutSetActive(subsub, RNA_boolean_get(&fileptr, "override_frame"));
-  uiItemR(subsub, &fileptr, "frame", 0, "", ICON_NONE);
-  uiItemDecoratorR(row, &fileptr, "frame", 0);
-
-  row = uiLayoutRow(layout, false);
-  uiItemR(row, &fileptr, "frame_offset", 0, NULL, ICON_NONE);
-  uiLayoutSetActive(row, !RNA_boolean_get(&fileptr, "is_sequence"));
-
   if (sbuts->mainb == BCONTEXT_CONSTRAINT) {
     row = uiLayoutRow(layout, false);
     uiItemR(row, &fileptr, "scale", 0, IFACE_("Manual Scale"), ICON_NONE);
   }
-
-  uiItemR(layout, &fileptr, "velocity_name", 0, NULL, ICON_NONE);
-  uiItemR(layout, &fileptr, "velocity_unit", 0, NULL, ICON_NONE);
 
   /* TODO: unused for now, so no need to expose. */
 #if 0

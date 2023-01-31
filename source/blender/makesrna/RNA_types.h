@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -82,18 +68,45 @@ typedef enum PropertyType {
 /* also update rna_property_subtype_unit when you change this */
 typedef enum PropertyUnit {
   PROP_UNIT_NONE = (0 << 16),
-  PROP_UNIT_LENGTH = (1 << 16),       /* m */
-  PROP_UNIT_AREA = (2 << 16),         /* m^2 */
-  PROP_UNIT_VOLUME = (3 << 16),       /* m^3 */
-  PROP_UNIT_MASS = (4 << 16),         /* kg */
-  PROP_UNIT_ROTATION = (5 << 16),     /* radians */
-  PROP_UNIT_TIME = (6 << 16),         /* frame */
-  PROP_UNIT_VELOCITY = (7 << 16),     /* m/s */
-  PROP_UNIT_ACCELERATION = (8 << 16), /* m/(s^2) */
-  PROP_UNIT_CAMERA = (9 << 16),       /* mm */
-  PROP_UNIT_POWER = (10 << 16),       /* W */
-  PROP_UNIT_TEMPERATURE = (11 << 16), /* C */
+  PROP_UNIT_LENGTH = (1 << 16),        /* m */
+  PROP_UNIT_AREA = (2 << 16),          /* m^2 */
+  PROP_UNIT_VOLUME = (3 << 16),        /* m^3 */
+  PROP_UNIT_MASS = (4 << 16),          /* kg */
+  PROP_UNIT_ROTATION = (5 << 16),      /* radians */
+  PROP_UNIT_TIME = (6 << 16),          /* frame */
+  PROP_UNIT_TIME_ABSOLUTE = (7 << 16), /* time in seconds (independent of scene) */
+  PROP_UNIT_VELOCITY = (8 << 16),      /* m/s */
+  PROP_UNIT_ACCELERATION = (9 << 16),  /* m/(s^2) */
+  PROP_UNIT_CAMERA = (10 << 16),       /* mm */
+  PROP_UNIT_POWER = (11 << 16),        /* W */
+  PROP_UNIT_TEMPERATURE = (12 << 16),  /* C */
 } PropertyUnit;
+
+/**
+ * Use values besides #PROP_SCALE_LINEAR
+ * so the movement of the mouse doesn't map linearly to the value of the slider.
+ *
+ * For some settings it's useful to space motion in a non-linear way, see T77868.
+ *
+ * NOTE: The scale types are available for all float sliders.
+ * For integer sliders they are only available if they use the visible value bar.
+ * Sliders with logarithmic scale and value bar must have a range > 0
+ * while logarithmic sliders without the value bar can have a range of >= 0.
+ */
+typedef enum PropertyScaleType {
+  /** Linear scale (default). */
+  PROP_SCALE_LINEAR = 0,
+  /**
+   * Logarithmic scale
+   * - Maximum range: `0 <= x < inf`
+   */
+  PROP_SCALE_LOG = 1,
+  /**
+   * Cubic scale.
+   * - Maximum range: `-inf < x < inf`
+   */
+  PROP_SCALE_CUBIC = 2,
+} PropertyScaleType;
 
 #define RNA_SUBTYPE_UNIT(subtype) ((subtype)&0x00FF0000)
 #define RNA_SUBTYPE_VALUE(subtype) ((subtype) & ~0x00FF0000)
@@ -107,7 +120,7 @@ typedef enum PropertyUnit {
 
 /**
  * \note Also update enums in bpy_props.c and rna_rna.c when adding items here.
- * Watch it: these values are written to files as part of node socket button subtypes!
+ * Watch it: these values are written to files as part of node socket button sub-types!
  */
 typedef enum PropertySubType {
   PROP_NONE = 0,
@@ -131,6 +144,7 @@ typedef enum PropertySubType {
   PROP_FACTOR = 15,
   PROP_ANGLE = 16 | PROP_UNIT_ROTATION,
   PROP_TIME = 17 | PROP_UNIT_TIME,
+  PROP_TIME_ABSOLUTE = 17 | PROP_UNIT_TIME_ABSOLUTE,
   /** Distance in 3d space, don't use for pixel distance for eg. */
   PROP_DISTANCE = 18 | PROP_UNIT_LENGTH,
   PROP_DISTANCE_CAMERA = 19 | PROP_UNIT_CAMERA,
@@ -165,7 +179,7 @@ typedef enum PropertySubType {
 
 /* Make sure enums are updated with these */
 /* HIGHEST FLAG IN USE: 1 << 31
- * FREE FLAGS: 2, 9, 11, 13, 14, 15, 30 */
+ * FREE FLAGS: 9, 11, 13, 14, 15. */
 typedef enum PropertyFlag {
   /**
    * Editable means the property is editable in the user
@@ -198,7 +212,7 @@ typedef enum PropertyFlag {
   PROP_ICONS_CONSECUTIVE = (1 << 12),
   PROP_ICONS_REVERSE = (1 << 8),
 
-  /** Hidden in  the user interface. */
+  /** Hidden in the user interface. */
   PROP_HIDDEN = (1 << 19),
   /** Do not write in presets. */
   PROP_SKIP_SAVE = (1 << 28),
@@ -212,7 +226,7 @@ typedef enum PropertyFlag {
   PROP_ID_REFCOUNT = (1 << 6),
 
   /**
-   * Disallow assigning a variable to its self, eg an object tracking its self
+   * Disallow assigning a variable to itself, eg an object tracking itself
    * only apply this to types that are derived from an ID ().
    */
   PROP_ID_SELF_CHECK = (1 << 20),
@@ -227,7 +241,7 @@ typedef enum PropertyFlag {
    * Currently only used for UI, this is similar to PROP_NEVER_NULL
    * except that the value may be NULL at times, used for ObData, where an Empty's will be NULL
    * but setting NULL on a mesh object is not possible.
-   * So, if its not NULL, setting NULL cant be done!
+   * So if it's not NULL, setting NULL can't be done!
    */
   PROP_NEVER_UNLINK = (1 << 25),
 
@@ -237,13 +251,14 @@ typedef enum PropertyFlag {
    * This is crucial information for processes that walk the whole data of an ID e.g.
    * (like library override).
    * Note that all ID pointers are enforced to this by default,
-   * this probably will need to be rechecked (see ugly infamous NodeTrees of mat/tex/scene/etc.).
+   * this probably will need to be rechecked
+   * (see ugly infamous node-trees of material/texture/scene/etc.).
    */
   PROP_PTR_NO_OWNERSHIP = (1 << 7),
 
   /**
    * flag contains multiple enums.
-   * note: not to be confused with prop->enumbitflags
+   * NOTE: not to be confused with `prop->enumbitflags`
    * this exposes the flag as multiple options in python and the UI.
    *
    * \note These can't be animated so use with care.
@@ -284,6 +299,12 @@ typedef enum PropertyFlag {
    * properties which denotes whether modifier panel is collapsed or not.
    */
   PROP_NO_DEG_UPDATE = (1 << 30),
+
+  /**
+   * Filepaths that refer to output get a special treatment such
+   * as having the +/- operators available in the file browser.
+   **/
+  PROP_PATH_OUTPUT = (1 << 2),
 } PropertyFlag;
 
 /**
@@ -293,7 +314,7 @@ typedef enum PropertyFlag {
  * FREE FLAGS: 2, 3, 4, 5, 6, 7, 8, 9, 12 and above.
  */
 typedef enum PropertyOverrideFlag {
-  /** Means the property can be overridden by a local 'proxy' of some linked datablock. */
+  /** Means that the property can be overridden by a local override of some linked datablock. */
   PROPOVERRIDE_OVERRIDABLE_LIBRARY = (1 << 0),
 
   /**
@@ -340,7 +361,7 @@ typedef enum ParameterFlag {
   /**
    * This allows for non-breaking API updates,
    * when adding non-critical new parameter to a callback function.
-   * This way, old py code defining funcs without that parameter would still work.
+   * This way, old Python code defining functions without that parameter would still work.
    * WARNING: any parameter after the first PYFUNC_OPTIONAL one will be considered as optional!
    * \note only for input parameters!
    */
@@ -415,7 +436,7 @@ typedef struct CollectionListBase {
 
 typedef enum RawPropertyType {
   PROP_RAW_UNSET = -1,
-  PROP_RAW_INT, /* XXX - abused for types that are not set, eg. MFace.verts, needs fixing. */
+  PROP_RAW_INT, /* XXX: abused for types that are not set, eg. MFace.verts, needs fixing. */
   PROP_RAW_SHORT,
   PROP_RAW_CHAR,
   PROP_RAW_BOOLEAN,
@@ -451,6 +472,27 @@ typedef struct EnumPropertyItem {
   /** Longer description used in the interface. */
   const char *description;
 } EnumPropertyItem;
+
+/**
+ * Heading for RNA enum items (shown in the UI).
+ *
+ * The description is currently only shown in the Python documentation.
+ * By convention the value should be a non-empty string or NULL when there is no description
+ * (never an empty string).
+ */
+#define RNA_ENUM_ITEM_HEADING(name, description) \
+  { \
+    0, "", 0, name, description \
+  }
+
+/** Separator for RNA enum items (shown in the UI). */
+#define RNA_ENUM_ITEM_SEPR \
+  { \
+    0, "", 0, NULL, NULL \
+  }
+
+/** Separator for RNA enum that begins a new column in menus (shown in the UI). */
+#define RNA_ENUM_ITEM_SEPR_COLUMN RNA_ENUM_ITEM_HEADING("", NULL)
 
 /* extended versions with PropertyRNA argument */
 typedef bool (*BooleanPropertyGetFunc)(struct PointerRNA *ptr, struct PropertyRNA *prop);
@@ -500,6 +542,55 @@ typedef int (*StringPropertyLengthFunc)(struct PointerRNA *ptr, struct PropertyR
 typedef void (*StringPropertySetFunc)(struct PointerRNA *ptr,
                                       struct PropertyRNA *prop,
                                       const char *value);
+
+typedef struct StringPropertySearchVisitParams {
+  /** Text being searched for (never NULL). */
+  const char *text;
+  /** Additional information to display (optional, may be NULL). */
+  const char *info;
+} StringPropertySearchVisitParams;
+
+typedef enum eStringPropertySearchFlag {
+  /**
+   * Used so the result of #RNA_property_string_search_flag can be used to check
+   * if search is supported.
+   */
+  PROP_STRING_SEARCH_SUPPORTED = (1 << 0),
+  /** Items resulting from  the search must be sorted. */
+  PROP_STRING_SEARCH_SORT = (1 << 1),
+  /**
+   * Allow members besides the ones listed to be entered.
+   *
+   * \warning disabling this options causes the search callback to run on redraw and should
+   * only be enabled this doesn't cause performance issues.
+   */
+  PROP_STRING_SEARCH_SUGGESTION = (1 << 2),
+} eStringPropertySearchFlag;
+
+/**
+ * Visit string search candidates, `text` may be freed once this callback has finished,
+ * so references to it should not be held.
+ */
+typedef void (*StringPropertySearchVisitFunc)(void *visit_user_data,
+                                              const StringPropertySearchVisitParams *params);
+/**
+ * \param C: context, may be NULL (in this case all available items should be shown).
+ * \param ptr: RNA pointer.
+ * \param prop: RNA property. This must have it's #StringPropertyRNA.search callback set,
+ * to check this use `RNA_property_string_search_flag(prop) & PROP_STRING_SEARCH_SUPPORTED`.
+ * \param edit_text: Optionally use the string being edited by the user as a basis
+ * for the search results (auto-complete Python attributes for e.g.).
+ * \param visit_fn: This function is called with every search candidate and is typically
+ * responsible for storing the search results.
+ * \param visit_user_data: Caller defined data, passed to `visit_fn`.
+ */
+typedef void (*StringPropertySearchFunc)(const struct bContext *C,
+                                         struct PointerRNA *ptr,
+                                         struct PropertyRNA *prop,
+                                         const char *edit_text,
+                                         StringPropertySearchVisitFunc visit_fn,
+                                         void *visit_user_data);
+
 typedef int (*EnumPropertyGetFunc)(struct PointerRNA *ptr, struct PropertyRNA *prop);
 typedef void (*EnumPropertySetFunc)(struct PointerRNA *ptr, struct PropertyRNA *prop, int value);
 /* same as PropEnumItemFunc */
@@ -527,7 +618,7 @@ typedef struct ParameterList {
 
 typedef struct ParameterIterator {
   struct ParameterList *parms;
-  /* PointerRNA funcptr; */ /*UNUSED*/
+  // PointerRNA funcptr; /* UNUSED */
   void *data;
   int size, offset;
 
@@ -634,7 +725,7 @@ typedef enum StructFlag {
   STRUCT_CONTAINS_DATABLOCK_IDPROPERTIES = (1 << 8),
   /** Added to type-map #BlenderRNA.structs_map */
   STRUCT_PUBLIC_NAMESPACE = (1 << 9),
-  /** All subtypes are added too. */
+  /** All sub-types are added too. */
   STRUCT_PUBLIC_NAMESPACE_INHERIT = (1 << 10),
   /**
    * When the #PointerRNA.owner_id is NULL, this signifies the property should be accessed

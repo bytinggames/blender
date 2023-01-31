@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup blf
@@ -29,8 +13,6 @@
 
 #include "BLF_api.h"
 
-#include "UI_interface.h"
-
 #include "blf_internal.h"
 
 /* call BLF_default_set first! */
@@ -38,11 +20,12 @@
 
 /* Default size and dpi, for BLF_draw_default. */
 static int global_font_default = -1;
-static int global_font_dpi = 72;
+/* Keep in sync with `UI_DEFAULT_TEXT_POINTS` */
+static float global_font_size = 11.0f;
 
-void BLF_default_dpi(int dpi)
+void BLF_default_size(float size)
 {
-  global_font_dpi = dpi;
+  global_font_size = size;
 }
 
 void BLF_default_set(int fontid)
@@ -62,29 +45,15 @@ int BLF_set_default(void)
 {
   ASSERT_DEFAULT_SET;
 
-  const uiStyle *style = UI_style_get();
-  BLF_size(global_font_default, style->widgetlabel.points, global_font_dpi);
+  BLF_size(global_font_default, global_font_size * U.dpi_fac);
 
   return global_font_default;
 }
 
-void BLF_draw_default(float x, float y, float z, const char *str, size_t len)
+void BLF_draw_default(float x, float y, float z, const char *str, const size_t str_len)
 {
   ASSERT_DEFAULT_SET;
-
-  const uiStyle *style = UI_style_get();
-  BLF_size(global_font_default, style->widgetlabel.points, global_font_dpi);
+  BLF_size(global_font_default, global_font_size * U.dpi_fac);
   BLF_position(global_font_default, x, y, z);
-  BLF_draw(global_font_default, str, len);
-}
-
-/* same as above but call 'BLF_draw_ascii' */
-void BLF_draw_default_ascii(float x, float y, float z, const char *str, size_t len)
-{
-  ASSERT_DEFAULT_SET;
-
-  const uiStyle *style = UI_style_get();
-  BLF_size(global_font_default, style->widgetlabel.points, global_font_dpi);
-  BLF_position(global_font_default, x, y, z);
-  BLF_draw_ascii(global_font_default, str, len); /* XXX, use real length */
+  BLF_draw(global_font_default, str, str_len);
 }

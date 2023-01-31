@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2016, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Blender Foundation. */
 
 /** \file
  * \ingroup draw_engine
@@ -76,7 +61,7 @@ int EEVEE_screen_raytrace_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
     const int divisor = (effects->reflection_trace_full) ? 1 : 2;
     int tracing_res[2] = {(int)viewport_size[0] / divisor, (int)viewport_size[1] / divisor};
     const int size_fs[2] = {(int)viewport_size[0], (int)viewport_size[1]};
-    const bool high_qual_input = true; /* TODO dither low quality input */
+    const bool high_qual_input = true; /* TODO: dither low quality input. */
     const eGPUTextureFormat format = (high_qual_input) ? GPU_RGBA16F : GPU_RGBA8;
 
     tracing_res[0] = max_ii(1, tracing_res[0]);
@@ -128,7 +113,7 @@ void EEVEE_screen_raytrace_cache_init(EEVEE_ViewLayerData *sldata, EEVEE_Data *v
     int hitbuf_size[3];
     GPU_texture_get_mipmap_size(effects->ssr_hit_output, 0, hitbuf_size);
 
-    /** Screen space raytracing overview
+    /** Screen space ray-tracing overview
      *
      * Following Frostbite stochastic SSR.
      *
@@ -213,7 +198,7 @@ void EEVEE_reflection_compute(EEVEE_ViewLayerData *UNUSED(sldata), EEVEE_Data *v
   if (((effects->enabled_effects & EFFECT_SSR) != 0) && stl->g_data->valid_double_buffer) {
     DRW_stats_group_start("SSR");
 
-    /* Raytrace. */
+    /* Ray-trace. */
     GPU_framebuffer_bind(fbl->screen_tracing_fb);
     DRW_draw_pass(psl->ssr_raytrace);
 
@@ -234,10 +219,6 @@ void EEVEE_reflection_output_init(EEVEE_ViewLayerData *UNUSED(sldata),
 {
   EEVEE_FramebufferList *fbl = vedata->fbl;
   EEVEE_TextureList *txl = vedata->txl;
-  EEVEE_StorageList *stl = vedata->stl;
-  EEVEE_EffectsInfo *effects = stl->effects;
-
-  const float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
   /* Create FrameBuffer. */
   const eGPUTextureFormat texture_format = (tot_samples > 256) ? GPU_RGBA32F : GPU_RGBA16F;
@@ -245,12 +226,6 @@ void EEVEE_reflection_output_init(EEVEE_ViewLayerData *UNUSED(sldata),
 
   GPU_framebuffer_ensure_config(&fbl->ssr_accum_fb,
                                 {GPU_ATTACHMENT_NONE, GPU_ATTACHMENT_TEXTURE(txl->ssr_accum)});
-
-  /* Clear texture. */
-  if (effects->taa_current_sample == 1) {
-    GPU_framebuffer_bind(fbl->ssr_accum_fb);
-    GPU_framebuffer_clear_color(fbl->ssr_accum_fb, clear);
-  }
 }
 
 void EEVEE_reflection_output_accumulate(EEVEE_ViewLayerData *UNUSED(sldata), EEVEE_Data *vedata)
@@ -258,9 +233,17 @@ void EEVEE_reflection_output_accumulate(EEVEE_ViewLayerData *UNUSED(sldata), EEV
   EEVEE_FramebufferList *fbl = vedata->fbl;
   EEVEE_PassList *psl = vedata->psl;
   EEVEE_StorageList *stl = vedata->stl;
+  EEVEE_EffectsInfo *effects = vedata->stl->effects;
 
   if (stl->g_data->valid_double_buffer) {
     GPU_framebuffer_bind(fbl->ssr_accum_fb);
+
+    /* Clear texture. */
+    if (effects->taa_current_sample == 1) {
+      const float clear[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+      GPU_framebuffer_clear_color(fbl->ssr_accum_fb, clear);
+    }
+
     DRW_draw_pass(psl->ssr_resolve);
   }
 }

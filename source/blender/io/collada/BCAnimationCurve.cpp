@@ -1,21 +1,7 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
+
+#include "RNA_path.h"
 
 #include "BCAnimationCurve.h"
 
@@ -95,7 +81,7 @@ void BCAnimationCurve::delete_fcurve(FCurve *fcu)
 FCurve *BCAnimationCurve::create_fcurve(int array_index, const char *rna_path)
 {
   FCurve *fcu = BKE_fcurve_create();
-  fcu->flag = (FCURVE_VISIBLE | FCURVE_AUTO_HANDLES | FCURVE_SELECTED);
+  fcu->flag = (FCURVE_VISIBLE | FCURVE_SELECTED);
   fcu->rna_path = BLI_strdupn(rna_path, strlen(rna_path));
   fcu->array_index = array_index;
   return fcu;
@@ -112,7 +98,7 @@ void BCAnimationCurve::create_bezt(float frame, float output)
   bez.f1 = bez.f2 = bez.f3 = SELECT;
   bez.h1 = bez.h2 = HD_AUTO;
   insert_bezt_fcurve(fcu, &bez, INSERTKEY_NOFLAGS);
-  calchandles_fcurve(fcu);
+  BKE_fcurve_handles_recalc(fcu);
 }
 
 BCAnimationCurve::~BCAnimationCurve()
@@ -173,10 +159,9 @@ std::string BCAnimationCurve::get_animation_name(Object *ob) const
         name = "";
       }
       else {
-        char *boneName = BLI_str_quoted_substrN(fcurve->rna_path, "pose.bones[");
-        if (boneName) {
+        char boneName[MAXBONENAME];
+        if (BLI_str_quoted_substr(fcurve->rna_path, "pose.bones[", boneName, sizeof(boneName))) {
           name = id_name(ob) + "_" + std::string(boneName);
-          MEM_freeN(boneName);
         }
         else {
           name = "";
@@ -314,7 +299,7 @@ void BCAnimationCurve::clean_handles()
     fcurve = get_edit_fcurve();
   }
 
-  /* Keep old bezt data for copy)*/
+  /* Keep old bezt data for copy). */
   BezTriple *old_bezts = fcurve->bezt;
   int totvert = fcurve->totvert;
   fcurve->bezt = nullptr;
@@ -344,8 +329,7 @@ bool BCAnimationCurve::is_transform_curve() const
 bool BCAnimationCurve::is_rotation_curve() const
 {
   std::string channel_type = this->get_channel_type();
-  return (channel_type == "rotation" || channel_type == "rotation_euler" ||
-          channel_type == "rotation_quaternion");
+  return ELEM(channel_type, "rotation", "rotation_euler", "rotation_quaternion");
 }
 
 float BCAnimationCurve::get_value(const float frame)
@@ -441,10 +425,10 @@ bool BCAnimationCurve::add_value_from_rna(const int frame_index)
       if ((array_index >= 0) && (array_index < RNA_property_array_length(&ptr, prop))) {
         switch (RNA_property_type(prop)) {
           case PROP_BOOLEAN:
-            value = (float)RNA_property_boolean_get_index(&ptr, prop, array_index);
+            value = float(RNA_property_boolean_get_index(&ptr, prop, array_index));
             break;
           case PROP_INT:
-            value = (float)RNA_property_int_get_index(&ptr, prop, array_index);
+            value = float(RNA_property_int_get_index(&ptr, prop, array_index));
             break;
           case PROP_FLOAT:
             value = RNA_property_float_get_index(&ptr, prop, array_index);
@@ -464,16 +448,16 @@ bool BCAnimationCurve::add_value_from_rna(const int frame_index)
       /* not an array */
       switch (RNA_property_type(prop)) {
         case PROP_BOOLEAN:
-          value = (float)RNA_property_boolean_get(&ptr, prop);
+          value = float(RNA_property_boolean_get(&ptr, prop));
           break;
         case PROP_INT:
-          value = (float)RNA_property_int_get(&ptr, prop);
+          value = float(RNA_property_int_get(&ptr, prop));
           break;
         case PROP_FLOAT:
           value = RNA_property_float_get(&ptr, prop);
           break;
         case PROP_ENUM:
-          value = (float)RNA_property_enum_get(&ptr, prop);
+          value = float(RNA_property_enum_get(&ptr, prop));
           break;
         default:
           fprintf(stderr,

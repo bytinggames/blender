@@ -1,20 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Chris Keith, Chris Want, Ken Hughes, Campbell Barton
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pythonintern
@@ -26,6 +10,10 @@
 
 #include <Python.h>
 #include <frameobject.h>
+
+#ifdef WITH_PYTHON_MODULE
+#  include "pylifecycle.h" /* For `Py_Version`. */
+#endif
 
 #include "MEM_guardedalloc.h"
 
@@ -80,6 +68,7 @@
 #include "../mathutils/mathutils.h"
 
 /* Logging types to use anywhere in the Python modules. */
+
 CLG_LOGREF_DECLARE_GLOBAL(BPY_LOG_CONTEXT, "bpy.context");
 CLG_LOGREF_DECLARE_GLOBAL(BPY_LOG_INTERFACE, "bpy.interface");
 CLG_LOGREF_DECLARE_GLOBAL(BPY_LOG_RNA, "bpy.rna");
@@ -103,7 +92,6 @@ static double bpy_timer_run;     /* time for each python script run */
 static double bpy_timer_run_tot; /* accumulate python runs */
 #endif
 
-/* use for updating while a python script runs - in case of file load */
 void BPY_context_update(bContext *C)
 {
   /* don't do this from a non-main (e.g. render) thread, it can cause a race
@@ -141,7 +129,6 @@ void bpy_context_set(bContext *C, PyGILState_STATE *gilstate)
   }
 }
 
-/* context should be used but not now because it causes some bugs */
 void bpy_context_clear(bContext *UNUSED(C), const PyGILState_STATE *gilstate)
 {
   py_call_level--;
@@ -154,8 +141,8 @@ void bpy_context_clear(bContext *UNUSED(C), const PyGILState_STATE *gilstate)
     fprintf(stderr, "ERROR: Python context internal state bug. this should not happen!\n");
   }
   else if (py_call_level == 0) {
-    /* XXX - Calling classes currently wont store the context :\,
-     * cant set NULL because of this. but this is very flakey still. */
+    /* XXX: Calling classes currently won't store the context :\,
+     * can't set NULL because of this. but this is very flaky still. */
 #if 0
     BPY_context_set(NULL);
 #endif
@@ -175,16 +162,6 @@ static void bpy_context_end(bContext *C)
   CTX_wm_operator_poll_msg_clear(C);
 }
 
-/**
- * Use for `CTX_*_set(..)` functions need to set values which are later read back as expected.
- * In this case we don't want the Python context to override the values as it causes problems
- * see T66256.
- *
- * \param dict_p: A pointer to #bContext.data.py_context so we can assign a new value.
- * \param dict_orig: The value of #bContext.data.py_context_orig to check if we need to copy.
- *
- * \note Typically accessed via #BPY_context_dict_clear_members macro.
- */
 void BPY_context_dict_clear_members_array(void **dict_p,
                                           void *dict_orig,
                                           const char *context_members[],
@@ -238,15 +215,12 @@ void BPY_text_free_code(Text *text)
   }
 }
 
-/**
- * Needed so the #Main pointer in `bpy.data` doesn't become out of date.
- */
 void BPY_modules_update(void)
 {
 #if 0 /* slow, this runs all the time poll, draw etc 100's of time a sec. */
   PyObject *mod = PyImport_ImportModuleLevel("bpy", NULL, NULL, NULL, 0);
   PyModule_AddObject(mod, "data", BPY_rna_module());
-  PyModule_AddObject(mod, "types", BPY_rna_types()); /* atm this does not need updating */
+  PyModule_AddObject(mod, "types", BPY_rna_types()); /* This does not need updating. */
 #endif
 
   /* refreshes the main struct */
@@ -268,7 +242,7 @@ void BPY_context_set(bContext *C)
 extern PyObject *Manta_initPython(void);
 #endif
 
-#ifdef WITH_AUDASPACE
+#ifdef WITH_AUDASPACE_PY
 /* defined in AUD_C-API.cpp */
 extern PyObject *AUD_initPython(void);
 #endif
@@ -302,7 +276,7 @@ static struct _inittab bpy_internal_modules[] = {
 #ifdef WITH_FLUID
     {"manta", Manta_initPython},
 #endif
-#ifdef WITH_AUDASPACE
+#ifdef WITH_AUDASPACE_PY
     {"aud", AUD_initPython},
 #endif
 #ifdef WITH_CYCLES
@@ -333,15 +307,22 @@ static void pystatus_exit_on_error(PyStatus status)
 }
 #endif
 
-/* call BPY_context_set first */
 void BPY_python_start(bContext *C, int argc, const char **argv)
 {
 #ifndef WITH_PYTHON_MODULE
 
-  /* #PyPreConfig (early-configuration).  */
+  /* #PyPreConfig (early-configuration). */
   {
     PyPreConfig preconfig;
     PyStatus status;
+
+    /* To narrow down reports where the systems Python is inexplicably used, see: T98131. */
+    CLOG_INFO(
+        BPY_LOG_INTERFACE,
+        2,
+        "Initializing %s support for the systems Python environment such as 'PYTHONPATH' and "
+        "the user-site directory.",
+        py_use_system_env ? "*with*" : "*without*");
 
     if (py_use_system_env) {
       PyPreConfig_InitPythonConfig(&preconfig);
@@ -400,7 +381,7 @@ void BPY_python_start(bContext *C, int argc, const char **argv)
 
     /* Needed for Python's initialization for portable Python installations.
      * We could use #Py_SetPath, but this overrides Python's internal logic
-     * for calculating it's own module search paths.
+     * for calculating its own module search paths.
      *
      * `sys.executable` is overwritten after initialization to the Python binary. */
     {
@@ -502,7 +483,10 @@ void BPY_python_start(bContext *C, int argc, const char **argv)
   }
 #endif
 
-  /* bpy.* and lets us import it */
+  /* Run first, initializes RNA types. */
+  BPY_rna_init();
+
+  /* Defines `bpy.*` and lets us import it. */
   BPy_init_modules(C);
 
   pyrna_alloc_types();
@@ -532,6 +516,9 @@ void BPY_python_end(void)
   /* finalizing, no need to grab the state, except when we are a module */
   gilstate = PyGILState_Ensure();
 
+  /* Frees the python-driver name-space & cached data. */
+  BPY_driver_exit();
+
   /* Clear Python values in the context so freeing the context after Python exits doesn't crash. */
   bpy_context_end(BPY_context_get());
 
@@ -540,6 +527,8 @@ void BPY_python_end(void)
 
   /* free other python data. */
   pyrna_free_types();
+
+  BPY_rna_exit();
 
   /* clear all python data from structs */
 
@@ -600,16 +589,22 @@ void BPY_python_use_system_env(void)
 void BPY_python_backtrace(FILE *fp)
 {
   fputs("\n# Python backtrace\n", fp);
-  PyThreadState *tstate = PyGILState_GetThisThreadState();
-  if (tstate != NULL && tstate->frame != NULL) {
-    PyFrameObject *frame = tstate->frame;
-    do {
-      const int line = PyCode_Addr2Line(frame->f_code, frame->f_lasti);
-      const char *filename = PyUnicode_AsUTF8(frame->f_code->co_filename);
-      const char *funcname = PyUnicode_AsUTF8(frame->f_code->co_name);
-      fprintf(fp, "  File \"%s\", line %d in %s\n", filename, line, funcname);
-    } while ((frame = frame->f_back));
+
+  /* Can happen in rare cases. */
+  if (!_PyThreadState_UncheckedGet()) {
+    return;
   }
+  PyFrameObject *frame;
+  if (!(frame = PyEval_GetFrame())) {
+    return;
+  }
+  do {
+    PyCodeObject *code = PyFrame_GetCode(frame);
+    const int line = PyFrame_GetLineNumber(frame);
+    const char *filepath = PyUnicode_AsUTF8(code->co_filename);
+    const char *funcname = PyUnicode_AsUTF8(code->co_name);
+    fprintf(fp, "  File \"%s\", line %d in %s\n", filepath, line, funcname);
+  } while ((frame = PyFrame_GetBack(frame)));
 }
 
 void BPY_DECREF(void *pyob_ptr)
@@ -650,7 +645,7 @@ void BPY_modules_load_user(bContext *C)
   bpy_context_set(C, &gilstate);
 
   for (text = bmain->texts.first; text; text = text->id.next) {
-    if (text->flags & TXT_ISSCRIPT && BLI_path_extension_check(text->id.name + 2, ".py")) {
+    if (text->flags & TXT_ISSCRIPT) {
       if (!(G.f & G_FLAG_SCRIPT_AUTOEXEC)) {
         if (!(G.f & G_FLAG_SCRIPT_AUTOEXEC_FAIL_QUIET)) {
           G.f |= G_FLAG_SCRIPT_AUTOEXEC_FAIL;
@@ -701,7 +696,7 @@ int BPY_context_member_get(bContext *C, const char *member, bContextDataResult *
     ptr = &(((BPy_StructRNA *)item)->ptr);
 
     // result->ptr = ((BPy_StructRNA *)item)->ptr;
-    CTX_data_pointer_set(result, ptr->owner_id, ptr->type, ptr->data);
+    CTX_data_pointer_set_ptr(result, ptr);
     CTX_data_type_set(result, CTX_DATA_TYPE_POINTER);
     done = true;
   }
@@ -727,7 +722,7 @@ int BPY_context_member_get(bContext *C, const char *member, bContextDataResult *
           BLI_addtail(&result->list, link);
 #endif
           ptr = &(((BPy_StructRNA *)list_item)->ptr);
-          CTX_data_list_add(result, ptr->owner_id, ptr->type, ptr->data);
+          CTX_data_list_add_ptr(result, ptr);
         }
         else {
           CLOG_INFO(BPY_LOG_CONTEXT,
@@ -748,7 +743,7 @@ int BPY_context_member_get(bContext *C, const char *member, bContextDataResult *
       CLOG_INFO(BPY_LOG_CONTEXT, 1, "'%s' not a valid type", member);
     }
     else {
-      CLOG_INFO(BPY_LOG_CONTEXT, 1, "'%s' not found\n", member);
+      CLOG_INFO(BPY_LOG_CONTEXT, 1, "'%s' not found", member);
     }
   }
   else {
@@ -763,7 +758,7 @@ int BPY_context_member_get(bContext *C, const char *member, bContextDataResult *
 }
 
 #ifdef WITH_PYTHON_MODULE
-/* TODO, reloading the module isn't functional at the moment. */
+/* TODO: reloading the module isn't functional at the moment. */
 
 static void bpy_module_free(void *mod);
 
@@ -777,7 +772,7 @@ static struct PyModuleDef bpy_proxy_def = {
     NULL,            /* m_doc */
     0,               /* m_size */
     NULL,            /* m_methods */
-    NULL,            /* m_reload */
+    NULL,            /* m_slots */
     NULL,            /* m_traverse */
     NULL,            /* m_clear */
     bpy_module_free, /* m_free */
@@ -785,8 +780,8 @@ static struct PyModuleDef bpy_proxy_def = {
 
 typedef struct {
   PyObject_HEAD
-      /* Type-specific fields go here. */
-      PyObject *mod;
+  /* Type-specific fields go here. */
+  PyObject *mod;
 } dealloc_obj;
 
 /* call once __file__ is set */
@@ -796,16 +791,16 @@ static void bpy_module_delay_init(PyObject *bpy_proxy)
   const char *argv[2];
 
   /* updating the module dict below will lose the reference to __file__ */
-  PyObject *filename_obj = PyModule_GetFilenameObject(bpy_proxy);
+  PyObject *filepath_obj = PyModule_GetFilenameObject(bpy_proxy);
 
-  const char *filename_rel = PyUnicode_AsUTF8(filename_obj); /* can be relative */
-  char filename_abs[1024];
+  const char *filepath_rel = PyUnicode_AsUTF8(filepath_obj); /* can be relative */
+  char filepath_abs[1024];
 
-  BLI_strncpy(filename_abs, filename_rel, sizeof(filename_abs));
-  BLI_path_abs_from_cwd(filename_abs, sizeof(filename_abs));
-  Py_DECREF(filename_obj);
+  BLI_strncpy(filepath_abs, filepath_rel, sizeof(filepath_abs));
+  BLI_path_abs_from_cwd(filepath_abs, sizeof(filepath_abs));
+  Py_DECREF(filepath_obj);
 
-  argv[0] = filename_abs;
+  argv[0] = filepath_abs;
   argv[1] = NULL;
 
   // printf("module found %s\n", argv[0]);
@@ -814,6 +809,50 @@ static void bpy_module_delay_init(PyObject *bpy_proxy)
 
   /* initialized in BPy_init_modules() */
   PyDict_Update(PyModule_GetDict(bpy_proxy), PyModule_GetDict(bpy_package_py));
+}
+
+/**
+ * Raise an error and return false if the Python version used to compile Blender
+ * isn't compatible with the interpreter loading the `bpy` module.
+ */
+static bool bpy_module_ensure_compatible_version(void)
+{
+  /* First check the Python version used matches the major version that Blender was built with.
+   * While this isn't essential, the error message in this case may be cryptic and misleading.
+   * NOTE: using `Py_LIMITED_API` would remove the need for this, in practice it's
+   * unlikely Blender will ever used the limited API though. */
+#  if PY_VERSION_HEX >= 0x030b0000 /* Python 3.11 & newer. */
+  const uint version_runtime = Py_Version;
+#  else
+  uint version_runtime;
+  {
+    uint version_runtime_major = 0, version_runtime_minor = 0;
+    const char *version_str = Py_GetVersion();
+    if (sscanf(version_str, "%u.%u.", &version_runtime_major, &version_runtime_minor) != 2) {
+      /* Should never happen, raise an error to ensure this check never fails silently. */
+      PyErr_Format(PyExc_ImportError, "Failed to extract the version from \"%s\"", version_str);
+      return false;
+    }
+    version_runtime = (version_runtime_major << 24) | (version_runtime_minor << 16);
+  }
+#  endif
+
+  uint version_compile_major = PY_VERSION_HEX >> 24;
+  uint version_compile_minor = ((PY_VERSION_HEX & 0x00ff0000) >> 16);
+  uint version_runtime_major = version_runtime >> 24;
+  uint version_runtime_minor = ((version_runtime & 0x00ff0000) >> 16);
+  if ((version_compile_major != version_runtime_major) ||
+      (version_compile_minor != version_runtime_minor)) {
+    PyErr_Format(PyExc_ImportError,
+                 "The version of \"bpy\" was compiled with: "
+                 "(%u.%u) is incompatible with: (%u.%u) used by the interpreter!",
+                 version_compile_major,
+                 version_compile_minor,
+                 version_runtime_major,
+                 version_runtime_minor);
+    return false;
+  }
+  return true;
 }
 
 static void dealloc_obj_dealloc(PyObject *self);
@@ -825,7 +864,7 @@ static void dealloc_obj_dealloc(PyObject *self)
 {
   bpy_module_delay_init(((dealloc_obj *)self)->mod);
 
-  /* Note, for subclassed PyObjects we cant just call PyObject_DEL() directly or it will crash */
+  /* NOTE: for subclassed PyObjects we can't just call PyObject_DEL() directly or it will crash. */
   dealloc_obj_Type.tp_free(self);
 }
 
@@ -833,19 +872,23 @@ PyMODINIT_FUNC PyInit_bpy(void);
 
 PyMODINIT_FUNC PyInit_bpy(void)
 {
+  if (!bpy_module_ensure_compatible_version()) {
+    return NULL; /* The error has been set. */
+  }
+
   PyObject *bpy_proxy = PyModule_Create(&bpy_proxy_def);
 
   /* Problem:
-   * 1) this init function is expected to have a private member defined - 'md_def'
+   * 1) this init function is expected to have a private member defined - `md_def`
    *    but this is only set for C defined modules (not py packages)
-   *    so we cant return 'bpy_package_py' as is.
+   *    so we can't return 'bpy_package_py' as is.
    *
    * 2) there is a 'bpy' C module for python to load which is basically all of blender,
-   *    and there is scripts/bpy/__init__.py,
+   *    and there is `scripts/bpy/__init__.py`,
    *    we may end up having to rename this module so there is no naming conflict here eg:
    *    'from blender import bpy'
    *
-   * 3) we don't know the filename at this point, workaround by assigning a dummy value
+   * 3) we don't know the filepath at this point, workaround by assigning a dummy value
    *    which calls back when its freed so the real loading can take place.
    */
 
@@ -876,9 +919,6 @@ static void bpy_module_free(void *UNUSED(mod))
 
 #endif
 
-/**
- * Avoids duplicating keyword list.
- */
 bool BPY_string_is_keyword(const char *str)
 {
   /* list is from...
@@ -900,8 +940,7 @@ bool BPY_string_is_keyword(const char *str)
   return false;
 }
 
-/* EVIL, define text.c functions here... */
-/* BKE_text.h */
+/* EVIL: define `text.c` functions here (declared in `BKE_text.h`). */
 int text_check_identifier_unicode(const uint ch)
 {
   return (ch < 255 && text_check_identifier((char)ch)) || Py_UNICODE_ISALNUM(ch);

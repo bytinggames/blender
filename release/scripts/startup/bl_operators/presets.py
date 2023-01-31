@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 import bpy
 from bpy.types import (
@@ -28,12 +10,17 @@ from bpy.props import (
     BoolProperty,
     StringProperty,
 )
+from bpy.app.translations import (
+    pgettext_tip as tip_,
+    pgettext_data as data_,
+)
+
 
 # For preset popover menu
 WindowManager.preset_name = StringProperty(
     name="Preset Name",
     description="Name for new preset",
-    default="New Preset"
+    default=data_("New Preset")
 )
 
 
@@ -114,9 +101,7 @@ class AddPresetBase:
             filename = self.as_filename(name)
 
             target_path = os.path.join("presets", self.preset_subdir)
-            target_path = bpy.utils.user_resource('SCRIPTS',
-                                                  target_path,
-                                                  create=True)
+            target_path = bpy.utils.user_resource('SCRIPTS', path=target_path, create=True)
 
             if not target_path:
                 self.report({'WARNING'}, "Failed to create presets path")
@@ -204,7 +189,7 @@ class AddPresetBase:
                 else:
                     os.remove(filepath)
             except Exception as e:
-                self.report({'ERROR'}, "Unable to remove preset: %r" % e)
+                self.report({'ERROR'}, tip_("Unable to remove preset: %r") % e)
                 import traceback
                 traceback.print_exc()
                 return {'CANCELLED'}
@@ -254,7 +239,7 @@ class ExecutePreset(Operator):
         ext = splitext(filepath)[1].lower()
 
         if ext not in {".py", ".xml"}:
-            self.report({'ERROR'}, "Unknown file type: %r" % ext)
+            self.report({'ERROR'}, tip_("Unknown file type: %r") % ext)
             return {'CANCELLED'}
 
         if hasattr(preset_class, "reset_cb"):
@@ -282,7 +267,7 @@ class AddPresetRender(AddPresetBase, Operator):
     """Add or remove a Render Preset"""
     bl_idname = "render.preset_add"
     bl_label = "Add Render Preset"
-    preset_menu = "RENDER_PT_presets"
+    preset_menu = "RENDER_PT_format_presets"
 
     preset_defines = [
         "scene = bpy.context.scene"
@@ -651,7 +636,7 @@ class AddPresetGpencilBrush(AddPresetBase, Operator):
         "settings.uv_random",
         "settings.pen_jitter",
         "settings.use_jitter_pressure",
-        "settings.trim",
+        "settings.use_trim",
     ]
 
     preset_subdir = "gpencil_brush"

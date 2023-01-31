@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2011, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2011 Blender Foundation. */
 
 #include "COM_SeparateColorNode.h"
 
@@ -22,104 +7,113 @@
 
 namespace blender::compositor {
 
-SeparateColorNode::SeparateColorNode(bNode *editorNode) : Node(editorNode)
+SeparateColorNode::SeparateColorNode(bNode *editor_node) : Node(editor_node)
 {
 }
 
-void SeparateColorNode::convertToOperations(NodeConverter &converter,
-                                            const CompositorContext &context) const
+void SeparateColorNode::convert_to_operations(NodeConverter &converter,
+                                              const CompositorContext & /*context*/) const
 {
-  NodeInput *imageSocket = this->getInputSocket(0);
-  NodeOutput *outputRSocket = this->getOutputSocket(0);
-  NodeOutput *outputGSocket = this->getOutputSocket(1);
-  NodeOutput *outputBSocket = this->getOutputSocket(2);
-  NodeOutput *outputASocket = this->getOutputSocket(3);
+  NodeInput *image_socket = this->get_input_socket(0);
+  NodeOutput *output_rsocket = this->get_output_socket(0);
+  NodeOutput *output_gsocket = this->get_output_socket(1);
+  NodeOutput *output_bsocket = this->get_output_socket(2);
+  NodeOutput *output_asocket = this->get_output_socket(3);
 
-  NodeOperation *color_conv = getColorConverter(context);
+  const bNode *editor_node = this->get_bnode();
+  const NodeCMPCombSepColor *storage = (const NodeCMPCombSepColor *)editor_node->storage;
+
+  NodeOperation *color_conv = nullptr;
+  switch (storage->mode) {
+    case CMP_NODE_COMBSEP_COLOR_RGB: {
+      /* Pass */
+      break;
+    }
+    case CMP_NODE_COMBSEP_COLOR_HSV: {
+      color_conv = new ConvertRGBToHSVOperation();
+      break;
+    }
+    case CMP_NODE_COMBSEP_COLOR_HSL: {
+      color_conv = new ConvertRGBToHSLOperation();
+      break;
+    }
+    case CMP_NODE_COMBSEP_COLOR_YCC: {
+      ConvertRGBToYCCOperation *operation = new ConvertRGBToYCCOperation();
+      operation->set_mode(storage->ycc_mode);
+      color_conv = operation;
+      break;
+    }
+    case CMP_NODE_COMBSEP_COLOR_YUV: {
+      color_conv = new ConvertRGBToYUVOperation();
+      break;
+    }
+    default: {
+      BLI_assert_unreachable();
+      break;
+    }
+  }
+
   if (color_conv) {
-    converter.addOperation(color_conv);
+    converter.add_operation(color_conv);
 
-    converter.mapInputSocket(imageSocket, color_conv->getInputSocket(0));
+    converter.map_input_socket(image_socket, color_conv->get_input_socket(0));
   }
 
   {
     SeparateChannelOperation *operation = new SeparateChannelOperation();
-    operation->setChannel(0);
-    converter.addOperation(operation);
+    operation->set_channel(0);
+    converter.add_operation(operation);
 
     if (color_conv) {
-      converter.addLink(color_conv->getOutputSocket(), operation->getInputSocket(0));
+      converter.add_link(color_conv->get_output_socket(), operation->get_input_socket(0));
     }
     else {
-      converter.mapInputSocket(imageSocket, operation->getInputSocket(0));
+      converter.map_input_socket(image_socket, operation->get_input_socket(0));
     }
-    converter.mapOutputSocket(outputRSocket, operation->getOutputSocket(0));
+    converter.map_output_socket(output_rsocket, operation->get_output_socket(0));
   }
 
   {
     SeparateChannelOperation *operation = new SeparateChannelOperation();
-    operation->setChannel(1);
-    converter.addOperation(operation);
+    operation->set_channel(1);
+    converter.add_operation(operation);
 
     if (color_conv) {
-      converter.addLink(color_conv->getOutputSocket(), operation->getInputSocket(0));
+      converter.add_link(color_conv->get_output_socket(), operation->get_input_socket(0));
     }
     else {
-      converter.mapInputSocket(imageSocket, operation->getInputSocket(0));
+      converter.map_input_socket(image_socket, operation->get_input_socket(0));
     }
-    converter.mapOutputSocket(outputGSocket, operation->getOutputSocket(0));
+    converter.map_output_socket(output_gsocket, operation->get_output_socket(0));
   }
 
   {
     SeparateChannelOperation *operation = new SeparateChannelOperation();
-    operation->setChannel(2);
-    converter.addOperation(operation);
+    operation->set_channel(2);
+    converter.add_operation(operation);
 
     if (color_conv) {
-      converter.addLink(color_conv->getOutputSocket(), operation->getInputSocket(0));
+      converter.add_link(color_conv->get_output_socket(), operation->get_input_socket(0));
     }
     else {
-      converter.mapInputSocket(imageSocket, operation->getInputSocket(0));
+      converter.map_input_socket(image_socket, operation->get_input_socket(0));
     }
-    converter.mapOutputSocket(outputBSocket, operation->getOutputSocket(0));
+    converter.map_output_socket(output_bsocket, operation->get_output_socket(0));
   }
 
   {
     SeparateChannelOperation *operation = new SeparateChannelOperation();
-    operation->setChannel(3);
-    converter.addOperation(operation);
+    operation->set_channel(3);
+    converter.add_operation(operation);
 
     if (color_conv) {
-      converter.addLink(color_conv->getOutputSocket(), operation->getInputSocket(0));
+      converter.add_link(color_conv->get_output_socket(), operation->get_input_socket(0));
     }
     else {
-      converter.mapInputSocket(imageSocket, operation->getInputSocket(0));
+      converter.map_input_socket(image_socket, operation->get_input_socket(0));
     }
-    converter.mapOutputSocket(outputASocket, operation->getOutputSocket(0));
+    converter.map_output_socket(output_asocket, operation->get_output_socket(0));
   }
-}
-
-NodeOperation *SeparateRGBANode::getColorConverter(const CompositorContext & /*context*/) const
-{
-  return nullptr; /* no conversion needed */
-}
-
-NodeOperation *SeparateHSVANode::getColorConverter(const CompositorContext & /*context*/) const
-{
-  return new ConvertRGBToHSVOperation();
-}
-
-NodeOperation *SeparateYCCANode::getColorConverter(const CompositorContext & /*context*/) const
-{
-  ConvertRGBToYCCOperation *operation = new ConvertRGBToYCCOperation();
-  bNode *editorNode = this->getbNode();
-  operation->setMode(editorNode->custom1);
-  return operation;
-}
-
-NodeOperation *SeparateYUVANode::getColorConverter(const CompositorContext & /*context*/) const
-{
-  return new ConvertRGBToYUVOperation();
 }
 
 }  // namespace blender::compositor

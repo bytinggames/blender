@@ -1,21 +1,7 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
- * \ingroup MEM
+ * \ingroup intern_mem
  *
  * Guarded memory allocation, and boundary-write detection.
  */
@@ -57,17 +43,18 @@ void (*MEM_set_error_callback)(void (*func)(const char *)) = MEM_lockfree_set_er
 bool (*MEM_consistency_check)(void) = MEM_lockfree_consistency_check;
 void (*MEM_set_memory_debug)(void) = MEM_lockfree_set_memory_debug;
 size_t (*MEM_get_memory_in_use)(void) = MEM_lockfree_get_memory_in_use;
-unsigned int (*MEM_get_memory_blocks_in_use)(void) = MEM_lockfree_get_memory_blocks_in_use;
+uint (*MEM_get_memory_blocks_in_use)(void) = MEM_lockfree_get_memory_blocks_in_use;
 void (*MEM_reset_peak_memory)(void) = MEM_lockfree_reset_peak_memory;
 size_t (*MEM_get_peak_memory)(void) = MEM_lockfree_get_peak_memory;
 
 #ifndef NDEBUG
 const char *(*MEM_name_ptr)(void *vmemh) = MEM_lockfree_name_ptr;
+void (*MEM_name_ptr_set)(void *vmemh, const char *str) = MEM_lockfree_name_ptr_set;
 #endif
 
 void *aligned_malloc(size_t size, size_t alignment)
 {
-  /* posix_memalign requires alignment to be a multiple of sizeof(void *). */
+  /* #posix_memalign requires alignment to be a multiple of `sizeof(void *)`. */
   assert(alignment >= ALIGNED_MALLOC_MINIMUM_ALIGNMENT);
 
 #ifdef _WIN32
@@ -142,6 +129,7 @@ void MEM_use_lockfree_allocator(void)
 
 #ifndef NDEBUG
   MEM_name_ptr = MEM_lockfree_name_ptr;
+  MEM_name_ptr_set = MEM_lockfree_name_ptr_set;
 #endif
 }
 
@@ -173,5 +161,6 @@ void MEM_use_guarded_allocator(void)
 
 #ifndef NDEBUG
   MEM_name_ptr = MEM_guarded_name_ptr;
+  MEM_name_ptr_set = MEM_guarded_name_ptr_set;
 #endif
 }

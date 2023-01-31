@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edobj
@@ -53,7 +37,6 @@
 
 #include "object_intern.h"
 
-/* called while not in editmode */
 void ED_object_facemap_face_add(Object *ob, bFaceMap *fmap, int facenum)
 {
   int fmap_nr;
@@ -70,14 +53,13 @@ void ED_object_facemap_face_add(Object *ob, bFaceMap *fmap, int facenum)
 
     /* if there's is no facemap layer then create one */
     if ((facemap = CustomData_get_layer(&me->pdata, CD_FACEMAP)) == NULL) {
-      facemap = CustomData_add_layer(&me->pdata, CD_FACEMAP, CD_DEFAULT, NULL, me->totpoly);
+      facemap = CustomData_add_layer(&me->pdata, CD_FACEMAP, CD_SET_DEFAULT, NULL, me->totpoly);
     }
 
     facemap[facenum] = fmap_nr;
   }
 }
 
-/* called while not in editmode */
 void ED_object_facemap_face_remove(Object *ob, bFaceMap *fmap, int facenum)
 {
   int fmap_nr;
@@ -176,6 +158,21 @@ static bool face_map_supported_edit_mode_poll(bContext *C)
   return false;
 }
 
+static bool face_map_supported_remove_poll(bContext *C)
+{
+  if (!face_map_supported_poll(C)) {
+    return false;
+  }
+
+  Object *ob = ED_object_context(C);
+  bFaceMap *fmap = BLI_findlink(&ob->fmaps, ob->actfmap - 1);
+  if (fmap) {
+    return true;
+  }
+
+  return false;
+}
+
 static int face_map_add_exec(bContext *C, wmOperator *UNUSED(op))
 {
   Object *ob = ED_object_context(C);
@@ -225,7 +222,7 @@ void OBJECT_OT_face_map_remove(struct wmOperatorType *ot)
   ot->description = "Remove a face map from the active object";
 
   /* api callbacks */
-  ot->poll = face_map_supported_poll;
+  ot->poll = face_map_supported_remove_poll;
   ot->exec = face_map_remove_exec;
 
   /* flags */

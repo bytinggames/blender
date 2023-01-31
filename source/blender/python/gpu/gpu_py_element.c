@@ -1,24 +1,10 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bpygpu
  *
- * - Use ``bpygpu_`` for local API.
- * - Use ``BPyGPU`` for public API.
+ * - Use `bpygpu_` for local API.
+ * - Use `BPyGPU` for public API.
  */
 
 #include <Python.h>
@@ -30,7 +16,6 @@
 #include "MEM_guardedalloc.h"
 
 #include "../generic/py_capi_utils.h"
-#include "../generic/python_utildefines.h"
 
 #include "gpu_py.h"
 #include "gpu_py_element.h" /* own include */
@@ -54,7 +39,13 @@ static PyObject *pygpu_IndexBuf__tp_new(PyTypeObject *UNUSED(type), PyObject *ar
   GPUIndexBufBuilder builder;
 
   static const char *_keywords[] = {"type", "seq", NULL};
-  static _PyArg_Parser _parser = {"$O&O:IndexBuf.__new__", _keywords, 0};
+  static _PyArg_Parser _parser = {
+      "$O" /* `type` */
+      "&O" /* `seq` */
+      ":IndexBuf.__new__",
+      _keywords,
+      0,
+  };
   if (!_PyArg_ParseTupleAndKeywordsFast(
           args, kwds, &_parser, PyC_ParseStringEnum, &prim_type, &seq)) {
     return NULL;
@@ -78,12 +69,14 @@ static PyObject *pygpu_IndexBuf__tp_new(PyTypeObject *UNUSED(type), PyObject *ar
 
     if (pybuffer.ndim != 1 && pybuffer.shape[1] != verts_per_prim) {
       PyErr_Format(PyExc_ValueError, "Each primitive must exactly %d indices", verts_per_prim);
+      PyBuffer_Release(&pybuffer);
       return NULL;
     }
 
     if (pybuffer.itemsize != 4 ||
         PyC_StructFmt_type_is_float_any(PyC_StructFmt_type_from_str(pybuffer.format))) {
       PyErr_Format(PyExc_ValueError, "Each index must be an 4-bytes integer value");
+      PyBuffer_Release(&pybuffer);
       return NULL;
     }
 
@@ -97,15 +90,11 @@ static PyObject *pygpu_IndexBuf__tp_new(PyTypeObject *UNUSED(type), PyObject *ar
     /* Use `INT_MAX` instead of the actual number of vertices. */
     GPU_indexbuf_init(&builder, prim_type.value_found, index_len, INT_MAX);
 
-#if 0
     uint *buf = pybuffer.buf;
     for (uint i = index_len; i--; buf++) {
       GPU_indexbuf_add_generic_vert(&builder, *buf);
     }
-#else
-    memcpy(builder.data, pybuffer.buf, index_len * sizeof(*builder.data));
-    builder.index_len = index_len;
-#endif
+
     PyBuffer_Release(&pybuffer);
   }
   else {
@@ -144,8 +133,12 @@ static PyObject *pygpu_IndexBuf__tp_new(PyTypeObject *UNUSED(type), PyObject *ar
           goto finally;
         }
 
-        ok = PyC_AsArray_FAST(
-                 values, seq_fast_item, verts_per_prim, &PyLong_Type, false, error_prefix) == 0;
+        ok = PyC_AsArray_FAST(values,
+                              sizeof(*values),
+                              seq_fast_item,
+                              verts_per_prim,
+                              &PyLong_Type,
+                              error_prefix) == 0;
 
         if (ok) {
           for (uint j = 0; j < verts_per_prim; j++) {
@@ -187,7 +180,7 @@ PyDoc_STRVAR(pygpu_IndexBuf__tp_doc,
              "   :arg type: The primitive type this index buffer is composed of.\n"
              "      Possible values are `POINTS`, `LINES`, `TRIS` and `LINE_STRIP_ADJ`.\n"
              "   :type type: str\n"
-             "   :param seq: Indices this index buffer will contain.\n"
+             "   :arg seq: Indices this index buffer will contain.\n"
              "      Whether a 1D or 2D sequence is required depends on the type.\n"
              "      Optionally the sequence can support the buffer protocol.\n"
              "   :type seq: 1D or 2D sequence\n");

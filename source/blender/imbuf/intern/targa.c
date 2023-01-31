@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup imbuf
@@ -46,18 +30,18 @@
 /***/
 
 typedef struct TARGA {
-  unsigned char numid;
-  unsigned char maptyp;
-  unsigned char imgtyp;
+  uchar numid;
+  uchar maptyp;
+  uchar imgtyp;
   short maporig;
   short mapsize;
-  unsigned char mapbits;
+  uchar mapbits;
   short xorig;
   short yorig;
   short xsize;
   short ysize;
-  unsigned char pixsize;
-  unsigned char imgdes;
+  uchar pixsize;
+  uchar imgdes;
 } TARGA;
 
 /**
@@ -70,7 +54,7 @@ typedef struct TARGA {
 
 /***/
 
-static int tga_out1(unsigned int data, FILE *file)
+static int tga_out1(uint data, FILE *file)
 {
   uchar *p;
 
@@ -81,7 +65,7 @@ static int tga_out1(unsigned int data, FILE *file)
   return ~EOF;
 }
 
-static int tga_out2(unsigned int data, FILE *file)
+static int tga_out2(uint data, FILE *file)
 {
   uchar *p;
 
@@ -95,7 +79,7 @@ static int tga_out2(unsigned int data, FILE *file)
   return ~EOF;
 }
 
-static int tga_out3(unsigned int data, FILE *file)
+static int tga_out3(uint data, FILE *file)
 {
   uchar *p;
 
@@ -112,12 +96,12 @@ static int tga_out3(unsigned int data, FILE *file)
   return ~EOF;
 }
 
-static int tga_out4(unsigned int data, FILE *file)
+static int tga_out4(uint data, FILE *file)
 {
   uchar *p;
 
   p = (uchar *)&data;
-  /* order = bgra */
+  /* Order = BGRA. */
   if (putc(p[2], file) == EOF) {
     return EOF;
   }
@@ -133,11 +117,11 @@ static int tga_out4(unsigned int data, FILE *file)
   return ~EOF;
 }
 
-static bool makebody_tga(ImBuf *ibuf, FILE *file, int (*out)(unsigned int, FILE *))
+static bool makebody_tga(ImBuf *ibuf, FILE *file, int (*out)(uint, FILE *))
 {
   int last, this;
   int copy, bytes;
-  unsigned int *rect, *rectstart, *temp;
+  uint *rect, *rectstart, *temp;
   int y;
 
   for (y = 0; y < ibuf->y; y++) {
@@ -192,7 +176,7 @@ static bool makebody_tga(ImBuf *ibuf, FILE *file, int (*out)(unsigned int, FILE 
       else {
         while (*rect++ == this) { /* seek for first different byte */
           if (--bytes == 0) {
-            break; /* oor end of line */
+            break; /* Or end of line. */
           }
         }
         rect--;
@@ -361,7 +345,7 @@ bool imb_savetarga(struct ImBuf *ibuf, const char *filepath, int UNUSED(flags))
   return ok;
 }
 
-static bool checktarga(TARGA *tga, const unsigned char *mem, const size_t size)
+static bool checktarga(TARGA *tga, const uchar *mem, const size_t size)
 {
   if (size < TARGA_HEADER_SIZE) {
     return false;
@@ -413,21 +397,21 @@ static bool checktarga(TARGA *tga, const unsigned char *mem, const size_t size)
   return true;
 }
 
-bool imb_is_a_targa(const unsigned char *buf, size_t size)
+bool imb_is_a_targa(const uchar *buf, size_t size)
 {
   TARGA tga;
 
   return checktarga(&tga, buf, size);
 }
 
-static void complete_partial_load(struct ImBuf *ibuf, unsigned int *rect)
+static void complete_partial_load(struct ImBuf *ibuf, uint *rect)
 {
   int size = (ibuf->x * ibuf->y) - (rect - ibuf->rect);
   if (size) {
     printf("decodetarga: incomplete file, %.1f%% missing\n",
            100 * ((float)size / (ibuf->x * ibuf->y)));
 
-    /* not essential but makes displaying partially rendered TGA's less ugly  */
+    /* Not essential but makes displaying partially rendered TGA's less ugly. */
     memset(rect, 0, size);
   }
   else {
@@ -436,11 +420,11 @@ static void complete_partial_load(struct ImBuf *ibuf, unsigned int *rect)
   }
 }
 
-static void decodetarga(struct ImBuf *ibuf, const unsigned char *mem, size_t mem_size, int psize)
+static void decodetarga(struct ImBuf *ibuf, const uchar *mem, size_t mem_size, int psize)
 {
-  const unsigned char *mem_end = mem + mem_size;
+  const uchar *mem_end = mem + mem_size;
   int count, col, size;
-  unsigned int *rect;
+  uint *rect;
   uchar *cp = (uchar *)&col;
 
   if (ibuf == NULL) {
@@ -465,24 +449,24 @@ static void decodetarga(struct ImBuf *ibuf, const unsigned char *mem, size_t mem
     }
 
     if (count >= 128) {
-      /*if (count == 128) printf("TARGA: 128 in file !\n");*/
+      // if (count == 128) printf("TARGA: 128 in file !\n");
       count -= 127;
 
       if (psize & 2) {
         if (psize & 1) {
-          /* order = bgra */
+          /* Order = BGRA. */
           cp[0] = mem[3];
           cp[1] = mem[0];
           cp[2] = mem[1];
           cp[3] = mem[2];
-          /*col = (mem[3] << 24) + (mem[0] << 16) + (mem[1] << 8) + mem[2];*/
+          // col = (mem[3] << 24) + (mem[0] << 16) + (mem[1] << 8) + mem[2];
           mem += 4;
         }
         else {
           cp[1] = mem[0];
           cp[2] = mem[1];
           cp[3] = mem[2];
-          /*col = 0xff000000 + (mem[0] << 16) + (mem[1] << 8) + mem[2];*/
+          // col = 0xff000000 + (mem[0] << 16) + (mem[1] << 8) + mem[2];
           mem += 3;
         }
       }
@@ -512,19 +496,19 @@ static void decodetarga(struct ImBuf *ibuf, const unsigned char *mem, size_t mem
         while (count > 0) {
           if (psize & 2) {
             if (psize & 1) {
-              /* order = bgra */
+              /* Order = BGRA. */
               cp[0] = mem[3];
               cp[1] = mem[0];
               cp[2] = mem[1];
               cp[3] = mem[2];
-              /*col = (mem[3] << 24) + (mem[0] << 16) + (mem[1] << 8) + mem[2];*/
+              // col = (mem[3] << 24) + (mem[0] << 16) + (mem[1] << 8) + mem[2];
               mem += 4;
             }
             else {
               cp[1] = mem[0];
               cp[2] = mem[1];
               cp[3] = mem[2];
-              /*col = 0xff000000 + (mem[0] << 16) + (mem[1] << 8) + mem[2];*/
+              // col = 0xff000000 + (mem[0] << 16) + (mem[1] << 8) + mem[2];
               mem += 3;
             }
           }
@@ -561,11 +545,11 @@ partial_load:
   complete_partial_load(ibuf, rect);
 }
 
-static void ldtarga(struct ImBuf *ibuf, const unsigned char *mem, size_t mem_size, int psize)
+static void ldtarga(struct ImBuf *ibuf, const uchar *mem, size_t mem_size, int psize)
 {
-  const unsigned char *mem_end = mem + mem_size;
+  const uchar *mem_end = mem + mem_size;
   int col, size;
-  unsigned int *rect;
+  uint *rect;
   uchar *cp = (uchar *)&col;
 
   if (ibuf == NULL) {
@@ -589,12 +573,12 @@ static void ldtarga(struct ImBuf *ibuf, const unsigned char *mem, size_t mem_siz
 
     if (psize & 2) {
       if (psize & 1) {
-        /* order = bgra */
+        /* Order = BGRA. */
         cp[0] = mem[3];
         cp[1] = mem[0];
         cp[2] = mem[1];
         cp[3] = mem[2];
-        /*col = (mem[3] << 24) + (mem[0] << 16) + (mem[1] << 8) + mem[2];*/
+        // col = (mem[3] << 24) + (mem[0] << 16) + (mem[1] << 8) + mem[2];
         mem += 4;
       }
       else {
@@ -602,7 +586,7 @@ static void ldtarga(struct ImBuf *ibuf, const unsigned char *mem, size_t mem_siz
         cp[1] = mem[0];
         cp[2] = mem[1];
         cp[3] = mem[2];
-        /*col = 0xff000000 + (mem[0] << 16) + (mem[1] << 8) + mem[2];*/
+        // col = 0xff000000 + (mem[0] << 16) + (mem[1] << 8) + mem[2];
         mem += 3;
       }
     }
@@ -625,15 +609,12 @@ partial_load:
   complete_partial_load(ibuf, rect);
 }
 
-ImBuf *imb_loadtarga(const unsigned char *mem,
-                     size_t mem_size,
-                     int flags,
-                     char colorspace[IM_MAX_SPACE])
+ImBuf *imb_loadtarga(const uchar *mem, size_t mem_size, int flags, char colorspace[IM_MAX_SPACE])
 {
   TARGA tga;
   struct ImBuf *ibuf;
   int count, size;
-  unsigned int *rect, *cmap = NULL /*, mincol = 0*/, cmap_max = 0;
+  uint *rect, *cmap = NULL /*, mincol = 0*/, cmap_max = 0;
   int32_t cp_data;
   uchar *cp = (uchar *)&cp_data;
 
@@ -663,10 +644,10 @@ ImBuf *imb_loadtarga(const unsigned char *mem,
   cp[1] = cp[2] = 0;
 
   if (tga.mapsize) {
-    /* load color map */
-    /*mincol = tga.maporig;*/ /*UNUSED*/
+    /* Load color map. */
+    // mincol = tga.maporig; /* UNUSED */
     cmap_max = tga.mapsize;
-    cmap = MEM_callocN(sizeof(unsigned int) * cmap_max, "targa cmap");
+    cmap = MEM_callocN(sizeof(uint) * cmap_max, "targa cmap");
 
     for (count = 0; count < cmap_max; count++) {
       switch (tga.mapbits >> 3) {
@@ -701,7 +682,7 @@ ImBuf *imb_loadtarga(const unsigned char *mem,
     }
     ibuf->planes = size;
 
-    if (tga.mapbits != 32) { /* set alpha bits  */
+    if (tga.mapbits != 32) { /* Set alpha bits. */
       cmap[0] &= BIG_LONG(0x00ffffffl);
     }
   }
@@ -769,7 +750,7 @@ ImBuf *imb_loadtarga(const unsigned char *mem,
   }
 
   if (tga.pixsize == 16) {
-    unsigned int col;
+    uint col;
     rect = ibuf->rect;
     for (size = ibuf->x * ibuf->y; size > 0; size--, rect++) {
       col = *rect;
@@ -789,10 +770,10 @@ ImBuf *imb_loadtarga(const unsigned char *mem,
 
   if (ELEM(tga.imgtyp, 3, 11)) {
     uchar *crect;
-    unsigned int *lrect, col;
+    uint *lrect, col;
 
     crect = (uchar *)ibuf->rect;
-    lrect = (unsigned int *)ibuf->rect;
+    lrect = (uint *)ibuf->rect;
 
     for (size = ibuf->x * ibuf->y; size > 0; size--) {
       col = *lrect++;

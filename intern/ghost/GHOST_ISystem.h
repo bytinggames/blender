@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup GHOST
@@ -133,9 +117,13 @@ class GHOST_ISystem {
  public:
   /**
    * Creates the one and only system.
+   * \param verbose: report back-ends that were attempted no back-end could be loaded.
+   * \param background: loading the system for background rendering (no visible windows).
    * \return An indication of success.
    */
-  static GHOST_TSuccess createSystem();
+
+  static GHOST_TSuccess createSystem(bool verbose, bool background);
+  static GHOST_TSuccess createSystemBackground();
 
   /**
    * Disposes the one and only system.
@@ -148,6 +136,18 @@ class GHOST_ISystem {
    * \return A pointer to the system.
    */
   static GHOST_ISystem *getSystem();
+  /**
+   * Return an identifier for the one and only system.
+   * \warning while it may be tempting this should never be used to check for supported features,
+   * in that case, the GHOST API should be extended to query capabilities.
+   * This is needed for X11/WAYLAND on Unix, without this - there is no convenient way for users to
+   * check if WAYLAND or XWAYLAND are in use since they are dynamically selected at startup.
+   * When dynamically switching between X11/WAYLAND is removed, this function can go too.
+   */
+  static const char *getSystemBackend();
+
+  static GHOST_TBacktraceFn getBacktraceFn();
+  static void setBacktraceFn(GHOST_TBacktraceFn backtrace_fn);
 
  protected:
   /**
@@ -177,7 +177,7 @@ class GHOST_ISystem {
    * Based on ANSI clock() routine.
    * \return The number of milliseconds.
    */
-  virtual GHOST_TUns64 getMilliSeconds() const = 0;
+  virtual uint64_t getMilliSeconds() const = 0;
 
   /**
    * Installs a timer.
@@ -189,8 +189,8 @@ class GHOST_ISystem {
    * \param userData: Placeholder for user data.
    * \return A timer task (0 if timer task installation failed).
    */
-  virtual GHOST_ITimerTask *installTimer(GHOST_TUns64 delay,
-                                         GHOST_TUns64 interval,
+  virtual GHOST_ITimerTask *installTimer(uint64_t delay,
+                                         uint64_t interval,
                                          GHOST_TimerProcPtr timerProc,
                                          GHOST_TUserDataPtr userData = NULL) = 0;
 
@@ -209,19 +209,19 @@ class GHOST_ISystem {
    * Returns the number of displays on this system.
    * \return The number of displays.
    */
-  virtual GHOST_TUns8 getNumDisplays() const = 0;
+  virtual uint8_t getNumDisplays() const = 0;
 
   /**
    * Returns the dimensions of the main display on this system.
    * \return The dimension of the main display.
    */
-  virtual void getMainDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const = 0;
+  virtual void getMainDisplayDimensions(uint32_t &width, uint32_t &height) const = 0;
 
   /**
    * Returns the combine dimensions of all monitors.
    * \return The dimension of the workspace.
    */
-  virtual void getAllDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const = 0;
+  virtual void getAllDisplayDimensions(uint32_t &width, uint32_t &height) const = 0;
 
   /**
    * Create a new window.
@@ -234,7 +234,6 @@ class GHOST_ISystem {
    * \param width: The width the window.
    * \param height: The height the window.
    * \param state: The state of the window when opened.
-   * \param type: The type of drawing context installed in this window.
    * \param glSettings: Misc OpenGL settings.
    * \param exclusive: Use to show the window on top and ignore others (used full-screen).
    * \param is_dialog: Stay on top of parent window, no icon in taskbar, can't be minimized.
@@ -242,12 +241,11 @@ class GHOST_ISystem {
    * \return The new window (or 0 if creation failed).
    */
   virtual GHOST_IWindow *createWindow(const char *title,
-                                      GHOST_TInt32 left,
-                                      GHOST_TInt32 top,
-                                      GHOST_TUns32 width,
-                                      GHOST_TUns32 height,
+                                      int32_t left,
+                                      int32_t top,
+                                      uint32_t width,
+                                      uint32_t height,
                                       GHOST_TWindowState state,
-                                      GHOST_TDrawingContextType type,
                                       GHOST_GLSettings glSettings,
                                       const bool exclusive = false,
                                       const bool is_dialog = false,
@@ -261,8 +259,8 @@ class GHOST_ISystem {
   virtual GHOST_TSuccess disposeWindow(GHOST_IWindow *window) = 0;
 
   /**
-   * Create a new offscreen context.
-   * Never explicitly delete the context, use disposeContext() instead.
+   * Create a new off-screen context.
+   * Never explicitly delete the context, use #disposeContext() instead.
    * \return The new context (or 0 if creation failed).
    */
   virtual GHOST_IContext *createOffscreenContext(GHOST_GLSettings glSettings) = 0;
@@ -290,11 +288,10 @@ class GHOST_ISystem {
    */
   virtual GHOST_TSuccess beginFullScreen(const GHOST_DisplaySetting &setting,
                                          GHOST_IWindow **window,
-                                         const bool stereoVisual,
-                                         const bool alphaBackground = 0) = 0;
+                                         const bool stereoVisual) = 0;
 
   /**
-   * Updates the resolution while in fullscreen mode.
+   * Updates the resolution while in full-screen mode.
    * \param setting: The new setting of the display.
    * \param window: Window displayed in full screen.
    *
@@ -321,9 +318,27 @@ class GHOST_ISystem {
   virtual bool useNativePixel(void) = 0;
 
   /**
+   * Return true when warping the cursor is supported.
+   */
+  virtual bool supportsCursorWarp() = 0;
+
+  /**
+   * Return true getting/setting the window position is supported.
+   */
+  virtual bool supportsWindowPosition() = 0;
+
+  /**
    * Focus window after opening, or put them in the background.
    */
   virtual void useWindowFocus(const bool use_focus) = 0;
+
+  /**
+   * Get the Window under the cursor.
+   * \param x: The x-coordinate of the cursor.
+   * \param y: The y-coordinate of the cursor.
+   * \return The window under the cursor or nullptr if none.
+   */
+  virtual GHOST_IWindow *getWindowUnderCursor(int32_t x, int32_t y) = 0;
 
   /***************************************************************************************
    * Event management functionality
@@ -360,12 +375,31 @@ class GHOST_ISystem {
    ***************************************************************************************/
 
   /**
+   * Returns the current location of the cursor (location in window coordinates)
+   * \param x: The x-coordinate of the cursor.
+   * \param y: The y-coordinate of the cursor.
+   * \return Indication of success.
+   */
+  virtual GHOST_TSuccess getCursorPositionClientRelative(const GHOST_IWindow *window,
+                                                         int32_t &x,
+                                                         int32_t &y) const = 0;
+  /**
+   * Updates the location of the cursor (location in window coordinates).
+   * \param x: The x-coordinate of the cursor.
+   * \param y: The y-coordinate of the cursor.
+   * \return Indication of success.
+   */
+  virtual GHOST_TSuccess setCursorPositionClientRelative(GHOST_IWindow *window,
+                                                         int32_t x,
+                                                         int32_t y) = 0;
+
+  /**
    * Returns the current location of the cursor (location in screen coordinates)
    * \param x: The x-coordinate of the cursor.
    * \param y: The y-coordinate of the cursor.
    * \return Indication of success.
    */
-  virtual GHOST_TSuccess getCursorPosition(GHOST_TInt32 &x, GHOST_TInt32 &y) const = 0;
+  virtual GHOST_TSuccess getCursorPosition(int32_t &x, int32_t &y) const = 0;
 
   /**
    * Updates the location of the cursor (location in screen coordinates).
@@ -374,7 +408,7 @@ class GHOST_ISystem {
    * \param y: The y-coordinate of the cursor.
    * \return Indication of success.
    */
-  virtual GHOST_TSuccess setCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y) = 0;
+  virtual GHOST_TSuccess setCursorPosition(int32_t x, int32_t y) = 0;
 
   /***************************************************************************************
    * Access to mouse button and keyboard states.
@@ -386,7 +420,7 @@ class GHOST_ISystem {
    * \param isDown: The state of a modifier key (true == pressed).
    * \return Indication of success.
    */
-  virtual GHOST_TSuccess getModifierKeyState(GHOST_TModifierKeyMask mask, bool &isDown) const = 0;
+  virtual GHOST_TSuccess getModifierKeyState(GHOST_TModifierKey mask, bool &isDown) const = 0;
 
   /**
    * Returns the state of a mouse button (outside the message queue).
@@ -394,7 +428,13 @@ class GHOST_ISystem {
    * \param isDown: Button state.
    * \return Indication of success.
    */
-  virtual GHOST_TSuccess getButtonState(GHOST_TButtonMask mask, bool &isDown) const = 0;
+  virtual GHOST_TSuccess getButtonState(GHOST_TButton mask, bool &isDown) const = 0;
+
+  /**
+   * Enable multi-touch gestures if supported.
+   * \param use: Enable or disable.
+   */
+  virtual void setMultitouchGestures(const bool use) = 0;
 
   /**
    * Set which tablet API to use. Only affects Windows, other platforms have a single API.
@@ -411,16 +451,11 @@ class GHOST_ISystem {
 #endif
 
   /**
-   * Toggles console
-   * \param action:
-   * - 0: Hides.
-   * - 1: Shows
-   * - 2: Toggles
-   * - 3: Hides if it runs not from  command line
-   * - *: Does nothing
-   * \return current status (1 -visible, 0 - hidden)
+   * Set the Console State
+   * \param action: console state
+   * \return current status (true: visible, 0: hidden)
    */
-  virtual int toggleConsole(int action) = 0;
+  virtual bool setConsoleWindowState(GHOST_TConsoleWindowState action) = 0;
 
   /***************************************************************************************
    * Access to clipboard.
@@ -431,12 +466,12 @@ class GHOST_ISystem {
    * \return "unsigned char" from X11 XA_CUT_BUFFER0 buffer
    *
    */
-  virtual GHOST_TUns8 *getClipboard(bool selection) const = 0;
+  virtual char *getClipboard(bool selection) const = 0;
 
   /**
    * Put data to the Clipboard
    */
-  virtual void putClipboard(GHOST_TInt8 *buffer, bool selection) const = 0;
+  virtual void putClipboard(const char *buffer, bool selection) const = 0;
 
   /***************************************************************************************
    * System Message Box.
@@ -465,8 +500,9 @@ class GHOST_ISystem {
 
   /**
    * Specify whether debug messages are to be shown.
+   * \param debug: Flag for systems to debug.
    */
-  virtual void initDebug(bool is_debug_enabled) = 0;
+  virtual void initDebug(GHOST_Debug debug) = 0;
 
   /**
    * Check whether debug messages are to be shown.
@@ -488,6 +524,10 @@ class GHOST_ISystem {
 
   /** The one and only system */
   static GHOST_ISystem *m_system;
+  static const char *m_system_backend_id;
+
+  /** Function to call that sets the back-trace. */
+  static GHOST_TBacktraceFn m_backtrace_fn;
 
 #ifdef WITH_CXX_GUARDEDALLOC
   MEM_CXX_CLASS_ALLOC_FUNCS("GHOST:GHOST_ISystem")

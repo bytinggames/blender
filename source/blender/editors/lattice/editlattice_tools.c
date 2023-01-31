@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edlattice
@@ -47,8 +31,6 @@
 
 #include "lattice_intern.h"
 
-/** \} */
-
 /* -------------------------------------------------------------------- */
 /** \name Make Regular Operator
  * \{ */
@@ -67,6 +49,7 @@ static bool make_regular_poll(bContext *C)
 
 static int make_regular_exec(bContext *C, wmOperator *UNUSED(op))
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   View3D *v3d = CTX_wm_view3d(C);
   const bool is_editmode = CTX_data_edit_object(C) != NULL;
@@ -74,7 +57,7 @@ static int make_regular_exec(bContext *C, wmOperator *UNUSED(op))
   if (is_editmode) {
     uint objects_len;
     Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-        view_layer, CTX_wm_view3d(C), &objects_len);
+        scene, view_layer, CTX_wm_view3d(C), &objects_len);
     for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
       Object *ob = objects[ob_index];
       Lattice *lt = ob->data;
@@ -213,13 +196,14 @@ static void lattice_swap_point_pairs(
 
 static int lattice_flip_exec(bContext *C, wmOperator *op)
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   uint objects_len;
   bool changed = false;
   const eLattice_FlipAxes axis = RNA_enum_get(op->ptr, "axis");
 
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *obedit = objects[ob_index];
     Lattice *lt;

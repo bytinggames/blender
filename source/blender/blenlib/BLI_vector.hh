@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -98,10 +84,10 @@ class Vector {
   T *capacity_end_;
 
   /** Used for allocations when the inline buffer is too small. */
-  Allocator allocator_;
+  BLI_NO_UNIQUE_ADDRESS Allocator allocator_;
 
   /** A placeholder buffer that will remain uninitialized until it is used. */
-  TypedBuffer<T, InlineBufferCapacity> inline_buffer_;
+  BLI_NO_UNIQUE_ADDRESS TypedBuffer<T, InlineBufferCapacity> inline_buffer_;
 
   /**
    * Store the size of the vector explicitly in debug builds. Otherwise you'd always have to call
@@ -110,8 +96,7 @@ class Vector {
    */
 #ifndef NDEBUG
   int64_t debug_size_;
-#  define UPDATE_VECTOR_SIZE(ptr) \
-    (ptr)->debug_size_ = static_cast<int64_t>((ptr)->end_ - (ptr)->begin_)
+#  define UPDATE_VECTOR_SIZE(ptr) (ptr)->debug_size_ = int64_t((ptr)->end_ - (ptr)->begin_)
 #else
 #  define UPDATE_VECTOR_SIZE(ptr) ((void)0)
 #endif
@@ -161,9 +146,9 @@ class Vector {
   }
 
   /**
-   * Create a vector from an array ref. The values in the vector are copy constructed.
+   * Create a vector from a span. The values in the vector are copy constructed.
    */
-  template<typename U, typename std::enable_if_t<std::is_convertible_v<U, T>> * = nullptr>
+  template<typename U, BLI_ENABLE_IF((std::is_convertible_v<U, T>))>
   Vector(Span<U> values, Allocator allocator = {}) : Vector(NoExceptConstructor(), allocator)
   {
     const int64_t size = values.size();
@@ -178,7 +163,7 @@ class Vector {
    * This allows you to write code like:
    * Vector<int> vec = {3, 4, 5};
    */
-  template<typename U, typename std::enable_if_t<std::is_convertible_v<U, T>> * = nullptr>
+  template<typename U, BLI_ENABLE_IF((std::is_convertible_v<U, T>))>
   Vector(const std::initializer_list<U> &values) : Vector(Span<U>(values))
   {
   }
@@ -187,9 +172,7 @@ class Vector {
   {
   }
 
-  template<typename U,
-           size_t N,
-           typename std::enable_if_t<std::is_convertible_v<U, T>> * = nullptr>
+  template<typename U, size_t N, BLI_ENABLE_IF((std::is_convertible_v<U, T>))>
   Vector(const std::array<U, N> &values) : Vector(Span(values))
   {
   }
@@ -197,7 +180,7 @@ class Vector {
   template<typename InputIt,
            /* This constructor should not be called with e.g. Vector(3, 10), because that is
             * expected to produce the vector (10, 10, 10). */
-           typename std::enable_if_t<!std::is_convertible_v<InputIt, int>> * = nullptr>
+           BLI_ENABLE_IF((!std::is_convertible_v<InputIt, int>))>
   Vector(InputIt first, InputIt last, Allocator allocator = {})
       : Vector(NoExceptConstructor(), allocator)
   {
@@ -213,7 +196,8 @@ class Vector {
    * Example Usage:
    *  Vector<ModifierData *> modifiers(ob->modifiers);
    */
-  Vector(ListBase &values, Allocator allocator = {}) : Vector(NoExceptConstructor(), allocator)
+  Vector(const ListBase &values, Allocator allocator = {})
+      : Vector(NoExceptConstructor(), allocator)
   {
     LISTBASE_FOREACH (T, value, &values) {
       this->append(value);
@@ -259,7 +243,7 @@ class Vector {
         /* Copy from inline buffer to newly allocated buffer. */
         const int64_t capacity = size;
         begin_ = static_cast<T *>(
-            allocator_.allocate(sizeof(T) * static_cast<size_t>(capacity), alignof(T), AT));
+            allocator_.allocate(sizeof(T) * size_t(capacity), alignof(T), AT));
         capacity_end_ = begin_ + capacity;
         uninitialized_relocate_n(other.begin_, size, begin_);
         end_ = begin_ + size;
@@ -325,13 +309,13 @@ class Vector {
     return MutableSpan<T>(begin_, this->size());
   }
 
-  template<typename U, typename std::enable_if_t<is_span_convertible_pointer_v<T, U>> * = nullptr>
+  template<typename U, BLI_ENABLE_IF((is_span_convertible_pointer_v<T, U>))>
   operator Span<U>() const
   {
     return Span<U>(begin_, this->size());
   }
 
-  template<typename U, typename std::enable_if_t<is_span_convertible_pointer_v<T, U>> * = nullptr>
+  template<typename U, BLI_ENABLE_IF((is_span_convertible_pointer_v<T, U>))>
   operator MutableSpan<U>()
   {
     return MutableSpan<U>(begin_, this->size());
@@ -402,6 +386,16 @@ class Vector {
   }
 
   /**
+   * Reset the size of the vector so that it contains new_size elements.
+   * All existing elements are destructed, and not copied if the data must be reallocated.
+   */
+  void reinitialize(const int64_t new_size)
+  {
+    this->clear();
+    this->resize(new_size);
+  }
+
+  /**
    * Afterwards the vector has 0 elements, but will still have
    * memory to be refilled again.
    */
@@ -444,7 +438,7 @@ class Vector {
     this->append_as(std::move(value));
   }
   /* This is similar to `std::vector::emplace_back`. */
-  template<typename... ForwardValue> void append_as(ForwardValue &&... value)
+  template<typename... ForwardValue> void append_as(ForwardValue &&...value)
   {
     this->ensure_space_for_one();
     this->append_unchecked_as(std::forward<ForwardValue>(value)...);
@@ -456,8 +450,16 @@ class Vector {
    */
   int64_t append_and_get_index(const T &value)
   {
+    return this->append_and_get_index_as(value);
+  }
+  int64_t append_and_get_index(T &&value)
+  {
+    return this->append_and_get_index_as(std::move(value));
+  }
+  template<typename... ForwardValue> int64_t append_and_get_index_as(ForwardValue &&...value)
+  {
     const int64_t index = this->size();
-    this->append(value);
+    this->append_as(std::forward<ForwardValue>(value)...);
     return index;
   }
 
@@ -486,7 +488,7 @@ class Vector {
   {
     this->append_unchecked_as(std::move(value));
   }
-  template<typename... ForwardT> void append_unchecked_as(ForwardT &&... value)
+  template<typename... ForwardT> void append_unchecked_as(ForwardT &&...value)
   {
     BLI_assert(end_ < capacity_end_);
     new (end_) T(std::forward<ForwardT>(value)...);
@@ -507,10 +509,10 @@ class Vector {
   }
 
   /**
-   * Enlarges the size of the internal buffer that is considered to be initialized. This invokes
-   * undefined behavior when when the new size is larger than the capacity. The method can be
-   * useful when you want to call constructors in the vector yourself. This should only be done in
-   * very rare cases and has to be justified every time.
+   * Enlarges the size of the internal buffer that is considered to be initialized.
+   * This invokes undefined behavior when the new size is larger than the capacity.
+   * The method can be useful when you want to call constructors in the vector yourself.
+   * This should only be done in very rare cases and has to be justified every time.
    */
   void increase_size_by_unchecked(const int64_t n) noexcept
   {
@@ -636,7 +638,7 @@ class Vector {
    * Insert values at the beginning of the vector. The has to move all the other elements, so it
    * has a linear running time.
    */
-  void prepend(const T &&value)
+  void prepend(const T &value)
   {
     this->insert(0, value);
   }
@@ -654,18 +656,20 @@ class Vector {
   }
 
   /**
-   * Return a reference to the last element in the vector.
-   * This invokes undefined behavior when the vector is empty.
+   * Return a reference to the nth last element.
+   * This invokes undefined behavior when the vector is too short.
    */
-  const T &last() const
+  const T &last(const int64_t n = 0) const
   {
-    BLI_assert(this->size() > 0);
-    return *(end_ - 1);
+    BLI_assert(n >= 0);
+    BLI_assert(n < this->size());
+    return *(end_ - 1 - n);
   }
-  T &last()
+  T &last(const int64_t n = 0)
   {
-    BLI_assert(this->size() > 0);
-    return *(end_ - 1);
+    BLI_assert(n >= 0);
+    BLI_assert(n < this->size());
+    return *(end_ - 1 - n);
   }
 
   /**
@@ -688,7 +692,7 @@ class Vector {
    */
   int64_t size() const
   {
-    const int64_t current_size = static_cast<int64_t>(end_ - begin_);
+    const int64_t current_size = int64_t(end_ - begin_);
     BLI_assert(debug_size_ == current_size);
     return current_size;
   }
@@ -801,6 +805,17 @@ class Vector {
   }
 
   /**
+   * Remove all values for which the given predicate is true.
+   *
+   * This is similar to std::erase_if.
+   */
+  template<typename Predicate> void remove_if(Predicate &&predicate)
+  {
+    end_ = std::remove_if(this->begin(), this->end(), predicate);
+    UPDATE_VECTOR_SIZE(this);
+  }
+
+  /**
    * Do a linear search to find the value in the vector.
    * When found, return the first index, otherwise return -1.
    */
@@ -808,7 +823,7 @@ class Vector {
   {
     for (const T *current = begin_; current != end_; current++) {
       if (*current == value) {
-        return static_cast<int64_t>(current - begin_);
+        return int64_t(current - begin_);
       }
     }
     return -1;
@@ -900,7 +915,7 @@ class Vector {
    */
   int64_t capacity() const
   {
-    return static_cast<int64_t>(capacity_end_ - begin_);
+    return int64_t(capacity_end_ - begin_);
   }
 
   /**
@@ -963,14 +978,14 @@ class Vector {
     }
 
     /* At least double the size of the previous allocation. Otherwise consecutive calls to grow can
-     * cause a reallocation every time even though min_capacity only increments.  */
+     * cause a reallocation every time even though min_capacity only increments. */
     const int64_t min_new_capacity = this->capacity() * 2;
 
     const int64_t new_capacity = std::max(min_capacity, min_new_capacity);
     const int64_t size = this->size();
 
     T *new_array = static_cast<T *>(
-        allocator_.allocate(static_cast<size_t>(new_capacity) * sizeof(T), alignof(T), AT));
+        allocator_.allocate(size_t(new_capacity) * sizeof(T), alignof(T), AT));
     try {
       uninitialized_relocate_n(begin_, size, new_array);
     }

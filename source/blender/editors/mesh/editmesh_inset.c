@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edmesh
@@ -76,7 +62,6 @@ typedef struct {
   int launch_event;
   float mcenter[2];
   void *draw_handle_pixel;
-  short gizmo_flag;
 } InsetData;
 
 static void edbm_inset_update_header(wmOperator *op, bContext *C)
@@ -147,11 +132,11 @@ static bool edbm_inset_init(bContext *C, wmOperator *op, const bool is_modal)
   {
     uint ob_store_len = 0;
     Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-        view_layer, CTX_wm_view3d(C), &ob_store_len);
+        scene, view_layer, CTX_wm_view3d(C), &ob_store_len);
     opdata->ob_store = MEM_malloc_arrayN(ob_store_len, sizeof(*opdata->ob_store), __func__);
     for (uint ob_index = 0; ob_index < ob_store_len; ob_index++) {
       Object *obedit = objects[ob_index];
-      float scale = mat4_to_scale(obedit->obmat);
+      float scale = mat4_to_scale(obedit->object_to_world);
       opdata->max_obj_scale = max_ff(opdata->max_obj_scale, scale);
       BMEditMesh *em = BKE_editmesh_from_object(obedit);
       if (em->bm->totvertsel > 0) {
@@ -177,7 +162,6 @@ static bool edbm_inset_init(bContext *C, wmOperator *op, const bool is_modal)
   opdata->num_input.unit_type[1] = B_UNIT_LENGTH;
 
   if (is_modal) {
-    View3D *v3d = CTX_wm_view3d(C);
     ARegion *region = CTX_wm_region(C);
 
     for (uint ob_index = 0; ob_index < opdata->ob_store_len; ob_index++) {
@@ -189,10 +173,6 @@ static bool edbm_inset_init(bContext *C, wmOperator *op, const bool is_modal)
     opdata->draw_handle_pixel = ED_region_draw_cb_activate(
         region->type, ED_region_draw_mouse_line_cb, opdata->mcenter, REGION_DRAW_POST_PIXEL);
     G.moving = G_TRANSFORM_EDIT;
-    if (v3d) {
-      opdata->gizmo_flag = v3d->gizmo_flag;
-      v3d->gizmo_flag = V3D_GIZMO_HIDE;
-    }
   }
 
   return true;
@@ -206,15 +186,11 @@ static void edbm_inset_exit(bContext *C, wmOperator *op)
   opdata = op->customdata;
 
   if (opdata->is_modal) {
-    View3D *v3d = CTX_wm_view3d(C);
     ARegion *region = CTX_wm_region(C);
     for (uint ob_index = 0; ob_index < opdata->ob_store_len; ob_index++) {
-      EDBM_redo_state_free(&opdata->ob_store[ob_index].mesh_backup, NULL, false);
+      EDBM_redo_state_free(&opdata->ob_store[ob_index].mesh_backup);
     }
     ED_region_draw_cb_exit(region->type, opdata->draw_handle_pixel);
-    if (v3d) {
-      v3d->gizmo_flag = opdata->gizmo_flag;
-    }
     G.moving = 0;
   }
 
@@ -235,8 +211,13 @@ static void edbm_inset_cancel(bContext *C, wmOperator *op)
     for (uint ob_index = 0; ob_index < opdata->ob_store_len; ob_index++) {
       Object *obedit = opdata->ob_store[ob_index].ob;
       BMEditMesh *em = BKE_editmesh_from_object(obedit);
-      EDBM_redo_state_free(&opdata->ob_store[ob_index].mesh_backup, em, true);
-      EDBM_update_generic(obedit->data, false, true);
+      EDBM_redo_state_restore_and_free(&opdata->ob_store[ob_index].mesh_backup, em, true);
+      EDBM_update(obedit->data,
+                  &(const struct EDBMUpdate_Params){
+                      .calc_looptri = false,
+                      .calc_normals = false,
+                      .is_destructive = true,
+                  });
     }
   }
 
@@ -271,7 +252,7 @@ static bool edbm_inset_calc(wmOperator *op)
     BMEditMesh *em = BKE_editmesh_from_object(obedit);
 
     if (opdata->is_modal) {
-      EDBM_redo_state_restore(opdata->ob_store[ob_index].mesh_backup, em, false);
+      EDBM_redo_state_restore(&opdata->ob_store[ob_index].mesh_backup, em, false);
     }
 
     if (use_individual) {
@@ -326,7 +307,12 @@ static bool edbm_inset_calc(wmOperator *op)
       continue;
     }
 
-    EDBM_update_generic(obedit->data, true, true);
+    EDBM_update(obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = false,
+                    .is_destructive = true,
+                });
     changed = true;
   }
   return changed;

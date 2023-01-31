@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -71,16 +55,14 @@ UserDef U;
 /** \name Blender Free on Exit
  * \{ */
 
-/* only to be called on exit blender */
 void BKE_blender_free(void)
 {
   /* samples are in a global list..., also sets G_MAIN->sound->sample NULL */
 
-  /* Needs to run before main free as wm is still referenced for icons preview jobs. */
+  /* Needs to run before main free as window-manager is still referenced for icons preview jobs. */
   BKE_studiolight_free();
 
-  BKE_main_free(G_MAIN);
-  G_MAIN = NULL;
+  BKE_blender_globals_clear();
 
   if (G.log.file != NULL) {
     fclose(G.log.file);
@@ -90,7 +72,6 @@ void BKE_blender_free(void)
 
   IMB_exit();
   BKE_cachefiles_exit();
-  BKE_images_exit();
   DEG_free_node_types();
 
   BKE_brush_system_exit();
@@ -127,7 +108,7 @@ static void blender_version_init(void)
     version_cycle = "";
   }
   else {
-    BLI_assert(!"Invalid Blender version cycle");
+    BLI_assert_msg(0, "Invalid Blender version cycle");
   }
 
   BLI_snprintf(blender_version_string,
@@ -164,7 +145,7 @@ void BKE_blender_globals_init(void)
 
   U.savetime = 1;
 
-  G_MAIN = BKE_main_new();
+  BKE_blender_globals_main_replace(BKE_main_new());
 
   strcpy(G.ima, "//");
 
@@ -179,9 +160,32 @@ void BKE_blender_globals_init(void)
 
 void BKE_blender_globals_clear(void)
 {
+  if (G_MAIN == NULL) {
+    return;
+  }
+  BLI_assert(G_MAIN->is_global_main);
   BKE_main_free(G_MAIN); /* free all lib data */
 
   G_MAIN = NULL;
+}
+
+void BKE_blender_globals_main_replace(Main *bmain)
+{
+  BLI_assert(!bmain->is_global_main);
+  BKE_blender_globals_clear();
+  bmain->is_global_main = true;
+  G_MAIN = bmain;
+}
+
+Main *BKE_blender_globals_main_swap(Main *new_gmain)
+{
+  Main *old_gmain = G_MAIN;
+  BLI_assert(old_gmain->is_global_main);
+  BLI_assert(!new_gmain->is_global_main);
+  new_gmain->is_global_main = true;
+  G_MAIN = new_gmain;
+  old_gmain->is_global_main = false;
+  return old_gmain;
 }
 
 /** \} */
@@ -273,10 +277,6 @@ static void userdef_free_addons(UserDef *userdef)
   BLI_listbase_clear(&userdef->addons);
 }
 
-/**
- * When loading a new userdef from file,
- * or when exiting Blender.
- */
 void BKE_blender_userdef_data_free(UserDef *userdef, bool clear_fonts)
 {
 #define U BLI_STATIC_ASSERT(false, "Global 'U' not allowed, only use arguments passed in!")
@@ -311,10 +311,6 @@ void BKE_blender_userdef_data_free(UserDef *userdef, bool clear_fonts)
 /** \name Blender Preferences (Application Templates)
  * \{ */
 
-/**
- * Write U from userdef.
- * This function defines which settings a template will override for the user preferences.
- */
 void BKE_blender_userdef_app_template_data_swap(UserDef *userdef_a, UserDef *userdef_b)
 {
   /* TODO:
@@ -362,7 +358,9 @@ void BKE_blender_userdef_app_template_data_swap(UserDef *userdef_a, UserDef *use
   DATA_SWAP(app_flag);
 
   /* We could add others. */
-  FLAG_SWAP(uiflag, int, USER_SAVE_PROMPT);
+  FLAG_SWAP(uiflag, int, USER_SAVE_PROMPT | USER_SPLASH_DISABLE | USER_SHOW_GIZMO_NAVIGATE);
+
+  DATA_SWAP(ui_scale);
 
 #undef SWAP_TYPELESS
 #undef DATA_SWAP

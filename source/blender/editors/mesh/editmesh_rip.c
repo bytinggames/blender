@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2004 by Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2004 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edmesh
@@ -170,15 +154,15 @@ static float edbm_rip_edge_side_measure(
  *
  * The method used for checking the side of selection is as follows...
  * - First tag all rip-able edges.
- * - Build a contiguous edge list by looping over tagged edges and following each ones tagged
+ * - Build a contiguous edge list by looping over tagged edges and following each one's tagged
  *   siblings in both directions.
- *   - The loops are not stored in an array, Instead both loops on either side of each edge has
- *     its index values set to count down from the last edge, this way, once we have the 'last'
- *     edge its very easy to walk down the connected edge loops.
- *     The reason for using loops like this is because when the edges are split we don't which
- *     face user gets the newly created edge
- *     (its as good as random so we cant assume new edges will be on once side).
- *     After splitting, its very simple to walk along boundary loops since each only has one edge
+ *   - The loops are not stored in an array. Instead both loops on either side of each edge has
+ *     its index values set to count down from the last edge. This way once we have the 'last'
+ *     edge it's very easy to walk down the connected edge loops.
+ *     The reason for using loops like this is because when the edges are split we don't know
+ *     which face user gets the newly created edge
+ *     (it's as good as random so we can't assume new edges will be on one side).
+ *     After splitting, it's very simple to walk along boundary loops since each only has one edge
  *     from a single side.
  * - The end loop pairs are stored in an array however to support multiple edge-selection-islands,
  *   so you can rip multiple selections at once.
@@ -189,7 +173,7 @@ static float edbm_rip_edge_side_measure(
  *
  * Limitation!
  * This currently works very poorly with intersecting edge islands
- * (verts with more than 2 tagged edges). This is nice to but for now not essential.
+ * (verts with more than 2 tagged edges). This is nice to do but for now not essential.
  *
  * - campbell.
  */
@@ -270,7 +254,7 @@ static EdgeLoopPair *edbm_ripsel_looptag_helper(BMesh *bm)
       break;
     }
 
-    /* initialize  */
+    /* Initialize. */
     e_first = e;
     v_step = e_first->v1;
     e_step = NULL; /* quiet warning, will never remain this value */
@@ -342,7 +326,7 @@ static BMVert *edbm_ripsel_edloop_pair_start_vert(BMEdge *e)
 {
   /* try step in a direction, if it fails we know do go the other way */
   BMVert *v_test = e->v1;
-  return (edbm_ripsel_edge_uid_step(e, &v_test)) ? e->v1 : e->v2;
+  return edbm_ripsel_edge_uid_step(e, &v_test) ? e->v1 : e->v2;
 }
 
 static void edbm_ripsel_deselect_helper(BMesh *bm,
@@ -639,7 +623,7 @@ static int edbm_rip_invoke__vert(bContext *C, const wmEvent *event, Object *obed
 
   /* should we go ahead with edge rip or do we need to do special case, split off vertex?:
    * split off vertex if...
-   * - we cant find an edge - this means we are ripping a faces vert that is connected to other
+   * - we can't find an edge - this means we are ripping a faces vert that is connected to other
    *   geometry only at the vertex.
    * - the boundary edge total is greater than 2,
    *   in this case edge split _can_ work but we get far nicer results if we use this special case.
@@ -927,10 +911,10 @@ static int edbm_rip_invoke__edge(bContext *C, const wmEvent *event, Object *obed
 
     /* single edge, extend */
     if (i == 1 && e_best->l) {
-      /* note: if the case of 3 edges has one change in loop stepping,
+      /* NOTE: if the case of 3 edges has one change in loop stepping,
        * if this becomes more involved we may be better off splitting
        * the 3 edge case into its own else-if branch */
-      if ((totedge_manifold == 4 || totedge_manifold == 3) || (all_manifold == false)) {
+      if (ELEM(totedge_manifold, 4, 3) || (all_manifold == false)) {
         BMLoop *l_a = e_best->l;
         BMLoop *l_b = l_a->radial_next;
 
@@ -975,7 +959,7 @@ static int edbm_rip_invoke__edge(bContext *C, const wmEvent *event, Object *obed
 
   BM_mesh_edgesplit(em->bm, true, true, true);
 
-  /* note: the output of the bmesh operator is ignored, since we built
+  /* NOTE: the output of the bmesh operator is ignored, since we built
    * the contiguous loop pairs to split already, its possible that some
    * edge did not split even though it was tagged which would not work
    * as expected (but not crash), however there are checks to ensure
@@ -1003,10 +987,11 @@ static int edbm_rip_invoke__edge(bContext *C, const wmEvent *event, Object *obed
 /* based on mouse cursor position, it defines how is being ripped */
 static int edbm_rip_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   uint objects_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
   const bool do_fill = RNA_boolean_get(op->ptr, "use_fill");
 
   bool no_vertex_selected = true;
@@ -1033,7 +1018,7 @@ static int edbm_rip_invoke(bContext *C, wmOperator *op, const wmEvent *event)
     if (bm->totfacesel) {
       /* highly nifty but hard to support since the operator can fail and we're left
        * with modified selection */
-      // WM_operator_name_call(C, "MESH_OT_region_to_loop", WM_OP_INVOKE_DEFAULT, NULL);
+      // WM_operator_name_call(C, "MESH_OT_region_to_loop", WM_OP_INVOKE_DEFAULT, NULL, event);
       continue;
     }
     error_face_selected = false;
@@ -1082,7 +1067,12 @@ static int edbm_rip_invoke(bContext *C, wmOperator *op, const wmEvent *event)
     }
     error_rip_failed = false;
 
-    EDBM_update_generic(obedit->data, true, true);
+    EDBM_update(obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
   }
 
   MEM_freeN(objects);
@@ -1119,7 +1109,7 @@ void MESH_OT_rip(wmOperatorType *ot)
   ot->poll = EDBM_view3d_poll;
 
   /* flags */
-  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO | OPTYPE_DEPENDS_ON_CURSOR;
 
   /* to give to transform */
   Transform_Properties(ot, P_PROPORTIONAL | P_MIRROR_DUMMY);

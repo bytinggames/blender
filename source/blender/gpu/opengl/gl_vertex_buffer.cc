@@ -1,25 +1,11 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2016 by Mike Erwin.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 by Mike Erwin. All rights reserved. */
 
 /** \file
  * \ingroup gpu
  */
+
+#include "GPU_texture.h"
 
 #include "gl_context.hh"
 
@@ -29,6 +15,10 @@ namespace blender::gpu {
 
 void GLVertBuf::acquire_data()
 {
+  if (usage_ == GPU_USAGE_DEVICE_ONLY) {
+    return;
+  }
+
   /* Discard previous data if any. */
   MEM_SAFE_FREE(data);
   data = (uchar *)MEM_mallocN(sizeof(uchar) * this->size_alloc_get(), __func__);
@@ -36,12 +26,21 @@ void GLVertBuf::acquire_data()
 
 void GLVertBuf::resize_data()
 {
+  if (usage_ == GPU_USAGE_DEVICE_ONLY) {
+    return;
+  }
+
   data = (uchar *)MEM_reallocN(data, sizeof(uchar) * this->size_alloc_get());
 }
 
 void GLVertBuf::release_data()
 {
+  if (is_wrapper_) {
+    return;
+  }
+
   if (vbo_id_ != 0) {
+    GPU_TEXTURE_FREE_SAFE(buffer_texture_);
     GLContext::buf_free(vbo_id_);
     vbo_id_ = 0;
     memory_usage -= vbo_size_;
@@ -55,6 +54,7 @@ void GLVertBuf::duplicate_data(VertBuf *dst_)
   BLI_assert(GLContext::get() != nullptr);
   GLVertBuf *src = this;
   GLVertBuf *dst = static_cast<GLVertBuf *>(dst_);
+  dst->buffer_texture_ = nullptr;
 
   if (src->vbo_id_ != 0) {
     dst->vbo_size_ = src->size_used_get();
@@ -94,8 +94,10 @@ void GLVertBuf::bind()
     vbo_size_ = this->size_used_get();
     /* Orphan the vbo to avoid sync then upload data. */
     glBufferData(GL_ARRAY_BUFFER, vbo_size_, nullptr, to_gl(usage_));
-    glBufferSubData(GL_ARRAY_BUFFER, 0, vbo_size_, data);
-
+    /* Do not transfer data from host to device when buffer is device only. */
+    if (usage_ != GPU_USAGE_DEVICE_ONLY) {
+      glBufferSubData(GL_ARRAY_BUFFER, 0, vbo_size_, data);
+    }
     memory_usage += vbo_size_;
 
     if (usage_ == GPU_USAGE_STATIC) {
@@ -106,7 +108,58 @@ void GLVertBuf::bind()
   }
 }
 
-void GLVertBuf::update_sub(uint start, uint len, void *data)
+void GLVertBuf::bind_as_ssbo(uint binding)
+{
+  bind();
+  BLI_assert(vbo_id_ != 0);
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding, vbo_id_);
+}
+
+void GLVertBuf::bind_as_texture(uint binding)
+{
+  bind();
+  BLI_assert(vbo_id_ != 0);
+  if (buffer_texture_ == nullptr) {
+    buffer_texture_ = GPU_texture_create_from_vertbuf("vertbuf_as_texture", wrap(this));
+  }
+  GPU_texture_bind(buffer_texture_, binding);
+}
+
+const void *GLVertBuf::read() const
+{
+  BLI_assert(is_active());
+  void *result = glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY);
+  return result;
+}
+
+void *GLVertBuf::unmap(const void *mapped_data) const
+{
+  void *result = MEM_mallocN(vbo_size_, __func__);
+  memcpy(result, mapped_data, vbo_size_);
+  return result;
+}
+
+void GLVertBuf::wrap_handle(uint64_t handle)
+{
+  BLI_assert(vbo_id_ == 0);
+  BLI_assert(glIsBuffer(uint(handle)));
+  is_wrapper_ = true;
+  vbo_id_ = uint(handle);
+  /* We assume the data is already on the device, so no need to allocate or send it. */
+  flag = GPU_VERTBUF_DATA_UPLOADED;
+}
+
+bool GLVertBuf::is_active() const
+{
+  if (!vbo_id_) {
+    return false;
+  }
+  int active_vbo_id = 0;
+  glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &active_vbo_id);
+  return vbo_id_ == active_vbo_id;
+}
+
+void GLVertBuf::update_sub(uint start, uint len, const void *data)
 {
   glBufferSubData(GL_ARRAY_BUFFER, start, len, data);
 }

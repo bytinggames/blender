@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2007 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2007 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edsnd
@@ -50,8 +34,10 @@
 #include "RNA_access.h"
 #include "RNA_define.h"
 #include "RNA_enum_types.h"
+#include "RNA_prototypes.h"
 
 #include "SEQ_iterator.h"
+#include "SEQ_utils.h"
 
 #include "UI_interface.h"
 
@@ -206,7 +192,7 @@ static void SOUND_OT_open_mono(wmOperatorType *ot)
 
 static void sound_update_animation_flags(Scene *scene);
 
-static int sound_update_animation_flags_fn(Sequence *seq, void *user_data)
+static bool sound_update_animation_flags_fn(Sequence *seq, void *user_data)
 {
   struct FCurve *fcu;
   Scene *scene = (Scene *)user_data;
@@ -243,24 +229,22 @@ static int sound_update_animation_flags_fn(Sequence *seq, void *user_data)
     sound_update_animation_flags(seq->scene);
   }
 
-  return 0;
+  return true;
 }
 
 static void sound_update_animation_flags(Scene *scene)
 {
   struct FCurve *fcu;
   bool driven;
-  Sequence *seq;
 
   if (scene->id.tag & LIB_TAG_DOIT) {
     return;
   }
   scene->id.tag |= LIB_TAG_DOIT;
 
-  SEQ_ALL_BEGIN (scene->ed, seq) {
-    SEQ_iterator_recursive_apply(seq, sound_update_animation_flags_fn, scene);
+  if (scene->ed != NULL) {
+    SEQ_for_each_callback(&scene->ed->seqbase, sound_update_animation_flags_fn, scene);
   }
-  SEQ_ALL_END;
 
   fcu = id_data_find_fcurve(&scene->id, scene, &RNA_Scene, "audio_volume", 0, &driven);
   if (fcu || driven) {
@@ -356,7 +340,8 @@ static int sound_mixdown_exec(bContext *C, wmOperator *op)
   AUD_DeviceSpecs specs;
   AUD_Container container;
   AUD_Codec codec;
-  const char *result;
+  int result;
+  char error_message[1024] = {'\0'};
 
   sound_bake_animation_exec(C, op);
 
@@ -388,7 +373,9 @@ static int sound_mixdown_exec(bContext *C, wmOperator *op)
                                      codec,
                                      bitrate,
                                      NULL,
-                                     NULL);
+                                     NULL,
+                                     error_message,
+                                     sizeof(error_message));
   }
   else {
     result = AUD_mixdown(scene_eval->sound_scene,
@@ -401,13 +388,15 @@ static int sound_mixdown_exec(bContext *C, wmOperator *op)
                          codec,
                          bitrate,
                          NULL,
-                         NULL);
+                         NULL,
+                         error_message,
+                         sizeof(error_message));
   }
 
   BKE_sound_reset_scene_specs(scene_eval);
 
-  if (result) {
-    BKE_report(op->reports, RPT_ERROR, result);
+  if (!result) {
+    BKE_report(op->reports, RPT_ERROR, error_message);
     return OPERATOR_CANCELLED;
   }
 #else  /* WITH_AUDASPACE */
@@ -777,7 +766,8 @@ static int sound_pack_exec(bContext *C, wmOperator *op)
 
   sound->packedfile = BKE_packedfile_new(
       op->reports, sound->filepath, ID_BLEND_PATH(bmain, &sound->id));
-  BKE_sound_load(bmain, sound);
+
+  DEG_id_tag_update_ex(bmain, &sound->id, ID_RECALC_AUDIO);
 
   return OPERATOR_FINISHED;
 }

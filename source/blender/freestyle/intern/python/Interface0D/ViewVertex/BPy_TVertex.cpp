@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -49,7 +35,7 @@ PyDoc_STRVAR(TVertex_doc,
              "\n"
              "   Default constructor.");
 
-/* Note: No copy constructor in Python because the C++ copy constructor is 'protected'. */
+/* NOTE: No copy constructor in Python because the C++ copy constructor is 'protected'. */
 
 static int TVertex_init(BPy_TVertex *self, PyObject *args, PyObject *kwds)
 {
@@ -136,7 +122,7 @@ PyDoc_STRVAR(TVertex_front_svertex_doc,
              "\n"
              ":type: :class:`SVertex`");
 
-static PyObject *TVertex_front_svertex_get(BPy_TVertex *self, void *UNUSED(closure))
+static PyObject *TVertex_front_svertex_get(BPy_TVertex *self, void * /*closure*/)
 {
   SVertex *v = self->tv->frontSVertex();
   if (v) {
@@ -145,7 +131,7 @@ static PyObject *TVertex_front_svertex_get(BPy_TVertex *self, void *UNUSED(closu
   Py_RETURN_NONE;
 }
 
-static int TVertex_front_svertex_set(BPy_TVertex *self, PyObject *value, void *UNUSED(closure))
+static int TVertex_front_svertex_set(BPy_TVertex *self, PyObject *value, void * /*closure*/)
 {
   if (!BPy_SVertex_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be an SVertex");
@@ -160,7 +146,7 @@ PyDoc_STRVAR(TVertex_back_svertex_doc,
              "\n"
              ":type: :class:`SVertex`");
 
-static PyObject *TVertex_back_svertex_get(BPy_TVertex *self, void *UNUSED(closure))
+static PyObject *TVertex_back_svertex_get(BPy_TVertex *self, void * /*closure*/)
 {
   SVertex *v = self->tv->backSVertex();
   if (v) {
@@ -169,7 +155,7 @@ static PyObject *TVertex_back_svertex_get(BPy_TVertex *self, void *UNUSED(closur
   Py_RETURN_NONE;
 }
 
-static int TVertex_back_svertex_set(BPy_TVertex *self, PyObject *value, void *UNUSED(closure))
+static int TVertex_back_svertex_set(BPy_TVertex *self, PyObject *value, void * /*closure*/)
 {
   if (!BPy_SVertex_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be an SVertex");
@@ -184,13 +170,13 @@ PyDoc_STRVAR(TVertex_id_doc,
              "\n"
              ":type: :class:`Id`");
 
-static PyObject *TVertex_id_get(BPy_TVertex *self, void *UNUSED(closure))
+static PyObject *TVertex_id_get(BPy_TVertex *self, void * /*closure*/)
 {
   Id id(self->tv->getId());
   return BPy_Id_from_Id(id);  // return a copy
 }
 
-static int TVertex_id_set(BPy_TVertex *self, PyObject *value, void *UNUSED(closure))
+static int TVertex_id_set(BPy_TVertex *self, PyObject *value, void * /*closure*/)
 {
   if (!BPy_Id_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be an Id");
@@ -229,7 +215,7 @@ PyTypeObject TVertex_Type = {
     nullptr,                                     /* tp_as_number */
     nullptr,                                     /* tp_as_sequence */
     nullptr,                                     /* tp_as_mapping */
-    nullptr,                                     /* tp_hash  */
+    nullptr,                                     /* tp_hash */
     nullptr,                                     /* tp_call */
     nullptr,                                     /* tp_str */
     nullptr,                                     /* tp_getattro */

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -46,7 +32,7 @@ class NodeShape : public Node {
 
   virtual ~NodeShape();
 
-  /*! Adds a Rep to the _Shapes list
+  /** Adds a Rep to the _Shapes list
    *  The delete of the rep is done when it is not used any more by the Scene Manager.
    *  So, it must not be deleted by the caller
    */
@@ -62,17 +48,17 @@ class NodeShape : public Node {
     AddBBox(iRep->bbox());
   }
 
-  /*! Accept the corresponding visitor */
+  /** Accept the corresponding visitor */
   virtual void accept(SceneVisitor &v);
 
-  /*! Sets the shape material */
+  /** Sets the shape material */
   inline void setFrsMaterial(const FrsMaterial &iMaterial)
   {
     _FrsMaterial = iMaterial;
   }
 
-  /*! accessors */
-  /*! returns the shape's material */
+  /** accessors */
+  /** returns the shape's material */
   inline FrsMaterial &frs_material()
   {
     return _FrsMaterial;
@@ -84,10 +70,10 @@ class NodeShape : public Node {
   }
 
  private:
-  /*! list of shapes */
+  /** list of shapes */
   vector<Rep *> _Shapes;
 
-  /*! Shape Material */
+  /** Shape Material */
   FrsMaterial _FrsMaterial;
 };
 

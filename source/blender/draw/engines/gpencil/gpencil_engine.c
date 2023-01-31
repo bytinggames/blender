@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2017, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2017 Blender Foundation. */
 
 /** \file
  * \ingroup draw
@@ -120,15 +105,9 @@ void GPENCIL_engine_init(void *ved)
   bool use_scene_world = false;
 
   if (v3d) {
-    use_scene_lights = ((v3d->shading.type == OB_MATERIAL) &&
-                        (v3d->shading.flag & V3D_SHADING_SCENE_LIGHTS)) ||
-                       ((v3d->shading.type == OB_RENDER) &&
-                        (v3d->shading.flag & V3D_SHADING_SCENE_LIGHTS_RENDER));
+    use_scene_lights = V3D_USES_SCENE_LIGHTS(v3d);
 
-    use_scene_world = ((v3d->shading.type == OB_MATERIAL) &&
-                       (v3d->shading.flag & V3D_SHADING_SCENE_WORLD)) ||
-                      ((v3d->shading.type == OB_RENDER) &&
-                       (v3d->shading.flag & V3D_SHADING_SCENE_WORLD_RENDER));
+    use_scene_world = V3D_USES_SCENE_WORLD(v3d);
 
     stl->pd->v3d_color_type = (v3d->shading.type == OB_SOLID) ? v3d->shading.color_type : -1;
     /* Special case: If Vertex Paint mode, use always Vertex mode. */
@@ -240,8 +219,9 @@ void GPENCIL_cache_init(void *ved)
   }
   else {
     pd->do_onion = true;
-    pd->simplify_fill = false;
-    pd->simplify_fx = false;
+    Scene *scene = draw_ctx->scene;
+    pd->simplify_fill = GPENCIL_SIMPLIFY_FILL(scene, false);
+    pd->simplify_fx = GPENCIL_SIMPLIFY_FX(scene, false);
     pd->fade_layer_opacity = -1.0f;
     pd->playing = false;
   }
@@ -262,7 +242,7 @@ void GPENCIL_cache_init(void *ved)
         pd->sbuffer_gpd = gpd;
         pd->sbuffer_stroke = DRW_cache_gpencil_sbuffer_stroke_data_get(pd->obact);
         pd->sbuffer_layer = BKE_gpencil_layer_active_get(pd->sbuffer_gpd);
-        pd->do_fast_drawing = false; /* TODO option */
+        pd->do_fast_drawing = false; /* TODO: option. */
       }
     }
   }
@@ -309,7 +289,7 @@ void GPENCIL_cache_init(void *ved)
     DRW_shgroup_call_procedural_triangles(grp, NULL, 1);
   }
 
-  Camera *cam = (pd->camera != NULL) ? pd->camera->data : NULL;
+  Camera *cam = (pd->camera != NULL && pd->camera->type == OB_CAMERA) ? pd->camera->data : NULL;
 
   /* Pseudo DOF setup. */
   if (cam && (cam->dof.flag & CAM_DOF_ENABLED)) {
@@ -320,7 +300,7 @@ void GPENCIL_cache_init(void *ved)
     float focal_len = cam->lens;
 
     const float scale_camera = 0.001f;
-    /* we want radius here for the aperture number  */
+    /* We want radius here for the aperture number. */
     float aperture = 0.5f * scale_camera * focal_len / fstop;
     float focal_len_scaled = scale_camera * focal_len;
     float sensor_scaled = scale_camera * sensor;
@@ -362,7 +342,6 @@ typedef struct gpIterPopulateData {
   int stroke_index_offset;
   /* Infos for call batching. */
   struct GPUBatch *geom;
-  bool instancing;
   int vfirst, vcount;
 } gpIterPopulateData;
 
@@ -372,12 +351,7 @@ static void gpencil_drawcall_flush(gpIterPopulateData *iter)
 {
 #if !DISABLE_BATCHING
   if (iter->geom != NULL) {
-    if (iter->instancing) {
-      DRW_shgroup_call_instance_range(iter->grp, iter->ob, iter->geom, iter->vfirst, iter->vcount);
-    }
-    else {
-      DRW_shgroup_call_range(iter->grp, iter->ob, iter->geom, iter->vfirst, iter->vcount);
-    }
+    DRW_shgroup_call_range(iter->grp, iter->ob, iter->geom, iter->vfirst, iter->vcount);
   }
 #endif
 
@@ -387,25 +361,22 @@ static void gpencil_drawcall_flush(gpIterPopulateData *iter)
 }
 
 /* Group draw-calls that are consecutive and with the same type. Reduces GPU driver overhead. */
-static void gpencil_drawcall_add(
-    gpIterPopulateData *iter, struct GPUBatch *geom, bool instancing, int v_first, int v_count)
+static void gpencil_drawcall_add(gpIterPopulateData *iter,
+                                 struct GPUBatch *geom,
+                                 int v_first,
+                                 int v_count)
 {
 #if DISABLE_BATCHING
-  if (instancing) {
-    DRW_shgroup_call_instance_range(iter->grp, iter->ob, geom, v_first, v_count);
-  }
-  else {
-    DRW_shgroup_call_range(iter->grp, iter->ob, geom, v_first, v_count);
-  }
+  DRW_shgroup_call_range(iter->grp, iter->ob, geom, v_first, v_count);
+  return;
 #endif
 
   int last = iter->vfirst + iter->vcount;
   /* Interrupt draw-call grouping if the sequence is not consecutive. */
-  if ((geom != iter->geom) || (v_first - last > 3)) {
+  if ((geom != iter->geom) || (v_first - last > 0)) {
     gpencil_drawcall_flush(iter);
   }
   iter->geom = geom;
-  iter->instancing = instancing;
   if (iter->vfirst == -1) {
     iter->vfirst = v_first;
   }
@@ -425,8 +396,8 @@ static void gpencil_sbuffer_cache_populate(gpIterPopulateData *iter)
    * Remember, sbuffer stroke indices start from 0. So we add last index to avoid
    * masking issues. */
   iter->grp = DRW_shgroup_create_sub(iter->grp);
-  DRW_shgroup_uniform_block(iter->grp, "gpMaterialBlock", iter->ubo_mat);
-  DRW_shgroup_uniform_float_copy(iter->grp, "strokeIndexOffset", iter->stroke_index_last);
+  DRW_shgroup_uniform_block(iter->grp, "materials", iter->ubo_mat);
+  DRW_shgroup_uniform_float_copy(iter->grp, "gpStrokeIndexOffset", iter->stroke_index_last);
 
   const DRWContextState *ctx = DRW_context_state_get();
   ToolSettings *ts = ctx->scene->toolsettings;
@@ -473,12 +444,13 @@ static void gpencil_layer_cache_populate(bGPDlayer *gpl,
 
   /* Iterator dependent uniforms. */
   DRWShadingGroup *grp = iter->grp = tgp_layer->base_shgrp;
-  DRW_shgroup_uniform_block(grp, "gpLightBlock", iter->ubo_lights);
-  DRW_shgroup_uniform_block(grp, "gpMaterialBlock", iter->ubo_mat);
+  DRW_shgroup_uniform_block(grp, "lights", iter->ubo_lights);
+  DRW_shgroup_uniform_block(grp, "materials", iter->ubo_mat);
   DRW_shgroup_uniform_texture(grp, "gpFillTexture", iter->tex_fill);
   DRW_shgroup_uniform_texture(grp, "gpStrokeTexture", iter->tex_stroke);
   DRW_shgroup_uniform_int_copy(grp, "gpMaterialOffset", iter->mat_ofs);
-  DRW_shgroup_uniform_float_copy(grp, "strokeIndexOffset", iter->stroke_index_offset);
+  DRW_shgroup_uniform_float_copy(grp, "gpStrokeIndexOffset", iter->stroke_index_offset);
+  DRW_shgroup_uniform_vec2_copy(grp, "viewportSize", DRW_viewport_size_get());
 }
 
 static void gpencil_stroke_cache_populate(bGPDlayer *gpl,
@@ -520,7 +492,7 @@ static void gpencil_stroke_cache_populate(bGPDlayer *gpl,
 
     iter->grp = DRW_shgroup_create_sub(iter->grp);
     if (iter->ubo_mat != ubo_mat) {
-      DRW_shgroup_uniform_block(iter->grp, "gpMaterialBlock", ubo_mat);
+      DRW_shgroup_uniform_block(iter->grp, "materials", ubo_mat);
       iter->ubo_mat = ubo_mat;
     }
     if (tex_fill) {
@@ -535,22 +507,33 @@ static void gpencil_stroke_cache_populate(bGPDlayer *gpl,
 
   bool do_sbuffer = (iter->do_sbuffer_call == DRAW_NOW);
 
+  GPUBatch *geom = do_sbuffer ? DRW_cache_gpencil_sbuffer_get(iter->ob, show_fill) :
+                                DRW_cache_gpencil_get(iter->ob, iter->pd->cfra);
+  if (geom != iter->geom) {
+    gpencil_drawcall_flush(iter);
+
+    GPUVertBuf *position_tx = do_sbuffer ?
+                                  DRW_cache_gpencil_sbuffer_position_buffer_get(iter->ob,
+                                                                                show_fill) :
+                                  DRW_cache_gpencil_position_buffer_get(iter->ob, iter->pd->cfra);
+    GPUVertBuf *color_tx = do_sbuffer ?
+                               DRW_cache_gpencil_sbuffer_color_buffer_get(iter->ob, show_fill) :
+                               DRW_cache_gpencil_color_buffer_get(iter->ob, iter->pd->cfra);
+    DRW_shgroup_buffer_texture(iter->grp, "gp_pos_tx", position_tx);
+    DRW_shgroup_buffer_texture(iter->grp, "gp_col_tx", color_tx);
+  }
+
   if (show_fill) {
-    GPUBatch *geom = do_sbuffer ? DRW_cache_gpencil_sbuffer_fill_get(iter->ob) :
-                                  DRW_cache_gpencil_fills_get(iter->ob, iter->pd->cfra);
     int vfirst = gps->runtime.fill_start * 3;
     int vcount = gps->tot_triangles * 3;
-    gpencil_drawcall_add(iter, geom, false, vfirst, vcount);
+    gpencil_drawcall_add(iter, geom, vfirst, vcount);
   }
 
   if (show_stroke) {
-    GPUBatch *geom = do_sbuffer ? DRW_cache_gpencil_sbuffer_stroke_get(iter->ob) :
-                                  DRW_cache_gpencil_strokes_get(iter->ob, iter->pd->cfra);
-    /* Start one vert before to have gl_InstanceID > 0 (see shader). */
-    int vfirst = gps->runtime.stroke_start - 1;
-    /* Include "potential" cyclic vertex and start adj vertex (see shader). */
-    int vcount = gps->totpoints + 1 + 1;
-    gpencil_drawcall_add(iter, geom, true, vfirst, vcount);
+    int vfirst = gps->runtime.stroke_start * 3;
+    bool is_cyclic = ((gps->flag & GP_STROKE_CYCLIC) != 0) && (gps->totpoints > 2);
+    int vcount = (gps->totpoints + (int)is_cyclic) * 2 * 3;
+    gpencil_drawcall_add(iter, geom, vfirst, vcount);
   }
 
   iter->stroke_index_last = gps->runtime.stroke_start + gps->totpoints + 1;
@@ -640,13 +623,13 @@ void GPENCIL_cache_populate(void *ved, Object *ob)
       }
     }
 
-    BKE_gpencil_visible_stroke_iter(is_final_render ? pd->view_layer : NULL,
-                                    ob,
-                                    gpencil_layer_cache_populate,
-                                    gpencil_stroke_cache_populate,
-                                    &iter,
-                                    do_onion,
-                                    pd->cfra);
+    BKE_gpencil_visible_stroke_advanced_iter(is_final_render ? pd->view_layer : NULL,
+                                             ob,
+                                             gpencil_layer_cache_populate,
+                                             gpencil_stroke_cache_populate,
+                                             &iter,
+                                             do_onion,
+                                             pd->cfra);
 
     gpencil_drawcall_flush(&iter);
 
@@ -793,7 +776,7 @@ static void gpencil_draw_mask(GPENCIL_Data *vedata, GPENCIL_tObject *ob, GPENCIL
   const float clear_col[4] = {1.0f, 1.0f, 1.0f, 1.0f};
   float clear_depth = ob->is_drawmode3d ? 1.0f : 0.0f;
   bool inverted = false;
-  /* OPTI(fclem) we could optimize by only clearing if the new mask_bits does not contain all
+  /* OPTI(@fclem): we could optimize by only clearing if the new mask_bits does not contain all
    * the masks already rendered in the buffer, and drawing only the layers not already drawn. */
   bool cleared = false;
 
@@ -819,7 +802,10 @@ static void gpencil_draw_mask(GPENCIL_Data *vedata, GPENCIL_tObject *ob, GPENCIL
     }
 
     GPENCIL_tLayer *mask_layer = gpencil_layer_cache_get(ob, i);
-    BLI_assert(mask_layer);
+    /* When filtering by view-layer, the mask could be null and must be ignored. */
+    if (mask_layer == NULL) {
+      continue;
+    }
 
     DRW_draw_pass(mask_layer->geom_ps);
   }
@@ -992,6 +978,7 @@ DrawEngineType draw_engine_gpencil_type = {
     &GPENCIL_data_size,
     &GPENCIL_engine_init,
     &GPENCIL_engine_free,
+    NULL, /* instance_free */
     &GPENCIL_cache_init,
     &GPENCIL_cache_populate,
     &GPENCIL_cache_finish,

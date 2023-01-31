@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup collada
@@ -28,8 +14,8 @@
 
 UnitConverter::UnitConverter() : up_axis(COLLADAFW::FileInfo::Z_UP)
 {
-  axis_angle_to_mat4_single(x_up_mat4, 'Y', -0.5 * M_PI);
-  axis_angle_to_mat4_single(y_up_mat4, 'X', 0.5 * M_PI);
+  axis_angle_to_mat4_single(x_up_mat4, 'Y', -M_PI_2);
+  axis_angle_to_mat4_single(y_up_mat4, 'X', M_PI_2);
 
   unit_m4(z_up_mat4);
   unit_m4(scale_mat4);
@@ -61,7 +47,7 @@ UnitConverter::UnitSystem UnitConverter::isMetricSystem()
 
 float UnitConverter::getLinearMeter()
 {
-  return (float)unit.getLinearUnitMeter();
+  return float(unit.getLinearUnitMeter());
 }
 
 void UnitConverter::convertVector3(COLLADABU::Math::Vector3 &vec, float *v)
@@ -71,7 +57,7 @@ void UnitConverter::convertVector3(COLLADABU::Math::Vector3 &vec, float *v)
   v[2] = vec.z;
 }
 
-/* TODO need also for angle conversion, time conversion... */
+/* TODO: need also for angle conversion, time conversion... */
 
 void UnitConverter::dae_matrix_to_mat4_(float out[4][4], const COLLADABU::Math::Matrix4 &in)
 {
@@ -162,12 +148,12 @@ void UnitConverter::calculate_scale(Scene &sce)
  * Translation map.
  * Used to translate every COLLADA id to a valid id, no matter what "wrong" letters may be
  * included. Look at the IDREF XSD declaration for more.
- * Follows strictly the COLLADA XSD declaration which explicitly allows non-english chars,
+ * Follows strictly the COLLADA XSD declaration which explicitly allows non-English chars,
  * like special chars (e.g. micro sign), umlauts and so on.
  * The COLLADA spec also allows additional chars for member access ('.'), these
  * must obviously be removed too, otherwise they would be heavily misinterpreted.
  */
-const unsigned char translate_start_name_map[256] = {
+const uchar translate_start_name_map[256] = {
 
     95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,
     95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,
@@ -186,7 +172,7 @@ const unsigned char translate_start_name_map[256] = {
     242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255,
 };
 
-const unsigned char translate_name_map[256] = {
+const uchar translate_name_map[256] = {
 
     95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,
     95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,  95,
@@ -213,7 +199,6 @@ void clear_global_id_map()
   global_id_map.clear();
 }
 
-/** Look at documentation of translate_map */
 std::string translate_id(const char *idString)
 {
   std::string id = std::string(idString);
@@ -227,16 +212,16 @@ std::string translate_id(const std::string &id)
   }
 
   std::string id_translated = id;
-  id_translated[0] = translate_start_name_map[(unsigned int)id_translated[0]];
-  for (unsigned int i = 1; i < id_translated.size(); i++) {
-    id_translated[i] = translate_name_map[(unsigned int)id_translated[i]];
+  id_translated[0] = translate_start_name_map[uint(id_translated[0])];
+  for (uint i = 1; i < id_translated.size(); i++) {
+    id_translated[i] = translate_name_map[uint(id_translated[i])];
   }
   /* It's so much workload now, the if () should speed up things. */
   if (id_translated != id) {
     /* Search duplicates. */
     map_string_list::iterator iter = global_id_map.find(id_translated);
     if (iter != global_id_map.end()) {
-      unsigned int i = 0;
+      uint i = 0;
       bool found = false;
       for (i = 0; i < iter->second.size(); i++) {
         if (id == iter->second[i]) {

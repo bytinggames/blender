@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup spstatusbar
@@ -35,11 +21,13 @@
 
 #include "UI_interface.h"
 
+#include "BLO_read_write.h"
+
 #include "WM_api.h"
 #include "WM_message.h"
 #include "WM_types.h"
 
-/* ******************** default callbacks for statusbar space ********************  */
+/* ******************** default callbacks for statusbar space ******************** */
 
 static SpaceLink *statusbar_create(const ScrArea *UNUSED(area), const Scene *UNUSED(scene))
 {
@@ -97,7 +85,7 @@ static void statusbar_keymap(struct wmKeyConfig *UNUSED(keyconf))
 static void statusbar_header_region_listener(const wmRegionListenerParams *params)
 {
   ARegion *region = params->region;
-  wmNotifier *wmn = params->notifier;
+  const wmNotifier *wmn = params->notifier;
 
   /* context changes */
   switch (wmn->category) {
@@ -144,14 +132,18 @@ static void statusbar_header_region_message_subscribe(const wmRegionMessageSubsc
   WM_msg_subscribe_rna_anon_prop(mbus, ViewLayer, name, &msg_sub_value_region_tag_redraw);
 }
 
-/* only called once, from space/spacetypes.c */
+static void statusbar_blend_write(BlendWriter *writer, SpaceLink *sl)
+{
+  BLO_write_struct(writer, SpaceStatusBar, sl);
+}
+
 void ED_spacetype_statusbar(void)
 {
   SpaceType *st = MEM_callocN(sizeof(*st), "spacetype statusbar");
   ARegionType *art;
 
   st->spaceid = SPACE_STATUSBAR;
-  strncpy(st->name, "Status Bar", BKE_ST_MAXNAME);
+  STRNCPY(st->name, "Status Bar");
 
   st->create = statusbar_create;
   st->free = statusbar_free;
@@ -159,6 +151,7 @@ void ED_spacetype_statusbar(void)
   st->duplicate = statusbar_duplicate;
   st->operatortypes = statusbar_operatortypes;
   st->keymap = statusbar_keymap;
+  st->blend_write = statusbar_blend_write;
 
   /* regions: header window */
   art = MEM_callocN(sizeof(*art), "spacetype statusbar header region");

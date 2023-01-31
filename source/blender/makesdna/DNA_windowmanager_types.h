@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2007 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2007 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup DNA
@@ -33,7 +17,8 @@
 extern "C" {
 #endif
 
-/* defined here: */
+/* Defined here: */
+
 struct wmWindow;
 struct wmWindowManager;
 
@@ -45,7 +30,8 @@ struct wmMsgBus;
 struct wmOperator;
 struct wmOperatorType;
 
-/* forwards */
+/* Forward declarations: */
+
 struct PointerRNA;
 struct Report;
 struct ReportList;
@@ -58,8 +44,8 @@ struct wmTimer;
 #define OP_MAX_TYPENAME 64
 #define KMAP_MAX_NAME 64
 
-/* keep in sync with 'rna_enum_wm_report_items' in wm_rna.c */
-typedef enum ReportType {
+/** Keep in sync with 'rna_enum_wm_report_items' in `wm_rna.c`. */
+typedef enum eReportType {
   RPT_DEBUG = (1 << 0),
   RPT_INFO = (1 << 1),
   RPT_OPERATOR = (1 << 2),
@@ -69,7 +55,7 @@ typedef enum ReportType {
   RPT_ERROR_INVALID_INPUT = (1 << 6),
   RPT_ERROR_INVALID_CONTEXT = (1 << 7),
   RPT_ERROR_OUT_OF_MEMORY = (1 << 8),
-} ReportType;
+} eReportType;
 
 #define RPT_DEBUG_ALL (RPT_DEBUG)
 #define RPT_INFO_ALL (RPT_INFO)
@@ -84,6 +70,8 @@ enum ReportListFlags {
   RPT_STORE = (1 << 1),
   RPT_FREE = (1 << 2),
   RPT_OP_HOLD = (1 << 3), /* don't move them into the operator global list (caller will use) */
+  /** Don't print (the owner of the #ReportList will handle printing to the `stdout`). */
+  RPT_PRINT_HANDLED_BY_OWNER = (1 << 4),
 };
 
 /* These two Lines with # tell makesdna this struct can be excluded. */
@@ -91,21 +79,23 @@ enum ReportListFlags {
 #
 typedef struct Report {
   struct Report *next, *prev;
-  /** ReportType. */
+  /** eReportType. */
   short type;
   short flag;
-  /** `strlen(message)`, saves some time calculating the word wrap . */
+  /** `strlen(message)`, saves some time calculating the word wrap. */
   int len;
   const char *typestr;
   const char *message;
 } Report;
 
-/* saved in the wm, don't remove */
+/**
+ * \note Saved in the #wmWindowManager, don't remove.
+ */
 typedef struct ReportList {
   ListBase list;
-  /** ReportType. */
+  /** #eReportType. */
   int printlevel;
-  /** ReportType. */
+  /** #eReportType. */
   int storelevel;
   int flag;
   char _pad[4];
@@ -133,12 +123,19 @@ typedef struct wmXrData {
 
 /* reports need to be before wmWindowManager */
 
-/* windowmanager is saved, tag WMAN */
+/** Window-manager is saved, tag WMAN. */
 typedef struct wmWindowManager {
   ID id;
 
   /** Separate active from drawable. */
-  struct wmWindow *windrawable, *winactive;
+  struct wmWindow *windrawable;
+  /**
+   * \note `CTX_wm_window(C)` is usually preferred.
+   * Avoid relying on this where possible as this may become NULL during when handling
+   * events that close or replace windows (opening a file for e.g.).
+   * While this happens rarely in practice, it can cause difficult to reproduce bugs.
+   */
+  struct wmWindow *winactive;
   ListBase windows;
 
   /** Set on file read. */
@@ -154,8 +151,18 @@ typedef struct wmWindowManager {
   /** Operator registry. */
   ListBase operators;
 
-  /** Refresh/redraw #wmNotifier structs. */
+  /**
+   * Refresh/redraw #wmNotifier structs.
+   * \note Once in the queue, notifiers should be considered read-only.
+   * With the exception of clearing notifiers for data which has been removed,
+   * see: #NOTE_CATEGORY_TAG_CLEARED.
+   */
   ListBase notifier_queue;
+  /**
+   * For duplicate detection.
+   * \note keep in sync with `notifier_queue` adding/removing elements must also update this set.
+   */
+  struct GSet *notifier_queue_set;
 
   /** Information and error reports. */
   struct ReportList reports;
@@ -197,13 +204,13 @@ typedef struct wmWindowManager {
   //#endif
 } wmWindowManager;
 
-/* wmWindowManager.initialized */
+/** #wmWindowManager.initialized */
 enum {
   WM_WINDOW_IS_INIT = (1 << 0),
   WM_KEYCONFIG_IS_INIT = (1 << 1),
 };
 
-/* wmWindowManager.outliner_sync_select_dirty */
+/** #wmWindowManager.outliner_sync_select_dirty */
 enum {
   WM_OUTLINER_SYNC_SELECT_FROM_OBJECT = (1 << 0),
   WM_OUTLINER_SYNC_SELECT_FROM_EDIT_BONE = (1 << 1),
@@ -217,14 +224,16 @@ enum {
 
 #define WM_KEYCONFIG_STR_DEFAULT "Blender"
 
-/* IME is win32 only! */
-#if !defined(WIN32) && !defined(DNA_DEPRECATED)
+/* IME is win32 and apple only! */
+#if !(defined(WIN32) || defined(__APPLE__)) && !defined(DNA_DEPRECATED)
 #  ifdef __GNUC__
 #    define ime_data ime_data __attribute__((deprecated))
 #  endif
 #endif
 
-/* the saveable part, rest of data is local in ghostwinlay */
+/**
+ * The saveable part, the rest of the data is local in GHOST.
+ */
 typedef struct wmWindow {
   struct wmWindow *next, *prev;
 
@@ -242,6 +251,9 @@ typedef struct wmWindow {
   struct Scene *new_scene;
   /** Active view layer displayed in this window. */
   char view_layer_name[64];
+  /** The workspace may temporarily override the window's scene with scene pinning. This is the
+   * "overridden" or "default" scene to restore when entering a workspace with no scene pinned. */
+  struct Scene *unpinned_scene;
 
   struct WorkSpaceInstanceHook *workspace_hook;
 
@@ -295,14 +307,28 @@ typedef struct wmWindow {
    */
   short pie_event_type_last;
 
-  /** Storage for event system. */
+  /**
+   * Storage for event system.
+   *
+   * For the most part this is storage for `wmEvent.xy` & `wmEvent.modifiers`.
+   * newly added key/button events copy the cursor location and modifier state stored here.
+   *
+   * It's also convenient at times to be able to pass this as if it's a regular event.
+   *
+   * - This is not simply the current event being handled.
+   *   The type and value is always set to the last press/release events
+   *   otherwise cursor motion would always clear these values.
+   *
+   * - The value of `eventstate->modifiers` is set from the last pressed/released modifier key.
+   *   This has the down side that the modifier value will be incorrect if users hold both
+   *   left/right modifiers then release one. See note in #wm_event_add_ghostevent for details.
+   */
   struct wmEvent *eventstate;
-
-  /** Internal for wm_operators.c. */
-  struct wmGesture *tweak;
+  /** Keep the last handled event in `event_queue` here (owned and must be freed). */
+  struct wmEvent *event_last_handled;
 
   /* Input Method Editor data - complex character input (especially for Asian character input)
-   * Currently WIN32, runtime-only data. */
+   * Currently WIN32 and APPLE, runtime-only data. */
   struct wmIMEData *ime_data;
 
   /** All events #wmEvent (ghost level events were handled). */
@@ -338,14 +364,16 @@ typedef struct wmOperatorTypeMacro {
   struct wmOperatorTypeMacro *next, *prev;
 
   /* operator id */
-  char idname[64];
+  char idname[64]; /* OP_MAX_TYPENAME */
   /* rna pointer to access properties, like keymap */
   /** Operator properties, assigned to ptr->data and can be written to a file. */
   struct IDProperty *properties;
   struct PointerRNA *ptr;
 } wmOperatorTypeMacro;
 
-/* Partial copy of the event, for matching by event handler. */
+/**
+ * Partial copy of the event, for matching by event handler.
+ */
 typedef struct wmKeyMapItem {
   struct wmKeyMapItem *next, *prev;
 
@@ -365,8 +393,10 @@ typedef struct wmKeyMapItem {
   /** Event code itself. */
   short type;
   /** KM_ANY, KM_PRESS, KM_NOTHING etc. */
-  short val;
-  /** Oskey is apple or windowskey, value denotes order of pressed. */
+  int8_t val;
+  /** Use when `val == KM_CLICK_DRAG`. */
+  int8_t direction;
+  /** `oskey` also known as apple, windows-key or super. */
   short shift, ctrl, alt, oskey;
   /** Raw-key modifier. */
   short keymodifier;
@@ -404,13 +434,13 @@ enum {
   KMI_USER_MODIFIED = (1 << 2),
   KMI_UPDATE = (1 << 3),
   /**
-   * When set, ignore events with #wmEvent.is_repeat enabled.
+   * When set, ignore events with `wmEvent.flag & WM_EVENT_IS_REPEAT` enabled.
    *
    * \note this flag isn't cleared when editing/loading the key-map items,
    * so it may be set in cases which don't make sense (modifier-keys or mouse-motion for example).
    *
    * Knowing if an event may repeat is something set at the operating-systems event handling level
-   * so rely on #wmEvent.is_repeat being false non keyboard events instead of checking if this
+   * so rely on #WM_EVENT_IS_REPEAT being false non keyboard events instead of checking if this
    * flag makes sense.
    *
    * Only used when: `ISKEYBOARD(kmi->type) || (kmi->type == KM_TEXTINPUT)`
@@ -423,13 +453,15 @@ enum {
 enum {
   KMI_TYPE_KEYBOARD = 0,
   KMI_TYPE_MOUSE = 1,
-  KMI_TYPE_TWEAK = 2,
+  /* 2 is deprecated, was tweak. */
   KMI_TYPE_TEXTINPUT = 3,
   KMI_TYPE_TIMER = 4,
   KMI_TYPE_NDOF = 5,
 };
 
-/* stored in WM, the actively used keymaps */
+/**
+ * Stored in WM, the actively used key-maps.
+ */
 typedef struct wmKeyMap {
   struct wmKeyMap *next, *prev;
 
@@ -461,14 +493,19 @@ typedef struct wmKeyMap {
 
 /** #wmKeyMap.flag */
 enum {
-  KEYMAP_MODAL = (1 << 0), /* modal map, not using operatornames */
-  KEYMAP_USER = (1 << 1),  /* user keymap */
+  /** Modal map, not using operator-names. */
+  KEYMAP_MODAL = (1 << 0),
+  /** User key-map. */
+  KEYMAP_USER = (1 << 1),
   KEYMAP_EXPANDED = (1 << 2),
   KEYMAP_CHILDREN_EXPANDED = (1 << 3),
-  KEYMAP_DIFF = (1 << 4),          /* diff keymap for user preferences */
-  KEYMAP_USER_MODIFIED = (1 << 5), /* keymap has user modifications */
+  /** Diff key-map for user preferences. */
+  KEYMAP_DIFF = (1 << 4),
+  /** Key-map has user modifications. */
+  KEYMAP_USER_MODIFIED = (1 << 5),
   KEYMAP_UPDATE = (1 << 6),
-  KEYMAP_TOOL = (1 << 7), /* keymap for active tool system */
+  /** key-map for active tool system. */
+  KEYMAP_TOOL = (1 << 7),
 };
 
 /**
@@ -514,7 +551,7 @@ typedef struct wmOperator {
 
   /* saved */
   /** Used to retrieve type pointer. */
-  char idname[64];
+  char idname[64]; /* OP_MAX_TYPENAME */
   /** Saved, user-settable properties. */
   IDProperty *properties;
 
@@ -548,12 +585,14 @@ enum {
   OPERATOR_RUNNING_MODAL = (1 << 0),
   OPERATOR_CANCELLED = (1 << 1),
   OPERATOR_FINISHED = (1 << 2),
-  /* add this flag if the event should pass through */
+  /** Add this flag if the event should pass through. */
   OPERATOR_PASS_THROUGH = (1 << 3),
-  /* in case operator got executed outside WM code... like via fileselect */
+  /** In case operator got executed outside WM code (like via file-select). */
   OPERATOR_HANDLED = (1 << 4),
-  /* used for operators that act indirectly (eg. popup menu)
-   * note: this isn't great design (using operators to trigger UI) avoid where possible. */
+  /**
+   * Used for operators that act indirectly (eg. popup menu).
+   * \note this isn't great design (using operators to trigger UI) avoid where possible.
+   */
   OPERATOR_INTERFACE = (1 << 5),
 };
 #define OPERATOR_FLAGS_ALL \
@@ -566,9 +605,10 @@ enum {
 
 /** #wmOperator.flag */
 enum {
-  /** low level flag so exec() operators can tell if they were invoked, use with care.
-   * Typically this shouldn't make any difference, but it rare cases its needed
-   * (see smooth-view) */
+  /**
+   * Low level flag so exec() operators can tell if they were invoked, use with care.
+   * Typically this shouldn't make any difference, but it rare cases its needed (see smooth-view).
+   */
   OP_IS_INVOKE = (1 << 0),
   /** So we can detect if an operators exec() call is activated by adjusting the last action. */
   OP_IS_REPEAT = (1 << 1),
@@ -585,8 +625,10 @@ enum {
   /** When the cursor is grabbed */
   OP_IS_MODAL_GRAB_CURSOR = (1 << 2),
 
-  /** Allow modal operators to have the region under the cursor for their context
-   * (the regiontype is maintained to prevent errors) */
+  /**
+   * Allow modal operators to have the region under the cursor for their context
+   * (the region-type is maintained to prevent errors).
+   */
   OP_IS_MODAL_CURSOR_REGION = (1 << 3),
 };
 

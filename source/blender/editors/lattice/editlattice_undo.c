@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edlattice
@@ -62,7 +46,7 @@ static CLG_LogRef LOG = {"ed.undo.lattice"};
 /** \name Undo Conversion
  * \{ */
 
-/* TODO(Campbell): this could contain an entire 'Lattice' struct. */
+/* TODO(@campbellbarton): this could contain an entire 'Lattice' struct. */
 typedef struct UndoLattice {
   BPoint *def;
   int pntsu, pntsv, pntsw, actbp;
@@ -147,8 +131,10 @@ static int validate_undoLatt(void *data, void *edata)
 
 static Object *editlatt_object_from_context(bContext *C)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *obedit = BKE_view_layer_edit_object_get(view_layer);
   if (obedit && obedit->type == OB_LATTICE) {
     Lattice *lt = obedit->data;
     if (lt->editlatt != NULL) {
@@ -189,9 +175,10 @@ static bool lattice_undosys_step_encode(struct bContext *C, Main *bmain, UndoSte
 
   /* Important not to use the 3D view when getting objects because all objects
    * outside of this list will be moved out of edit-mode when reading back undo steps. */
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   uint objects_len = 0;
-  Object **objects = ED_undo_editmode_objects_from_view_layer(view_layer, &objects_len);
+  Object **objects = ED_undo_editmode_objects_from_view_layer(scene, view_layer, &objects_len);
 
   us->elems = MEM_callocN(sizeof(*us->elems) * objects_len, __func__);
   us->elems_len = objects_len;
@@ -240,7 +227,7 @@ static void lattice_undosys_step_decode(struct bContext *C,
     }
     undolatt_to_editlatt(&elem->data, lt->editlatt);
     lt->editlatt->needs_flush_to_id = 1;
-    DEG_id_tag_update(&obedit->id, ID_RECALC_GEOMETRY);
+    DEG_id_tag_update(&lt->id, ID_RECALC_GEOMETRY);
   }
 
   /* The first element is always active */
@@ -278,7 +265,6 @@ static void lattice_undosys_foreach_ID_ref(UndoStep *us_p,
   }
 }
 
-/* Export for ED_undo_sys. */
 void ED_lattice_undosys_type(UndoType *ut)
 {
   ut->name = "Edit Lattice";

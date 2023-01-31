@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 """
 Built-In Keying Sets
@@ -217,7 +199,7 @@ class BUILTIN_KSI_BendyBones(KeyingSetInfo):
 # VisualLocation
 class BUILTIN_KSI_VisualLoc(KeyingSetInfo):
     """Insert a keyframe on each of the location channels, """ \
-    """taking into account effects of constraints and relationships"""
+        """taking into account effects of constraints and relationships"""
     bl_label = "Visual Location"
 
     bl_options = {'INSERTKEY_VISUAL'}
@@ -235,7 +217,7 @@ class BUILTIN_KSI_VisualLoc(KeyingSetInfo):
 # VisualRotation
 class BUILTIN_KSI_VisualRot(KeyingSetInfo):
     """Insert a keyframe on each of the rotation channels, """ \
-    """taking into account effects of constraints and relationships"""
+        """taking into account effects of constraints and relationships"""
     bl_label = "Visual Rotation"
 
     bl_options = {'INSERTKEY_VISUAL'}
@@ -253,7 +235,7 @@ class BUILTIN_KSI_VisualRot(KeyingSetInfo):
 # VisualScaling
 class BUILTIN_KSI_VisualScaling(KeyingSetInfo):
     """Insert a keyframe on each of the scale channels, """ \
-    """taking into account effects of constraints and relationships"""
+        """taking into account effects of constraints and relationships"""
     bl_label = "Visual Scale"
 
     bl_options = {'INSERTKEY_VISUAL'}
@@ -271,7 +253,7 @@ class BUILTIN_KSI_VisualScaling(KeyingSetInfo):
 # VisualLocRot
 class BUILTIN_KSI_VisualLocRot(KeyingSetInfo):
     """Insert a keyframe on each of the location and rotation channels, """ \
-    """taking into account effects of constraints and relationships"""
+        """taking into account effects of constraints and relationships"""
     bl_label = "Visual Location & Rotation"
 
     bl_options = {'INSERTKEY_VISUAL'}
@@ -293,7 +275,7 @@ class BUILTIN_KSI_VisualLocRot(KeyingSetInfo):
 # VisualLocScale
 class BUILTIN_KSI_VisualLocScale(KeyingSetInfo):
     """Insert a keyframe on each of the location and scale channels, """ \
-    """taking into account effects of constraints and relationships"""
+        """taking into account effects of constraints and relationships"""
     bl_label = "Visual Location & Scale"
 
     bl_options = {'INSERTKEY_VISUAL'}
@@ -315,7 +297,7 @@ class BUILTIN_KSI_VisualLocScale(KeyingSetInfo):
 # VisualLocRotScale
 class BUILTIN_KSI_VisualLocRotScale(KeyingSetInfo):
     """Insert a keyframe on each of the location, """ \
-    """rotation and scale channels, taking into account effects of constraints and relationships"""
+        """rotation and scale channels, taking into account effects of constraints and relationships"""
     bl_label = "Visual Location, Rotation & Scale"
 
     bl_options = {'INSERTKEY_VISUAL'}
@@ -339,7 +321,7 @@ class BUILTIN_KSI_VisualLocRotScale(KeyingSetInfo):
 # VisualRotScale
 class BUILTIN_KSI_VisualRotScale(KeyingSetInfo):
     """Insert a keyframe on each of the rotation and scale channels, """ \
-    """taking into account effects of constraints and relationships"""
+        """taking into account effects of constraints and relationships"""
     bl_label = "Visual Rotation & Scale"
 
     bl_options = {'INSERTKEY_VISUAL'}
@@ -382,6 +364,7 @@ class BUILTIN_KSI_Available(KeyingSetInfo):
     generate = keyingsets_utils.RKS_GEN_available
 
 ###############################
+
 
 class WholeCharacterMixin:
     # these prefixes should be avoided, as they are not really bones
@@ -522,17 +505,13 @@ class WholeCharacterMixin:
 
         # go over all custom properties for bone
         for prop in bone.keys():
-            # ignore special "_RNA_UI" used for UI editing
-            if prop == "_RNA_UI":
-                continue
-
             # for now, just add all of 'em
             prop_rna = type(bone).bl_rna.properties.get(prop, None)
             if prop_rna is None:
                 prop_path = '["%s"]' % bpy.utils.escape_identifier(prop)
                 try:
                     rna_property = bone.path_resolve(prop_path, False)
-                except ValueError as ex:
+                except ValueError:
                     # This happens when a custom property is set to None. In that case it cannot
                     # be converted to an FCurve-compatible value, so we can't keyframe it anyway.
                     continue
@@ -544,14 +523,14 @@ class WholeCharacterMixin:
 
 class BUILTIN_KSI_WholeCharacter(WholeCharacterMixin, KeyingSetInfo):
     """Insert a keyframe for all properties that are likely to get animated in a character rig """ \
-    """(useful when blocking out a shot)"""
+        """(useful when blocking out a shot)"""
     bl_idname = ANIM_KS_WHOLE_CHARACTER_ID
     bl_label = "Whole Character"
 
 
 class BUILTIN_KSI_WholeCharacterSelected(WholeCharacterMixin, KeyingSetInfo):
     """Insert a keyframe for all properties that are likely to get animated in a character rig """ \
-    """(only selected bones)"""
+        """(only selected bones)"""
     bl_idname = ANIM_KS_WHOLE_CHARACTER_SELECTED_ID
     bl_label = "Whole Character (Selected Bones Only)"
 
@@ -582,7 +561,7 @@ class BUILTIN_KSI_DeltaLocation(KeyingSetInfo):
     iterator = keyingsets_utils.RKS_ITER_selected_objects
 
     # generator - delta location channels only
-    def generate(self, context, ks, data):
+    def generate(self, _context, ks, data):
         # get id-block and path info
         id_block, base_path, grouping = keyingsets_utils.get_transform_generators_base_info(data)
 
@@ -608,7 +587,7 @@ class BUILTIN_KSI_DeltaRotation(KeyingSetInfo):
     iterator = keyingsets_utils.RKS_ITER_selected_objects
 
     # generator - delta location channels only
-    def generate(self, context, ks, data):
+    def generate(self, _context, ks, data):
         # get id-block and path info
         id_block, base_path, grouping = keyingsets_utils.get_transform_generators_base_info(data)
 
@@ -642,7 +621,7 @@ class BUILTIN_KSI_DeltaScale(KeyingSetInfo):
     iterator = keyingsets_utils.RKS_ITER_selected_objects
 
     # generator - delta location channels only
-    def generate(self, context, ks, data):
+    def generate(self, _context, ks, data):
         # get id-block and path info
         id_block, base_path, grouping = keyingsets_utils.get_transform_generators_base_info(data)
 

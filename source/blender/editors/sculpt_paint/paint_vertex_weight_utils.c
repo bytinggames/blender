@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edsculpt
@@ -51,7 +37,6 @@
 /** \name Weight Paint Sanity Checks
  * \{ */
 
-/* ensure we have data on wpaint start, add if needed */
 bool ED_wpaint_ensure_data(bContext *C,
                            struct ReportList *reports,
                            enum eWPaintFlag flag,
@@ -74,13 +59,15 @@ bool ED_wpaint_ensure_data(bContext *C,
   }
 
   /* if nothing was added yet, we make dverts and a vertex deform group */
-  if (!me->dvert) {
+  if (BKE_mesh_deform_verts(me) == NULL) {
     BKE_object_defgroup_data_create(&me->id);
     WM_event_add_notifier(C, NC_GEOM | ND_DATA, me);
   }
 
+  const ListBase *defbase = BKE_object_defgroup_list(ob);
+
   /* this happens on a Bone select, when no vgroup existed yet */
-  if (ob->actdef <= 0) {
+  if (me->vertex_group_active_index <= 0) {
     Object *modob;
     if ((modob = BKE_modifiers_is_deformed_by_armature(ob))) {
       Bone *actbone = ((bArmature *)modob->data)->act_bone;
@@ -94,32 +81,33 @@ bool ED_wpaint_ensure_data(bContext *C,
             DEG_relations_tag_update(CTX_data_main(C));
           }
           else {
-            int actdef = 1 + BLI_findindex(&ob->defbase, dg);
+
+            int actdef = 1 + BLI_findindex(defbase, dg);
             BLI_assert(actdef >= 0);
-            ob->actdef = actdef;
+            me->vertex_group_active_index = actdef;
           }
         }
       }
     }
   }
-  if (BLI_listbase_is_empty(&ob->defbase)) {
+  if (BLI_listbase_is_empty(defbase)) {
     BKE_object_defgroup_add(ob);
     DEG_relations_tag_update(CTX_data_main(C));
   }
 
   /* ensure we don't try paint onto an invalid group */
-  if (ob->actdef <= 0) {
+  if (me->vertex_group_active_index <= 0) {
     BKE_report(reports, RPT_WARNING, "No active vertex group for painting, aborting");
     return false;
   }
 
   if (vgroup_index) {
-    vgroup_index->active = ob->actdef - 1;
+    vgroup_index->active = me->vertex_group_active_index - 1;
   }
 
   if (flag & WPAINT_ENSURE_MIRROR) {
     if (ME_USING_MIRROR_X_VERTEX_GROUPS(me)) {
-      int mirror = ED_wpaint_mirror_vgroup_ensure(ob, ob->actdef - 1);
+      int mirror = ED_wpaint_mirror_vgroup_ensure(ob, me->vertex_group_active_index - 1);
       if (vgroup_index) {
         vgroup_index->mirror = mirror;
       }
@@ -128,12 +116,13 @@ bool ED_wpaint_ensure_data(bContext *C,
 
   return true;
 }
+
 /** \} */
 
-/* mirror_vgroup is set to -1 when invalid */
 int ED_wpaint_mirror_vgroup_ensure(Object *ob, const int vgroup_active)
 {
-  bDeformGroup *defgroup = BLI_findlink(&ob->defbase, vgroup_active);
+  const ListBase *defbase = BKE_object_defgroup_list(ob);
+  bDeformGroup *defgroup = BLI_findlink(defbase, vgroup_active);
 
   if (defgroup) {
     int mirrdef;
@@ -143,7 +132,7 @@ int ED_wpaint_mirror_vgroup_ensure(Object *ob, const int vgroup_active)
     mirrdef = BKE_object_defgroup_name_index(ob, name_flip);
     if (mirrdef == -1) {
       if (BKE_object_defgroup_new(ob, name_flip)) {
-        mirrdef = BLI_listbase_count(&ob->defbase) - 1;
+        mirrdef = BLI_listbase_count(defbase) - 1;
       }
     }
 
@@ -214,7 +203,7 @@ BLI_INLINE float wval_screen(float weight, float paintval, float fac)
     return weight;
   }
   mfac = 1.0f - fac;
-  temp = max_ff(1.0f - (((1.0f - weight) * (1.0f - paintval))), 0);
+  temp = max_ff(1.0f - ((1.0f - weight) * (1.0f - paintval)), 0);
   return mfac * weight + temp * fac;
 }
 BLI_INLINE float wval_hardlight(float weight, float paintval, float fac)
@@ -269,18 +258,10 @@ BLI_INLINE float wval_exclusion(float weight, float paintval, float fac)
     return weight;
   }
   mfac = 1.0f - fac;
-  temp = 0.5f - ((2.0f * (weight - 0.5f) * (paintval - 0.5f)));
+  temp = 0.5f - (2.0f * (weight - 0.5f) * (paintval - 0.5f));
   return temp * fac + weight * mfac;
 }
 
-/**
- * \param weight: Typically the current weight: #MDeformWeight.weight
- *
- * \return The final weight, note that this is _not_ clamped from [0-1].
- * Clamping must be done on the final #MDeformWeight.weight
- *
- * \note vertex-paint has an equivalent function: #ED_vpaint_blend_tool
- */
 float ED_wpaint_blend_tool(const int tool,
                            const float weight,
                            const float paintval,

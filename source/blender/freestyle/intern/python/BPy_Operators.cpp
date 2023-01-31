@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -29,6 +15,8 @@
 #include "Iterator/BPy_ViewEdgeIterator.h"
 #include "UnaryFunction0D/BPy_UnaryFunction0DDouble.h"
 #include "UnaryFunction1D/BPy_UnaryFunction1DVoid.h"
+
+#include "BLI_sys_types.h"
 
 #include <sstream>
 
@@ -599,7 +587,7 @@ static PyObject *Operators_get_viewedge_from_index(BPy_Operators * /*self*/,
                                                    PyObject *kwds)
 {
   static const char *kwlist[] = {"i", nullptr};
-  unsigned int i;
+  uint i;
 
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "I", (char **)kwlist, &i)) {
     return nullptr;
@@ -626,7 +614,7 @@ static PyObject *Operators_get_chain_from_index(BPy_Operators * /*self*/,
                                                 PyObject *kwds)
 {
   static const char *kwlist[] = {"i", nullptr};
-  unsigned int i;
+  uint i;
 
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "I", (char **)kwlist, &i)) {
     return nullptr;
@@ -653,7 +641,7 @@ static PyObject *Operators_get_stroke_from_index(BPy_Operators * /*self*/,
                                                  PyObject *kwds)
 {
   static const char *kwlist[] = {"i", nullptr};
-  unsigned int i;
+  uint i;
 
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "I", (char **)kwlist, &i)) {
     return nullptr;
@@ -780,7 +768,7 @@ PyTypeObject Operators_Type = {
     nullptr,                                       /* tp_as_number */
     nullptr,                                       /* tp_as_sequence */
     nullptr,                                       /* tp_as_mapping */
-    nullptr,                                       /* tp_hash  */
+    nullptr,                                       /* tp_hash */
     nullptr,                                       /* tp_call */
     nullptr,                                       /* tp_str */
     nullptr,                                       /* tp_getattro */

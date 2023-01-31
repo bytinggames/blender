@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2016, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Blender Foundation. */
 
 /** \file
  * \ingroup draw_engine
@@ -46,22 +31,22 @@ static void square_to_circle(float x, float y, float *r, float *T)
   if (x > -y) {
     if (x > y) {
       *r = x;
-      *T = (M_PI / 4.0f) * (y / x);
+      *T = M_PI_4 * (y / x);
     }
     else {
       *r = y;
-      *T = (M_PI / 4.0f) * (2 - (x / y));
+      *T = M_PI_4 * (2 - (x / y));
     }
   }
   else {
     if (x < y) {
       *r = -x;
-      *T = (M_PI / 4.0f) * (4 + (y / x));
+      *T = M_PI_4 * (4 + (y / x));
     }
     else {
       *r = -y;
       if (y != 0) {
-        *T = (M_PI / 4.0f) * (6 - (x / y));
+        *T = M_PI_4 * (6 - (x / y));
       }
       else {
         *T = 0.0f;
@@ -143,7 +128,7 @@ void workbench_dof_engine_init(WORKBENCH_Data *vedata)
     camera = wpd->cam_original_ob;
   }
 
-  Camera *cam = camera != NULL ? camera->data : NULL;
+  Camera *cam = camera != NULL && camera->type == OB_CAMERA ? camera->data : NULL;
   if ((wpd->shading.flag & V3D_SHADING_DEPTH_OF_FIELD) == 0 || (cam == NULL) ||
       ((cam->dof.flag & CAM_DOF_ENABLED) == 0)) {
     wpd->dof_enabled = false;
@@ -157,7 +142,7 @@ void workbench_dof_engine_init(WORKBENCH_Data *vedata)
   const float *full_size = DRW_viewport_size_get();
   const int size[2] = {max_ii(1, (int)full_size[0] / 2), max_ii(1, (int)full_size[1] / 2)};
 #if 0 /* TODO(fclem): finish COC min_max optimization. */
-  /* NOTE: We Ceil here in order to not miss any edge texel if using a NPO2 texture.  */
+  /* NOTE: We Ceil here in order to not miss any edge texel if using a NPO2 texture. */
   int shrink_h_size[2] = {ceilf(size[0] / 8.0f), size[1]};
   int shrink_w_size[2] = {shrink_h_size[0], ceilf(size[1] / 8.0f)};
 #endif
@@ -218,9 +203,9 @@ void workbench_dof_engine_init(WORKBENCH_Data *vedata)
     float focus_dist = BKE_camera_object_dof_distance(camera);
     float focal_len = cam->lens;
 
-    /* TODO(fclem): deduplicate with eevee */
+    /* TODO(fclem): de-duplicate with EEVEE. */
     const float scale_camera = 0.001f;
-    /* we want radius here for the aperture number  */
+    /* We want radius here for the aperture number. */
     float aperture = 0.5f * scale_camera * focal_len / fstop;
     float focal_len_scaled = scale_camera * focal_len;
     float sensor_scaled = scale_camera * sensor;
@@ -328,7 +313,7 @@ void workbench_dof_cache_init(WORKBENCH_Data *vedata)
 
     float offset = wpd->taa_sample / (float)max_ii(1, wpd->taa_sample_len);
     DRWShadingGroup *grp = DRW_shgroup_create(blur1_sh, psl->dof_blur1_ps);
-    DRW_shgroup_uniform_block(grp, "dofSamplesBlock", wpd->vldata->dof_sample_ubo);
+    DRW_shgroup_uniform_block(grp, "samples", wpd->vldata->dof_sample_ubo);
     DRW_shgroup_uniform_texture(grp, "noiseTex", wpd->vldata->cavity_jitter_tx);
     DRW_shgroup_uniform_texture(grp, "inputCocTex", txl->coc_halfres_tx);
     DRW_shgroup_uniform_texture(grp, "halfResColorTex", txl->dof_source_tx);

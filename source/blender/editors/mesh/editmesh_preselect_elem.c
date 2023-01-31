@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edmesh
@@ -257,9 +243,9 @@ static void view3d_preselect_update_preview_triangle_from_vert(struct EditMesh_P
   }
 
   if (e_pair[1] != NULL) {
-    mul_v3_m4v3(center, vc->obedit->obmat, v_act->co);
+    mul_v3_m4v3(center, vc->obedit->object_to_world, v_act->co);
     ED_view3d_win_to_3d_int(vc->v3d, vc->region, center, mval, center);
-    mul_m4_v3(vc->obedit->imat, center);
+    mul_m4_v3(vc->obedit->world_to_object, center);
 
     psel->preview_tris = MEM_mallocN(sizeof(*psel->preview_tris) * 2, __func__);
     psel->preview_lines = MEM_mallocN(sizeof(*psel->preview_lines) * 4, __func__);
@@ -325,9 +311,9 @@ static void view3d_preselect_update_preview_triangle_from_edge(struct EditMesh_P
   psel->preview_tris = MEM_mallocN(sizeof(*psel->preview_tris), __func__);
   psel->preview_lines = MEM_mallocN(sizeof(*psel->preview_lines) * 3, __func__);
   mid_v3_v3v3(center, eed->v1->co, eed->v2->co);
-  mul_m4_v3(vc->obedit->obmat, center);
+  mul_m4_v3(vc->obedit->object_to_world, center);
   ED_view3d_win_to_3d_int(vc->v3d, vc->region, center, mval, center);
-  mul_m4_v3(vc->obedit->imat, center);
+  mul_m4_v3(vc->obedit->world_to_object, center);
 
   copy_v3_v3(psel->preview_tris[0][0], eed->v1->co);
   copy_v3_v3(psel->preview_tris[0][1], eed->v2->co);
@@ -411,4 +397,5 @@ void EDBM_preselect_elem_update_preview(struct EditMesh_PreSelElem *psel,
       BLI_assert(0);
   }
 }
+
 /** \} */

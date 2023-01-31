@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spnla
@@ -45,6 +29,7 @@
 #include "WM_types.h"
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "ED_anim_api.h"
 #include "ED_screen.h"
@@ -94,7 +79,7 @@ bool nla_panel_context(const bContext *C,
    */
   /* XXX: double-check active! */
   filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE | ANIMFILTER_ACTIVE |
-            ANIMFILTER_LIST_CHANNELS);
+            ANIMFILTER_LIST_CHANNELS | ANIMFILTER_FCURVESONLY);
   ANIM_animdata_filter(&ac, &anim_data, filter, ac.data, ac.datatype);
 
   for (ale = anim_data.first; ale; ale = ale->next) {
@@ -172,6 +157,11 @@ bool nla_panel_context(const bContext *C,
         }
         break;
       }
+      /* Don't set a pointer for NLA Actions.
+       * This will break the dependency graph for the context menu.
+       */
+      case ANIMTYPE_NLAACTION:
+        break;
     }
 
     if (found > 0) {
@@ -185,10 +175,31 @@ bool nla_panel_context(const bContext *C,
   return (found != 0);
 }
 
+bool ANIM_nla_context_track_ptr(const bContext *C, PointerRNA *r_ptr)
+{
+  return nla_panel_context(C, NULL, r_ptr, NULL);
+}
+
+bool ANIM_nla_context_strip_ptr(const bContext *C, PointerRNA *r_ptr)
+{
+  return nla_panel_context(C, NULL, NULL, r_ptr);
+}
+
+NlaTrack *ANIM_nla_context_track(const bContext *C)
+{
+  PointerRNA track_ptr;
+  if (!ANIM_nla_context_track_ptr(C, &track_ptr)) {
+    return NULL;
+  }
+  NlaTrack *track = track_ptr.data;
+
+  return track;
+}
+
 NlaStrip *ANIM_nla_context_strip(const bContext *C)
 {
   PointerRNA strip_ptr;
-  if (!nla_panel_context(C, NULL, NULL, &strip_ptr)) {
+  if (!ANIM_nla_context_strip_ptr(C, &strip_ptr)) {
     return NULL;
   }
   NlaStrip *strip = strip_ptr.data;
@@ -206,7 +217,9 @@ static bool nla_panel_poll(const bContext *C, PanelType *pt)
 static bool nla_animdata_panel_poll(const bContext *C, PanelType *UNUSED(pt))
 {
   PointerRNA ptr;
-  return (nla_panel_context(C, &ptr, NULL, NULL) && (ptr.data != NULL));
+  PointerRNA strip_ptr;
+  return (nla_panel_context(C, &ptr, NULL, &strip_ptr) && (ptr.data != NULL) &&
+          (ptr.owner_id != strip_ptr.owner_id));
 }
 
 static bool nla_strip_panel_poll(const bContext *C, PanelType *UNUSED(pt))
@@ -258,13 +271,18 @@ static bool nla_strip_eval_panel_poll(const bContext *C, PanelType *UNUSED(pt))
 static void nla_panel_animdata(const bContext *C, Panel *panel)
 {
   PointerRNA adt_ptr;
+  PointerRNA strip_ptr;
   /* AnimData *adt; */
   uiLayout *layout = panel->layout;
   uiLayout *row;
   uiBlock *block;
 
   /* check context and also validity of pointer */
-  if (!nla_panel_context(C, &adt_ptr, NULL, NULL)) {
+  if (!nla_panel_context(C, &adt_ptr, NULL, &strip_ptr)) {
+    return;
+  }
+
+  if (adt_ptr.owner_id == strip_ptr.owner_id) {
     return;
   }
 
@@ -291,7 +309,7 @@ static void nla_panel_animdata(const bContext *C, Panel *panel)
     uiLayoutSetAlignment(row, UI_LAYOUT_ALIGN_LEFT);
 
     uiItemL(row, id->name + 2, RNA_struct_ui_icon(id_ptr.type)); /* id-block (src) */
-    uiItemL(row, "", ICON_SMALL_TRI_RIGHT_VEC);                  /* expander */
+    uiItemL(row, "", ICON_RIGHTARROW);                           /* expander */
     uiItemL(row, IFACE_("Animation Data"), ICON_ANIM_DATA);      /* animdata */
 
     uiItemS(layout);
@@ -386,8 +404,8 @@ static void nla_panel_properties(const bContext *C, Panel *panel)
 
   /* strip extents */
   column = uiLayoutColumn(layout, true);
-  uiItemR(column, &strip_ptr, "frame_start", 0, IFACE_("Frame Start"), ICON_NONE);
-  uiItemR(column, &strip_ptr, "frame_end", 0, IFACE_("End"), ICON_NONE);
+  uiItemR(column, &strip_ptr, "frame_start_ui", 0, IFACE_("Frame Start"), ICON_NONE);
+  uiItemR(column, &strip_ptr, "frame_end_ui", 0, IFACE_("End"), ICON_NONE);
 
   /* Evaluation-Related Strip Properties ------------------ */
 

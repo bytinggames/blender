@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2019 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2019 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup wm
@@ -48,35 +32,35 @@
  */
 static bool wm_platform_support_check_approval(const char *platform_support_key, bool update)
 {
-  const char *const cfgdir = BKE_appdir_folder_id(BLENDER_USER_CONFIG, NULL);
-  bool result = false;
-
   if (G.factory_startup) {
-    return result;
+    return false;
+  }
+  const char *const cfgdir = BKE_appdir_folder_id(BLENDER_USER_CONFIG, NULL);
+  if (!cfgdir) {
+    return false;
   }
 
-  if (cfgdir) {
-    char filepath[FILE_MAX];
-    BLI_join_dirfile(filepath, sizeof(filepath), cfgdir, BLENDER_PLATFORM_SUPPORT_FILE);
-    LinkNode *lines = BLI_file_read_as_lines(filepath);
-    for (LinkNode *line_node = lines; line_node; line_node = line_node->next) {
-      char *line = line_node->link;
-      if (STREQ(line, platform_support_key)) {
-        result = true;
-        break;
-      }
+  bool result = false;
+  char filepath[FILE_MAX];
+  BLI_path_join(filepath, sizeof(filepath), cfgdir, BLENDER_PLATFORM_SUPPORT_FILE);
+  LinkNode *lines = BLI_file_read_as_lines(filepath);
+  for (LinkNode *line_node = lines; line_node; line_node = line_node->next) {
+    char *line = line_node->link;
+    if (STREQ(line, platform_support_key)) {
+      result = true;
+      break;
     }
-
-    if (!result && update) {
-      FILE *fp = BLI_fopen(filepath, "a");
-      if (fp) {
-        fprintf(fp, "%s\n", platform_support_key);
-        fclose(fp);
-      }
-    }
-
-    BLI_file_free_lines(lines);
   }
+
+  if (!result && update) {
+    FILE *fp = BLI_fopen(filepath, "a");
+    if (fp) {
+      fprintf(fp, "%s\n", platform_support_key);
+      fclose(fp);
+    }
+  }
+
+  BLI_file_free_lines(lines);
   return result;
 }
 
@@ -123,7 +107,7 @@ bool WM_platform_support_perform_checks()
   const char *platform_key = GPU_platform_support_level_key();
 
   /* Check if previous check matches the current check. Don't update the approval when running in
-   * `background`. this could have been triggered by installing add-ons via installers.  */
+   * `background`. this could have been triggered by installing add-ons via installers. */
   if (support_level != GPU_SUPPORT_LEVEL_UNSUPPORTED && !G.factory_startup &&
       wm_platform_support_check_approval(platform_key, !G.background)) {
     /* If it matches the user has confirmed and wishes to use it. */

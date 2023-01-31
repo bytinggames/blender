@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -36,7 +22,7 @@
 /** \name Generic Enum's
  * \{ */
 
-/* Reuse for dynamic types  */
+/* Reuse for dynamic types. */
 const EnumPropertyItem DummyRNA_NULL_items[] = {
     {0, NULL, 0, NULL, NULL},
 };
@@ -64,47 +50,85 @@ const EnumPropertyItem rna_enum_property_type_items[] = {
     {0, NULL, 0, NULL, NULL},
 };
 
-/* Keep in sync with RNA_types.h PropertySubType and bpy_props.c's property_subtype_xxx_items */
+/* Wraps multiple enums onto a single line in a way that is difficult to read.
+ * NOTE: these enums are split up based on their use in `bpy.props` Python module. */
+
+/* clang-format off */
+#define RNA_ENUM_PROPERTY_SUBTYPE_STRING_ITEMS \
+  {PROP_FILEPATH, "FILE_PATH", 0, "File Path", ""}, \
+  {PROP_DIRPATH, "DIR_PATH", 0, "Directory Path", ""}, \
+  {PROP_FILENAME, "FILE_NAME", 0, "File Name", ""}, \
+  {PROP_BYTESTRING, "BYTE_STRING", 0, "Byte String", ""}, \
+  {PROP_PASSWORD, "PASSWORD", 0, "Password", "A string that is displayed hidden ('********')"}
+
+#define RNA_ENUM_PROPERTY_SUBTYPE_NUMBER_ITEMS \
+  {PROP_PIXEL, "PIXEL", 0, "Pixel", ""}, \
+  {PROP_UNSIGNED, "UNSIGNED", 0, "Unsigned", ""}, \
+  {PROP_PERCENTAGE, "PERCENTAGE", 0, "Percentage", ""}, \
+  {PROP_FACTOR, "FACTOR", 0, "Factor", ""}, \
+  {PROP_ANGLE, "ANGLE", 0, "Angle", ""}, \
+  {PROP_TIME, "TIME", 0, "Time (Scene Relative)", \
+   "Time specified in frames, converted to seconds based on scene frame rate"}, \
+  {PROP_TIME_ABSOLUTE, "TIME_ABSOLUTE", 0, "Time (Absolute)", \
+   "Time specified in seconds, independent of the scene"}, \
+  {PROP_DISTANCE, "DISTANCE", 0, "Distance", ""}, \
+  {PROP_DISTANCE_CAMERA, "DISTANCE_CAMERA", 0, "Camera Distance", ""}, \
+  {PROP_POWER, "POWER", 0, "Power", ""}, \
+  {PROP_TEMPERATURE, "TEMPERATURE", 0, "Temperature", ""}
+
+#define RNA_ENUM_PROPERTY_SUBTYPE_NUMBER_ARRAY_ITEMS \
+  {PROP_COLOR, "COLOR", 0, "Color", ""}, \
+  {PROP_TRANSLATION, "TRANSLATION", 0, "Translation", ""}, \
+  {PROP_DIRECTION, "DIRECTION", 0, "Direction", ""}, \
+  {PROP_VELOCITY, "VELOCITY", 0, "Velocity", ""}, \
+  {PROP_ACCELERATION, "ACCELERATION", 0, "Acceleration", ""}, \
+  {PROP_MATRIX, "MATRIX", 0, "Matrix", ""}, \
+  {PROP_EULER, "EULER", 0, "Euler Angles", ""}, \
+  {PROP_QUATERNION, "QUATERNION", 0, "Quaternion", ""}, \
+  {PROP_AXISANGLE, "AXISANGLE", 0, "Axis-Angle", ""}, \
+  {PROP_XYZ, "XYZ", 0, "XYZ", ""}, \
+  {PROP_XYZ_LENGTH, "XYZ_LENGTH", 0, "XYZ Length", ""}, \
+  {PROP_COLOR_GAMMA, "COLOR_GAMMA", 0, "Color", ""}, \
+  {PROP_COORDS, "COORDINATES", 0, "Coordinates", ""}, \
+  /* Boolean. */ \
+  {PROP_LAYER, "LAYER", 0, "Layer", ""}, \
+  {PROP_LAYER_MEMBER, "LAYER_MEMBER", 0, "Layer Member", ""}
+
+/* clang-format on */
+
+const EnumPropertyItem rna_enum_property_subtype_string_items[] = {
+    RNA_ENUM_PROPERTY_SUBTYPE_STRING_ITEMS,
+
+    {PROP_NONE, "NONE", 0, "None", ""},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_property_subtype_number_items[] = {
+    RNA_ENUM_PROPERTY_SUBTYPE_NUMBER_ITEMS,
+
+    {PROP_NONE, "NONE", 0, "None", ""},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_property_subtype_number_array_items[] = {
+    RNA_ENUM_PROPERTY_SUBTYPE_NUMBER_ARRAY_ITEMS,
+
+    {PROP_NONE, "NONE", 0, "None", ""},
+    {0, NULL, 0, NULL, NULL},
+};
+
 const EnumPropertyItem rna_enum_property_subtype_items[] = {
     {PROP_NONE, "NONE", 0, "None", ""},
 
-    /* strings */
-    {PROP_FILEPATH, "FILEPATH", 0, "File Path", ""},
-    {PROP_DIRPATH, "DIRPATH", 0, "Directory Path", ""},
-    {PROP_FILENAME, "FILENAME", 0, "File Name", ""},
-    {PROP_BYTESTRING, "BYTESTRING", 0, "Byte String", ""},
-    {PROP_PASSWORD, "PASSWORD", 0, "Password", "A string that is displayed hidden ('********')"},
+    /* String. */
+    RNA_ENUM_PROPERTY_SUBTYPE_STRING_ITEMS,
 
-    /* numbers */
-    {PROP_PIXEL, "PIXEL", 0, "Pixel", ""},
-    {PROP_UNSIGNED, "UNSIGNED", 0, "Unsigned", ""},
-    {PROP_PERCENTAGE, "PERCENTAGE", 0, "Percentage", ""},
-    {PROP_FACTOR, "FACTOR", 0, "Factor", ""},
-    {PROP_ANGLE, "ANGLE", 0, "Angle", ""},
-    {PROP_TIME, "TIME", 0, "Time", ""},
-    {PROP_DISTANCE, "DISTANCE", 0, "Distance", ""},
-    {PROP_DISTANCE_CAMERA, "DISTANCE_CAMERA", 0, "Camera Distance", ""},
-    {PROP_POWER, "POWER", 0, "Power", ""},
-    {PROP_TEMPERATURE, "TEMPERATURE", 0, "Temperature", ""},
+    /* Number. */
+    RNA_ENUM_PROPERTY_SUBTYPE_NUMBER_ITEMS,
 
-    /* number arrays */
-    {PROP_COLOR, "COLOR", 0, "Color", ""},
-    {PROP_TRANSLATION, "TRANSLATION", 0, "Translation", ""},
-    {PROP_DIRECTION, "DIRECTION", 0, "Direction", ""},
-    {PROP_VELOCITY, "VELOCITY", 0, "Velocity", ""},
-    {PROP_ACCELERATION, "ACCELERATION", 0, "Acceleration", ""},
-    {PROP_MATRIX, "MATRIX", 0, "Matrix", ""},
-    {PROP_EULER, "EULER", 0, "Euler Angles", ""},
-    {PROP_QUATERNION, "QUATERNION", 0, "Quaternion", ""},
-    {PROP_AXISANGLE, "AXISANGLE", 0, "Axis-Angle", ""},
-    {PROP_XYZ, "XYZ", 0, "XYZ", ""},
-    {PROP_XYZ_LENGTH, "XYZ_LENGTH", 0, "XYZ Length", ""},
-    {PROP_COLOR_GAMMA, "COLOR_GAMMA", 0, "Color", ""},
-    {PROP_COORDS, "COORDS", 0, "Coordinates", ""},
+    /* Number array. */
+    RNA_ENUM_PROPERTY_SUBTYPE_NUMBER_ARRAY_ITEMS,
 
-    /* booleans */
-    {PROP_LAYER, "LAYER", 0, "Layer", ""},
-    {PROP_LAYER_MEMBER, "LAYER_MEMBER", 0, "Layer Member", ""},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -114,13 +138,78 @@ const EnumPropertyItem rna_enum_property_unit_items[] = {
     {PROP_UNIT_AREA, "AREA", 0, "Area", ""},
     {PROP_UNIT_VOLUME, "VOLUME", 0, "Volume", ""},
     {PROP_UNIT_ROTATION, "ROTATION", 0, "Rotation", ""},
-    {PROP_UNIT_TIME, "TIME", 0, "Time", ""},
+    {PROP_UNIT_TIME, "TIME", 0, "Time (Scene Relative)", ""},
+    {PROP_UNIT_TIME_ABSOLUTE, "TIME_ABSOLUTE", 0, "Time (Absolute)", ""},
     {PROP_UNIT_VELOCITY, "VELOCITY", 0, "Velocity", ""},
     {PROP_UNIT_ACCELERATION, "ACCELERATION", 0, "Acceleration", ""},
     {PROP_UNIT_MASS, "MASS", 0, "Mass", ""},
     {PROP_UNIT_CAMERA, "CAMERA", 0, "Camera", ""},
     {PROP_UNIT_POWER, "POWER", 0, "Power", ""},
     {PROP_UNIT_TEMPERATURE, "TEMPERATURE", 0, "Temperature", ""},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_property_flag_items[] = {
+    {PROP_HIDDEN, "HIDDEN", 0, "Hidden", ""},
+    {PROP_SKIP_SAVE, "SKIP_SAVE", 0, "Skip Save", ""},
+    {PROP_ANIMATABLE, "ANIMATABLE", 0, "Animatable", ""},
+    {PROP_LIB_EXCEPTION, "LIBRARY_EDITABLE", 0, "Library Editable", ""},
+    {PROP_PROPORTIONAL, "PROPORTIONAL", 0, "Adjust values proportionally to each other", ""},
+    {PROP_TEXTEDIT_UPDATE,
+     "TEXTEDIT_UPDATE",
+     0,
+     "Update on every keystroke in textedit 'mode'",
+     ""},
+    {PROP_PATH_OUTPUT, "OUTPUT_PATH", 0, "Output Path", ""},
+    {0, NULL, 0, NULL, NULL},
+};
+
+/** Only for enum type properties. */
+const EnumPropertyItem rna_enum_property_flag_enum_items[] = {
+    {PROP_HIDDEN, "HIDDEN", 0, "Hidden", ""},
+    {PROP_SKIP_SAVE, "SKIP_SAVE", 0, "Skip Save", ""},
+    {PROP_ANIMATABLE, "ANIMATABLE", 0, "Animatable", ""},
+    {PROP_LIB_EXCEPTION, "LIBRARY_EDITABLE", 0, "Library Editable", ""},
+    {PROP_ENUM_FLAG, "ENUM_FLAG", 0, "Enum Flag", ""},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_property_override_flag_items[] = {
+    {PROPOVERRIDE_OVERRIDABLE_LIBRARY,
+     "LIBRARY_OVERRIDABLE",
+     0,
+     "Library Overridable",
+     "Make that property editable in library overrides of linked data-blocks"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_property_override_flag_collection_items[] = {
+    {PROPOVERRIDE_OVERRIDABLE_LIBRARY,
+     "LIBRARY_OVERRIDABLE",
+     0,
+     "Library Overridable",
+     "Make that property editable in library overrides of linked data-blocks"},
+    {PROPOVERRIDE_NO_PROP_NAME,
+     "NO_PROPERTY_NAME",
+     0,
+     "No Name",
+     "Do not use the names of the items, only their indices in the collection"},
+    {PROPOVERRIDE_LIBRARY_INSERTION,
+     "USE_INSERTION",
+     0,
+     "Use Insertion",
+     "Allow users to add new items in that collection in library overrides"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+const EnumPropertyItem rna_enum_property_string_search_flag_items[] = {
+    {PROP_STRING_SEARCH_SORT, "SORT", 0, "Sort Search Results", ""},
+    {PROP_STRING_SEARCH_SUGGESTION,
+     "SUGGESTION",
+     0,
+     "Suggestion",
+     "Search results are suggestions (other values may be entered)"},
+
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -376,7 +465,7 @@ static void rna_Struct_property_tags_begin(CollectionPropertyIterator *iter, Poi
   /* here ptr->data should always be the same as iter->parent.type */
   StructRNA *srna = (StructRNA *)ptr->data;
   const EnumPropertyItem *tag_defines = RNA_struct_property_tag_defines(srna);
-  unsigned int tag_count = tag_defines ? RNA_enum_items_count(tag_defines) : 0;
+  uint tag_count = tag_defines ? RNA_enum_items_count(tag_defines) : 0;
 
   rna_iterator_array_begin(
       iter, (void *)tag_defines, sizeof(EnumPropertyItem), tag_count, 0, NULL);
@@ -449,29 +538,6 @@ int rna_builtin_properties_lookup_string(PointerRNA *ptr, const char *key, Point
       }
     }
   } while ((srna = srna->base));
-
-  /* this was used pre 2.5beta0, now ID property access uses python's
-   * getitem style access
-   * - ob["foo"] rather than ob.foo */
-#  if 0
-  if (ptr->data) {
-    IDProperty *group, *idp;
-
-    group = RNA_struct_idprops(ptr, 0);
-
-    if (group) {
-      for (idp = group->data.group.first; idp; idp = idp->next) {
-        if (STREQ(idp->name, key)) {
-          propptr.type = &RNA_Property;
-          propptr.data = idp;
-
-          *r_ptr = propptr;
-          return true;
-        }
-      }
-    }
-  }
-#  endif
   return false;
 }
 
@@ -664,6 +730,12 @@ static bool rna_Property_is_library_editable_flag_get(PointerRNA *ptr)
   return (prop->flag & PROP_LIB_EXCEPTION) != 0;
 }
 
+static bool rna_Property_is_path_output_flag_get(PointerRNA *ptr)
+{
+  PropertyRNA *prop = (PropertyRNA *)ptr->data;
+  return (prop->flag & PROP_PATH_OUTPUT) != 0;
+}
+
 static int rna_Property_tags_get(PointerRNA *ptr)
 {
   return RNA_property_tags(ptr->data);
@@ -748,7 +820,7 @@ static int rna_IntProperty_default_get(PointerRNA *ptr)
   return ((IntPropertyRNA *)prop)->defaultvalue;
 }
 /* int/float/bool */
-static int rna_NumberProperty_default_array_get_length(PointerRNA *ptr,
+static int rna_NumberProperty_default_array_get_length(const PointerRNA *ptr,
                                                        int length[RNA_MAX_ARRAY_DIMENSION])
 {
   PropertyRNA *prop = (PropertyRNA *)ptr->data;
@@ -924,7 +996,7 @@ static const EnumPropertyItem *rna_EnumProperty_default_itemf(bContext *C,
   return eprop->item_fn(C, ptr, prop, r_free);
 }
 
-/* XXX - not sure this is needed? */
+/* XXX: not sure this is needed? */
 static int rna_EnumProperty_default_get(PointerRNA *ptr)
 {
   PropertyRNA *prop = (PropertyRNA *)ptr->data;
@@ -942,7 +1014,7 @@ static int rna_enum_check_separator(CollectionPropertyIterator *UNUSED(iter), vo
 static void rna_EnumProperty_items_begin(CollectionPropertyIterator *iter, PointerRNA *ptr)
 {
   PropertyRNA *prop = (PropertyRNA *)ptr->data;
-  /* EnumPropertyRNA *eprop;  */ /* UNUSED */
+  /* EnumPropertyRNA *eprop; */ /* UNUSED */
   const EnumPropertyItem *item = NULL;
   int totitem;
   bool free;
@@ -968,17 +1040,29 @@ static int rna_EnumPropertyItem_identifier_length(PointerRNA *ptr)
 
 static void rna_EnumPropertyItem_name_get(PointerRNA *ptr, char *value)
 {
-  strcpy(value, ((EnumPropertyItem *)ptr->data)->name);
+  const EnumPropertyItem *eprop = ptr->data;
+  /* Name can be NULL in the case of separators
+   * which are exposed via `_bpy.rna_enum_items_static`. */
+  if (eprop->name) {
+    strcpy(value, eprop->name);
+  }
+  else {
+    value[0] = '\0';
+  }
 }
 
 static int rna_EnumPropertyItem_name_length(PointerRNA *ptr)
 {
-  return strlen(((EnumPropertyItem *)ptr->data)->name);
+  const EnumPropertyItem *eprop = ptr->data;
+  if (eprop->name) {
+    return strlen(eprop->name);
+  }
+  return 0;
 }
 
 static void rna_EnumPropertyItem_description_get(PointerRNA *ptr, char *value)
 {
-  EnumPropertyItem *eprop = (EnumPropertyItem *)ptr->data;
+  const EnumPropertyItem *eprop = ptr->data;
 
   if (eprop->description) {
     strcpy(value, eprop->description);
@@ -995,9 +1079,7 @@ static int rna_EnumPropertyItem_description_length(PointerRNA *ptr)
   if (eprop->description) {
     return strlen(eprop->description);
   }
-  else {
-    return 0;
-  }
+  return 0;
 }
 
 static int rna_EnumPropertyItem_value_get(PointerRNA *ptr)
@@ -1070,7 +1152,7 @@ static bool rna_Function_no_self_get(PointerRNA *ptr)
   return !(func->flag & FUNC_NO_SELF);
 }
 
-static int rna_Function_use_self_type_get(PointerRNA *ptr)
+static bool rna_Function_use_self_type_get(PointerRNA *ptr)
 {
   FunctionRNA *func = (FunctionRNA *)ptr->data;
   return 0 != (func->flag & FUNC_USE_SELF_TYPE);
@@ -1478,7 +1560,7 @@ static int rna_property_override_diff_propptr(Main *bmain,
         *r_override_changed = true;
       }
 
-      if (extended_rna_path != extended_rna_path_buffer && extended_rna_path != rna_path) {
+      if (!ELEM(extended_rna_path, extended_rna_path_buffer, rna_path)) {
         MEM_freeN(extended_rna_path);
       }
 
@@ -1501,6 +1583,11 @@ static int rna_property_override_diff_propptr(Main *bmain,
     (is_array ? RNA_property_##_typename##_set_index((_ptr), (_prop), (_index), (_value)) : \
                 RNA_property_##_typename##_set((_ptr), (_prop), (_value)))
 
+/**
+ * \return `0` is matching, `-1` if `prop_a < prop_b`, `1` if `prop_a > prop_b`. Note that for
+ * unquantifiable properties (e.g. pointers or collections), return value should be interpreted as
+ * a boolean (false == matching, true == not matching).
+ */
 int rna_property_override_diff_default(Main *bmain,
                                        PropertyRNAOrID *prop_a,
                                        PropertyRNAOrID *prop_b,
@@ -1520,7 +1607,7 @@ int rna_property_override_diff_default(Main *bmain,
 
   BLI_assert(len_a == len_b);
 
-  /* Note: at this point, we are sure that when len_a is zero,
+  /* NOTE: at this point, we are sure that when len_a is zero,
    * we are not handling an (empty) array. */
 
   const bool do_create = override != NULL && (flags & RNA_OVERRIDE_COMPARE_CREATE) != 0 &&
@@ -1528,7 +1615,7 @@ int rna_property_override_diff_default(Main *bmain,
 
   const bool no_ownership = (prop_a->rnaprop->flag & PROP_PTR_NO_OWNERSHIP) != 0;
 
-  /* Note: we assume we only insert in ptr_a (i.e. we can only get new items in ptr_a),
+  /* NOTE: we assume we only insert in ptr_a (i.e. we can only get new items in ptr_a),
    * and that we never remove anything. */
   const bool use_collection_insertion = (prop_a->rnaprop->flag_override &
                                          PROPOVERRIDE_LIBRARY_INSERTION) &&
@@ -1555,7 +1642,7 @@ int rna_property_override_diff_default(Main *bmain,
         const int comp = memcmp(array_a, array_b, sizeof(bool) * len_a);
 
         if (do_create && comp != 0) {
-          /* XXX TODO this will have to be refined to handle array items */
+          /* XXX TODO: this will have to be refined to handle array items. */
           op = BKE_lib_override_library_property_get(override, rna_path, &created);
 
           if (op != NULL && created) {
@@ -1616,7 +1703,7 @@ int rna_property_override_diff_default(Main *bmain,
         const int comp = memcmp(array_a, array_b, sizeof(int) * len_a);
 
         if (do_create && comp != 0) {
-          /* XXX TODO this will have to be refined to handle array items */
+          /* XXX TODO: this will have to be refined to handle array items. */
           op = BKE_lib_override_library_property_get(override, rna_path, &created);
 
           if (op != NULL && created) {
@@ -1677,7 +1764,7 @@ int rna_property_override_diff_default(Main *bmain,
         const int comp = memcmp(array_a, array_b, sizeof(float) * len_a);
 
         if (do_create && comp != 0) {
-          /* XXX TODO this will have to be refined to handle array items */
+          /* XXX TODO: this will have to be refined to handle array items. */
           op = BKE_lib_override_library_property_get(override, rna_path, &created);
 
           if (op != NULL && created) {
@@ -1749,7 +1836,7 @@ int rna_property_override_diff_default(Main *bmain,
           ptr_a, rawprop_a, fixed_a, sizeof(fixed_a), &len_str_a);
       char *value_b = RNA_property_string_get_alloc(
           ptr_b, rawprop_b, fixed_b, sizeof(fixed_b), &len_str_b);
-      /* TODO we could do a check on length too,
+      /* TODO: we could do a check on length too,
        * but then we would not have a 'real' string comparison...
        * Maybe behind a eRNAOverrideMatch flag? */
 #  if 0
@@ -1929,16 +2016,21 @@ int rna_property_override_diff_default(Main *bmain,
 
           /* Collections do not support replacement of their data (except for collections of ID
            * pointers), since they do not support removing, only in *some* cases, insertion. We
-           * also assume then that _a data is the one where things are inserted. */
+           * also assume then that _a data is the one where things are inserted.
+           *
+           * NOTE: In insertion case, both 'local' and 'reference' (aka anchor) sub-item
+           * identifiers refer to collection items in the local override. The 'reference' may match
+           * an item in the linked reference data, but it can also be another local-only item added
+           * by a previous INSERT operation. */
           if (is_valid_for_insertion && use_collection_insertion) {
             op = BKE_lib_override_library_property_get(override, rna_path, &created);
 
             BKE_lib_override_library_property_operation_get(op,
                                                             IDOVERRIDE_LIBRARY_OP_INSERT_AFTER,
-                                                            NULL,
                                                             no_prop_name ? NULL : prev_propname_a,
-                                                            -1,
+                                                            no_prop_name ? NULL : propname_a,
                                                             idx_a - 1,
+                                                            idx_a,
                                                             true,
                                                             NULL,
                                                             NULL);
@@ -1949,28 +2041,30 @@ int rna_property_override_diff_default(Main *bmain,
                    idx_a - 1);
 #  endif
             op = NULL;
+
+            equals = false;
           }
           else if (is_id || is_valid_for_diffing) {
             if (equals || do_create) {
-              const int eq = rna_property_override_diff_propptr(bmain,
-                                                                ptr_a->owner_id,
-                                                                ptr_b->owner_id,
-                                                                &iter_a.ptr,
-                                                                &iter_b.ptr,
-                                                                mode,
-                                                                no_ownership,
-                                                                no_prop_name,
-                                                                override,
-                                                                rna_path,
-                                                                rna_path_len,
-                                                                PROP_COLLECTION,
-                                                                propname_a,
-                                                                propname_b,
-                                                                idx_a,
-                                                                idx_b,
-                                                                flags,
-                                                                r_override_changed);
-              equals = equals && eq;
+              const int comp = rna_property_override_diff_propptr(bmain,
+                                                                  ptr_a->owner_id,
+                                                                  ptr_b->owner_id,
+                                                                  &iter_a.ptr,
+                                                                  &iter_b.ptr,
+                                                                  mode,
+                                                                  no_ownership,
+                                                                  no_prop_name,
+                                                                  override,
+                                                                  rna_path,
+                                                                  rna_path_len,
+                                                                  PROP_COLLECTION,
+                                                                  propname_a,
+                                                                  propname_b,
+                                                                  idx_a,
+                                                                  idx_b,
+                                                                  flags,
+                                                                  r_override_changed);
+              equals = equals && (comp == 0);
             }
           }
 
@@ -2070,7 +2164,7 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
     return changed;
   }
 
-  /* XXX TODO About range limits.
+  /* XXX TODO: About range limits.
    * Ideally, it would be great to get rid of RNA range in that specific case.
    * However, this won't be that easy and will add yet another layer of complexity in
    * generated code, not to mention that we could most likely *not* bypass custom setters anyway.
@@ -2079,8 +2173,8 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
    * Time will say whether this is acceptable limitation or not. */
   switch (RNA_property_type(prop_local)) {
     case PROP_BOOLEAN:
-      /* TODO support boolean ops? Really doubt this would ever be useful though... */
-      BLI_assert(0 && "Boolean properties support no override diff operation");
+      /* TODO: support boolean ops? Really doubt this would ever be useful though. */
+      BLI_assert_msg(0, "Boolean properties support no override diff operation");
       break;
     case PROP_INT: {
       int prop_min, prop_max;
@@ -2114,7 +2208,7 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
                 for (int j = len_local; j--;) {
                   array_b[j] = j >= i ? -array_b[j] : fac * (array_a[j] - array_b[j]);
                   if (array_b[j] < prop_min || array_b[j] > prop_max) {
-                    /* We failed to  find a suitable diff op,
+                    /* We failed to find a suitable diff op,
                      * fall back to plain REPLACE one. */
                     opop->operation = IDOVERRIDE_LIBRARY_OP_REPLACE;
                     do_set = false;
@@ -2134,7 +2228,7 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
             break;
           }
           default:
-            BLI_assert(0 && "Unsupported RNA override diff operation on integer");
+            BLI_assert_msg(0, "Unsupported RNA override diff operation on integer");
             break;
         }
 
@@ -2166,7 +2260,7 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
             break;
           }
           default:
-            BLI_assert(0 && "Unsupported RNA override diff operation on integer");
+            BLI_assert_msg(0, "Unsupported RNA override diff operation on integer");
             break;
         }
       }
@@ -2204,7 +2298,7 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
                 for (int j = len_local; j--;) {
                   array_b[j] = j >= i ? -array_b[j] : fac * (array_a[j] - array_b[j]);
                   if (array_b[j] < prop_min || array_b[j] > prop_max) {
-                    /* We failed to  find a suitable diff op,
+                    /* We failed to find a suitable diff op,
                      * fall back to plain REPLACE one. */
                     opop->operation = IDOVERRIDE_LIBRARY_OP_REPLACE;
                     do_set = false;
@@ -2247,7 +2341,7 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
             break;
           }
           default:
-            BLI_assert(0 && "Unsupported RNA override diff operation on float");
+            BLI_assert_msg(0, "Unsupported RNA override diff operation on float");
             break;
         }
 
@@ -2290,25 +2384,25 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
             break;
           }
           default:
-            BLI_assert(0 && "Unsupported RNA override diff operation on float");
+            BLI_assert_msg(0, "Unsupported RNA override diff operation on float");
             break;
         }
       }
       return true;
     }
     case PROP_ENUM:
-      /* TODO support add/sub, for bitflags? */
-      BLI_assert(0 && "Enum properties support no override diff operation");
+      /* TODO: support add/sub, for bitflags? */
+      BLI_assert_msg(0, "Enum properties support no override diff operation");
       break;
     case PROP_POINTER:
-      BLI_assert(0 && "Pointer properties support no override diff operation");
+      BLI_assert_msg(0, "Pointer properties support no override diff operation");
       break;
     case PROP_STRING:
-      BLI_assert(0 && "String properties support no override diff operation");
+      BLI_assert_msg(0, "String properties support no override diff operation");
       break;
     case PROP_COLLECTION:
-      /* XXX TODO support this of course... */
-      BLI_assert(0 && "Collection properties support no override diff operation");
+      /* XXX TODO: support this of course... */
+      BLI_assert_msg(0, "Collection properties support no override diff operation");
       break;
     default:
       break;
@@ -2317,7 +2411,7 @@ bool rna_property_override_store_default(Main *UNUSED(bmain),
   return changed;
 }
 
-bool rna_property_override_apply_default(Main *UNUSED(bmain),
+bool rna_property_override_apply_default(Main *bmain,
                                          PointerRNA *ptr_dst,
                                          PointerRNA *ptr_src,
                                          PointerRNA *ptr_storage,
@@ -2339,6 +2433,8 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
   const int index = is_array ? opop->subitem_reference_index : 0;
   const short override_op = opop->operation;
 
+  bool ret_success = true;
+
   switch (RNA_property_type(prop_dst)) {
     case PROP_BOOLEAN:
       if (is_array && index == -1) {
@@ -2355,7 +2451,7 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
             RNA_property_boolean_set_array(ptr_dst, prop_dst, array_a);
             break;
           default:
-            BLI_assert(0 && "Unsupported RNA override operation on boolean");
+            BLI_assert_msg(0, "Unsupported RNA override operation on boolean");
             return false;
         }
 
@@ -2371,11 +2467,11 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
             RNA_PROPERTY_SET_SINGLE(boolean, ptr_dst, prop_dst, index, value);
             break;
           default:
-            BLI_assert(0 && "Unsupported RNA override operation on boolean");
+            BLI_assert_msg(0, "Unsupported RNA override operation on boolean");
             return false;
         }
       }
-      return true;
+      break;
     case PROP_INT:
       if (is_array && index == -1) {
         int array_stack_a[RNA_STACK_ARRAY], array_stack_b[RNA_STACK_ARRAY];
@@ -2412,7 +2508,7 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
             }
             break;
           default:
-            BLI_assert(0 && "Unsupported RNA override operation on integer");
+            BLI_assert_msg(0, "Unsupported RNA override operation on integer");
             return false;
         }
 
@@ -2450,11 +2546,11 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
                                         storage_value);
             break;
           default:
-            BLI_assert(0 && "Unsupported RNA override operation on integer");
+            BLI_assert_msg(0, "Unsupported RNA override operation on integer");
             return false;
         }
       }
-      return true;
+      break;
     case PROP_FLOAT:
       if (is_array && index == -1) {
         float array_stack_a[RNA_STACK_ARRAY], array_stack_b[RNA_STACK_ARRAY];
@@ -2497,7 +2593,7 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
             }
             break;
           default:
-            BLI_assert(0 && "Unsupported RNA override operation on float");
+            BLI_assert_msg(0, "Unsupported RNA override operation on float");
             return false;
         }
 
@@ -2543,11 +2639,11 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
                                         storage_value);
             break;
           default:
-            BLI_assert(0 && "Unsupported RNA override operation on float");
+            BLI_assert_msg(0, "Unsupported RNA override operation on float");
             return false;
         }
       }
-      return true;
+      break;
     case PROP_ENUM: {
       const int value = RNA_property_enum_get(ptr_src, prop_src);
 
@@ -2555,12 +2651,12 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
         case IDOVERRIDE_LIBRARY_OP_REPLACE:
           RNA_property_enum_set(ptr_dst, prop_dst, value);
           break;
-        /* TODO support add/sub, for bitflags? */
+        /* TODO: support add/sub, for bitflags? */
         default:
-          BLI_assert(0 && "Unsupported RNA override operation on enum");
+          BLI_assert_msg(0, "Unsupported RNA override operation on enum");
           return false;
       }
-      return true;
+      break;
     }
     case PROP_POINTER: {
       PointerRNA value = RNA_property_pointer_get(ptr_src, prop_src);
@@ -2570,10 +2666,10 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
           RNA_property_pointer_set(ptr_dst, prop_dst, value, NULL);
           break;
         default:
-          BLI_assert(0 && "Unsupported RNA override operation on pointer");
+          BLI_assert_msg(0, "Unsupported RNA override operation on pointer");
           return false;
       }
-      return true;
+      break;
     }
     case PROP_STRING: {
       char buff[256];
@@ -2584,14 +2680,14 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
           RNA_property_string_set(ptr_dst, prop_dst, value);
           break;
         default:
-          BLI_assert(0 && "Unsupported RNA override operation on string");
+          BLI_assert_msg(0, "Unsupported RNA override operation on string");
           return false;
       }
 
       if (value != buff) {
         MEM_freeN(value);
       }
-      return true;
+      break;
     }
     case PROP_COLLECTION: {
       /* We only support IDProperty-based collection insertion here. */
@@ -2600,7 +2696,7 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
       const bool is_dst_idprop = (prop_dst->magic != RNA_MAGIC) ||
                                  (prop_dst->flag & PROP_IDPROPERTY) != 0;
       if (!(is_src_idprop && is_dst_idprop)) {
-        BLI_assert(0 && "You need to define a specific override apply callback for collections");
+        BLI_assert_msg(0, "You need to define a specific override apply callback for collections");
         return false;
       }
 
@@ -2614,10 +2710,11 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
             int item_index_src, item_index_ref;
             if (RNA_property_collection_lookup_string_index(
                     ptr_src, prop_src, opop->subitem_local_name, &item_ptr_src, &item_index_src) &&
-                RNA_property_collection_lookup_int(
-                    ptr_src, prop_src, item_index_src + 1, &item_ptr_src) &&
-                RNA_property_collection_lookup_string_index(
-                    ptr_dst, prop_dst, opop->subitem_local_name, &item_ptr_ref, &item_index_ref)) {
+                RNA_property_collection_lookup_string_index(ptr_dst,
+                                                            prop_dst,
+                                                            opop->subitem_reference_name,
+                                                            &item_ptr_ref,
+                                                            &item_index_ref)) {
               is_valid = true;
               item_index_dst = item_index_ref + 1;
             }
@@ -2625,10 +2722,10 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
           if (!is_valid && opop->subitem_local_index >= 0) {
             /* Find from index. */
             if (RNA_property_collection_lookup_int(
-                    ptr_src, prop_src, opop->subitem_local_index + 1, &item_ptr_src) &&
+                    ptr_src, prop_src, opop->subitem_local_index, &item_ptr_src) &&
                 RNA_property_collection_lookup_int(
-                    ptr_dst, prop_dst, opop->subitem_local_index, &item_ptr_ref)) {
-              item_index_dst = opop->subitem_local_index + 1;
+                    ptr_dst, prop_dst, opop->subitem_reference_index, &item_ptr_ref)) {
+              item_index_dst = opop->subitem_reference_index + 1;
               is_valid = true;
             }
           }
@@ -2656,19 +2753,27 @@ bool rna_property_override_apply_default(Main *UNUSED(bmain),
           IDProperty *item_idprop_dst = item_ptr_dst.data;
           IDP_CopyPropertyContent(item_idprop_dst, item_idprop_src);
 
-          return RNA_property_collection_move(ptr_dst, prop_dst, item_index_added, item_index_dst);
+          ret_success = RNA_property_collection_move(
+              ptr_dst, prop_dst, item_index_added, item_index_dst);
+          break;
         }
         default:
-          BLI_assert(0 && "Unsupported RNA override operation on collection");
+          BLI_assert_msg(0, "Unsupported RNA override operation on collection");
           return false;
       }
+      break;
     }
     default:
-      BLI_assert(0);
+      BLI_assert_unreachable();
       return false;
   }
 
-  return false;
+  /* Default apply callback always call property update. */
+  if (ret_success) {
+    RNA_property_update_main(bmain, NULL, ptr_dst, prop_dst);
+  }
+
+  return ret_success;
 }
 
 #  undef RNA_PROPERTY_GET_SINGLE
@@ -2925,6 +3030,12 @@ static void rna_def_property(BlenderRNA *brna)
   RNA_def_property_ui_text(
       prop, "Library Editable", "Property is editable from linked instances (changes not saved)");
 
+  prop = RNA_def_property(srna, "is_path_output", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_boolean_funcs(prop, "rna_Property_is_path_output_flag_get", NULL);
+  RNA_def_property_ui_text(
+      prop, "Path Output", "Property is a filename, filepath or directory output");
+
   prop = RNA_def_property(srna, "tags", PROP_ENUM, PROP_NONE);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_enum_items(prop, dummy_prop_tags);
@@ -2957,7 +3068,7 @@ static void rna_def_function(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Description", "Description of the Function's purpose");
 
   prop = RNA_def_property(srna, "parameters", PROP_COLLECTION, PROP_NONE);
-  /*RNA_def_property_clear_flag(prop, PROP_EDITABLE);*/
+  // RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_struct_type(prop, "Property");
   RNA_def_property_collection_funcs(prop,
                                     "rna_Function_parameters_begin",
@@ -2990,14 +3101,14 @@ static void rna_def_function(BlenderRNA *brna)
   RNA_def_property_ui_text(
       prop,
       "No Self",
-      "Function does not pass its self as an argument (becomes a static method in python)");
+      "Function does not pass itself as an argument (becomes a static method in python)");
 
   prop = RNA_def_property(srna, "use_self_type", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_boolean_funcs(prop, "rna_Function_use_self_type_get", NULL);
   RNA_def_property_ui_text(prop,
                            "Use Self Type",
-                           "Function passes its self type as an argument (becomes a class method "
+                           "Function passes itself type as an argument (becomes a class method "
                            "in python if use_self is false)");
 }
 
@@ -3123,7 +3234,11 @@ static void rna_def_number_property(StructRNA *srna, PropertyType type)
     prop = RNA_def_property(srna, "precision", PROP_INT, PROP_UNSIGNED);
     RNA_def_property_clear_flag(prop, PROP_EDITABLE);
     RNA_def_property_int_funcs(prop, "rna_FloatProperty_precision_get", NULL, NULL);
-    RNA_def_property_ui_text(prop, "Precision", "Number of digits after the dot used by buttons");
+    RNA_def_property_ui_text(prop,
+                             "Precision",
+                             "Number of digits after the dot used by buttons. Fraction is "
+                             "automatically hidden for exact integer values of fields with unit "
+                             "'NONE' or 'TIME' (frame count) and step divisible by 100");
   }
 }
 
@@ -3261,7 +3376,7 @@ void RNA_def_rna(BlenderRNA *brna)
   StructRNA *srna;
   PropertyRNA *prop;
 
-  /* Struct*/
+  /* Struct */
   rna_def_struct(brna);
 
   /* Property */

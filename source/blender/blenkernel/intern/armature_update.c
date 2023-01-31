@@ -1,23 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2015 Blender Foundation.
- * All rights reserved.
- *
- * Defines and code for core node types
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2015 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -88,7 +70,7 @@ static void splineik_init_tree_from_pchan(Scene *UNUSED(scene),
       ik_data = con->data;
 
       /* Target can only be a curve. */
-      if ((ik_data->tar == NULL) || (ik_data->tar->type != OB_CURVE)) {
+      if ((ik_data->tar == NULL) || (ik_data->tar->type != OB_CURVES_LEGACY)) {
         continue;
       }
       /* Skip if disabled. */
@@ -267,14 +249,23 @@ static void apply_curve_transform(
    * unless the option to allow curve to be positioned elsewhere is activated (i.e. no root).
    */
   if ((ik_data->flag & CONSTRAINT_SPLINEIK_NO_ROOT) == 0) {
-    mul_m4_v3(ik_data->tar->obmat, r_vec);
+    mul_m4_v3(ik_data->tar->object_to_world, r_vec);
   }
 
   /* Convert the position to pose-space. */
-  mul_m4_v3(ob->imat, r_vec);
+  mul_m4_v3(ob->world_to_object, r_vec);
 
   /* Set the new radius (it should be the average value). */
   *r_radius = (radius + *r_radius) / 2;
+}
+
+static float dist_to_sphere_shell(const float sphere_origin[3],
+                                  const float sphere_radius,
+                                  const float point[3])
+{
+  float vec[3];
+  sub_v3_v3v3(vec, sphere_origin, point);
+  return sphere_radius - len_v3(vec);
 }
 
 /* This function positions the tail of the bone so that it preserves the length of it.
@@ -283,40 +274,44 @@ static void apply_curve_transform(
 static int position_tail_on_spline(bSplineIKConstraint *ik_data,
                                    const float head_pos[3],
                                    const float sphere_radius,
-                                   const int prev_seg_idx,
+                                   int prev_seg_idx,
                                    float r_tail_pos[3],
                                    float *r_new_curve_pos,
                                    float *r_radius)
 {
   /* This is using the tessellated curve data.
    * So we are working with piece-wise linear curve segments.
-   * The same method is use in #BKE_where_on_path to get curve location data. */
+   * The same method is used in #BKE_where_on_path to get curve location data. */
   const CurveCache *cache = ik_data->tar->runtime.curve_cache;
-  const BevList *bl = cache->bev.first;
-  BevPoint *bp = bl->bevpoints;
-  const float spline_len = BKE_anim_path_get_length(cache);
   const float *seg_accum_len = cache->anim_path_accum_length;
 
   int max_seg_idx = BKE_anim_path_get_array_size(cache) - 1;
 
-  /* Convert our initial intersection point guess to a point index.
-   * If the curve was a straight line, then pointEnd would be the correct location.
+  /* Make an initial guess of where our intersection point will be.
+   * If the curve was a straight line, then the fraction passed in r_new_curve_pos
+   * would be the correct location.
    * So make it our first initial guess.
    */
+  const float spline_len = BKE_anim_path_get_length(cache);
   const float guessed_len = *r_new_curve_pos * spline_len;
 
   BLI_assert(prev_seg_idx >= 0);
-
   int cur_seg_idx = prev_seg_idx;
   while (cur_seg_idx < max_seg_idx && guessed_len > seg_accum_len[cur_seg_idx]) {
     cur_seg_idx++;
   }
 
+  /* Convert the segment to bev points.
+   * For example, the segment with index 0 will have bev points 0 and 1.
+   */
   int bp_idx = cur_seg_idx + 1;
 
-  bp = bp + bp_idx;
+  const BevList *bl = cache->bev.first;
   bool is_cyclic = bl->poly >= 0;
-  BevPoint *prev_bp = bp - 1;
+  BevPoint *bp = bl->bevpoints;
+  BevPoint *prev_bp;
+  bp = bp + bp_idx;
+  prev_bp = bp - 1;
 
   /* Go to the next tessellated curve point until we cross to outside of the sphere. */
   while (len_v3v3(head_pos, bp->vec) < sphere_radius) {
@@ -337,30 +332,57 @@ static int position_tail_on_spline(bSplineIKConstraint *ik_data,
     bp_idx++;
   }
 
-  float isect_1[3], isect_2[3];
+  /* Calculate the intersection point using the secant root finding method */
+  float x0 = 0.0f, x1 = 1.0f, x2 = 0.5f;
+  float x0_point[3], x1_point[3], start_p[3];
+  float epsilon = max_fff(1.0f, len_v3(head_pos), len_v3(bp->vec)) * FLT_EPSILON;
 
-  /* Calculate the intersection point. */
-  isect_line_sphere_v3(prev_bp->vec, bp->vec, head_pos, sphere_radius, isect_1, isect_2);
+  if (prev_seg_idx == bp_idx - 1) {
+    /* The intersection lies inside the same segment as the last point.
+     * Set the last point to be the start search point so we minimize the risks of going backwards
+     * on the curve.
+     */
+    copy_v3_v3(start_p, head_pos);
+  }
+  else {
+    copy_v3_v3(start_p, prev_bp->vec);
+  }
 
-  /* Because of how `isect_line_sphere_v3` works, we know that `isect_1` contains the
-   * intersection point we want. And it will always intersect as we go from inside to outside
-   * of the sphere.
+  for (int i = 0; i < 10; i++) {
+    interp_v3_v3v3(x0_point, start_p, bp->vec, x0);
+    interp_v3_v3v3(x1_point, start_p, bp->vec, x1);
+
+    float f_x0 = dist_to_sphere_shell(head_pos, sphere_radius, x0_point);
+    float f_x1 = dist_to_sphere_shell(head_pos, sphere_radius, x1_point);
+
+    if (fabsf(f_x1) <= epsilon || f_x0 == f_x1) {
+      break;
+    }
+
+    x2 = x1 - f_x1 * (x1 - x0) / (f_x1 - f_x0);
+    x0 = x1;
+    x1 = x2;
+  }
+  /* Found the bone tail position! */
+  copy_v3_v3(r_tail_pos, x1_point);
+
+  /* Because our intersection point lies inside the current segment,
+   * Convert our bevpoint index back to the previous segment index (-2 instead of -1).
+   * This is because our actual location is prev_seg_len + isect_seg_len.
    */
-  copy_v3_v3(r_tail_pos, isect_1);
-
-  cur_seg_idx = bp_idx - 2;
+  prev_seg_idx = bp_idx - 2;
   float prev_seg_len = 0;
 
-  if (cur_seg_idx < 0) {
-    cur_seg_idx = 0;
+  if (prev_seg_idx < 0) {
+    prev_seg_idx = 0;
     prev_seg_len = 0;
   }
   else {
-    prev_seg_len = seg_accum_len[cur_seg_idx];
+    prev_seg_len = seg_accum_len[prev_seg_idx];
   }
 
   /* Convert the point back into the 0-1 interpolation range. */
-  const float isect_seg_len = len_v3v3(prev_bp->vec, isect_1);
+  const float isect_seg_len = len_v3v3(prev_bp->vec, r_tail_pos);
   const float frac = isect_seg_len / len_v3v3(prev_bp->vec, bp->vec);
   *r_new_curve_pos = (prev_seg_len + isect_seg_len) / spline_len;
 
@@ -371,7 +393,8 @@ static int position_tail_on_spline(bSplineIKConstraint *ik_data,
     *r_radius = (1.0f - frac) * prev_bp->radius + frac * bp->radius;
   }
 
-  return cur_seg_idx;
+  /* Return the current segment. */
+  return bp_idx - 1;
 }
 
 /* Evaluate spline IK for a given bone. */
@@ -380,10 +403,10 @@ static void splineik_evaluate_bone(
 {
   bSplineIKConstraint *ik_data = tree->ik_data;
 
-  if (pchan->bone->length == 0.0f) {
+  if (pchan->bone->length < FLT_EPSILON) {
     /* Only move the bone position with zero length bones. */
-    float bone_pos[4], dir[3], rad;
-    BKE_where_on_path(ik_data->tar, state->curve_position, bone_pos, dir, NULL, &rad, NULL);
+    float bone_pos[4], rad;
+    BKE_where_on_path(ik_data->tar, state->curve_position, bone_pos, NULL, NULL, &rad, NULL);
 
     apply_curve_transform(ik_data, ob, rad, bone_pos, &rad);
 
@@ -422,13 +445,13 @@ static void splineik_evaluate_bone(
 
   /* Step 1: determine the positions for the endpoints of the bone. */
   if (point_start < 1.0f) {
-    float vec[4], dir[3], rad;
+    float vec[4], rad;
     radius = 0.0f;
 
     /* Calculate head position. */
     if (point_start == 0.0f) {
       /* Start of the path. We have no previous tail position to copy. */
-      BKE_where_on_path(ik_data->tar, point_start, vec, dir, NULL, &rad, NULL);
+      BKE_where_on_path(ik_data->tar, point_start, vec, NULL, NULL, &rad, NULL);
     }
     else {
       copy_v3_v3(vec, state->prev_tail_loc);
@@ -463,7 +486,7 @@ static void splineik_evaluate_bone(
     }
     else {
       /* Scale to fit curve end position. */
-      if (BKE_where_on_path(ik_data->tar, point_end, vec, dir, NULL, &rad, NULL)) {
+      if (BKE_where_on_path(ik_data->tar, point_end, vec, NULL, NULL, &rad, NULL)) {
         state->prev_tail_radius = rad;
         copy_v3_v3(state->prev_tail_loc, vec);
         copy_v3_v3(pose_tail, vec);
@@ -516,6 +539,25 @@ static void splineik_evaluate_bone(
      */
     cross_v3_v3v3(raxis, rmat[1], spline_vec);
 
+    /* Check if the old and new bone direction is parallel to each other.
+     * If they are, then 'raxis' should be near zero and we will have to get the rotation axis in
+     * some other way.
+     */
+    float norm = normalize_v3(raxis);
+
+    if (norm < FLT_EPSILON) {
+      /* Can't use cross product! */
+      int order[3] = {0, 1, 2};
+      float tmp_axis[3];
+      zero_v3(tmp_axis);
+
+      axis_sort_v3(spline_vec, order);
+
+      /* Use the second largest axis as the basis for the rotation axis. */
+      tmp_axis[order[1]] = 1.0f;
+      cross_v3_v3v3(raxis, tmp_axis, spline_vec);
+    }
+
     rangle = dot_v3v3(rmat[1], spline_vec);
     CLAMP(rangle, -1.0f, 1.0f);
     rangle = acosf(rangle);
@@ -534,7 +576,7 @@ static void splineik_evaluate_bone(
      * spline dictates, while still maintaining roll control from the existing bone animation. */
     mul_m3_m3m3(pose_mat, dmat, rmat);
 
-    /* Attempt to reduce shearing, though I doubt this'll really help too much now... */
+    /* Attempt to reduce shearing, though I doubt this will really help too much now. */
     normalize_m3(pose_mat);
 
     mul_m3_m3m3(base_pose_mat, dmat, base_pose_mat);
@@ -776,8 +818,8 @@ void BKE_pose_eval_init(struct Depsgraph *depsgraph, Scene *UNUSED(scene), Objec
   BLI_assert(object->pose != NULL);
   BLI_assert((object->pose->flag & POSE_RECALC) == 0);
 
-  /* imat is needed for solvers. */
-  invert_m4_m4(object->imat, object->obmat);
+  /* world_to_object is needed for solvers. */
+  invert_m4_m4(object->world_to_object, object->object_to_world);
 
   /* clear flags */
   for (bPoseChannel *pchan = pose->chanbase.first; pchan != NULL; pchan = pchan->next) {
@@ -790,17 +832,13 @@ void BKE_pose_eval_init(struct Depsgraph *depsgraph, Scene *UNUSED(scene), Objec
   }
 
   BLI_assert(pose->chan_array != NULL || BLI_listbase_is_empty(&pose->chanbase));
-
-  if (object->proxy != NULL) {
-    object->proxy->proxy_from = object;
-  }
 }
 
 void BKE_pose_eval_init_ik(struct Depsgraph *depsgraph, Scene *scene, Object *object)
 {
   DEG_debug_print_eval(depsgraph, __func__, object->id.name, object);
   BLI_assert(object->type == OB_ARMATURE);
-  const float ctime = BKE_scene_frame_get(scene); /* not accurate... */
+  const float ctime = BKE_scene_ctime_get(scene); /* not accurate... */
   bArmature *armature = (bArmature *)object->data;
   if (armature->flag & ARM_RESTPOS) {
     return;
@@ -809,7 +847,7 @@ void BKE_pose_eval_init_ik(struct Depsgraph *depsgraph, Scene *scene, Object *ob
   BIK_init_tree(depsgraph, scene, object, ctime);
   /* construct the Spline IK trees
    * - this is not integrated as an IK plugin, since it should be able
-   *   to function in conjunction with standard IK.  */
+   *   to function in conjunction with standard IK. */
   BKE_pose_splineik_init_tree(scene, object, ctime);
 }
 
@@ -841,7 +879,7 @@ void BKE_pose_eval_bone(struct Depsgraph *depsgraph, Scene *scene, Object *objec
       else {
         if ((pchan->flag & POSE_DONE) == 0) {
           /* TODO(sergey): Use time source node for time. */
-          float ctime = BKE_scene_frame_get(scene); /* not accurate... */
+          float ctime = BKE_scene_ctime_get(scene); /* not accurate... */
           BKE_pose_where_is_bone(depsgraph, scene, object, pchan, ctime, 1);
         }
       }
@@ -869,7 +907,7 @@ void BKE_pose_constraints_evaluate(struct Depsgraph *depsgraph,
   }
   else {
     if ((pchan->flag & POSE_DONE) == 0) {
-      float ctime = BKE_scene_frame_get(scene); /* not accurate... */
+      float ctime = BKE_scene_ctime_get(scene); /* not accurate... */
       BKE_pose_where_is_bone(depsgraph, scene, object, pchan, ctime, 1);
     }
   }
@@ -953,7 +991,7 @@ void BKE_pose_iktree_evaluate(struct Depsgraph *depsgraph,
   DEG_debug_print_eval_subdata(
       depsgraph, __func__, object->id.name, object, "rootchan", rootchan->name, rootchan);
   BLI_assert(object->type == OB_ARMATURE);
-  const float ctime = BKE_scene_frame_get(scene); /* not accurate... */
+  const float ctime = BKE_scene_ctime_get(scene); /* not accurate... */
   if (armature->flag & ARM_RESTPOS) {
     return;
   }
@@ -974,7 +1012,7 @@ void BKE_pose_splineik_evaluate(struct Depsgraph *depsgraph,
   DEG_debug_print_eval_subdata(
       depsgraph, __func__, object->id.name, object, "rootchan", rootchan->name, rootchan);
   BLI_assert(object->type == OB_ARMATURE);
-  const float ctime = BKE_scene_frame_get(scene); /* not accurate... */
+  const float ctime = BKE_scene_ctime_get(scene); /* not accurate... */
   if (armature->flag & ARM_RESTPOS) {
     return;
   }
@@ -1003,64 +1041,10 @@ void BKE_pose_eval_cleanup(struct Depsgraph *depsgraph, Scene *scene, Object *ob
   bPose *pose = object->pose;
   BLI_assert(pose != NULL);
   UNUSED_VARS_NDEBUG(pose);
-  const float ctime = BKE_scene_frame_get(scene); /* not accurate... */
+  const float ctime = BKE_scene_ctime_get(scene); /* not accurate... */
   DEG_debug_print_eval(depsgraph, __func__, object->id.name, object);
   BLI_assert(object->type == OB_ARMATURE);
   /* Release the IK tree. */
   BIK_release_tree(scene, object, ctime);
   pose_eval_cleanup_common(object);
-}
-
-void BKE_pose_eval_proxy_init(struct Depsgraph *depsgraph, Object *object)
-{
-  BLI_assert(ID_IS_LINKED(object) && object->proxy_from != NULL);
-  DEG_debug_print_eval(depsgraph, __func__, object->id.name, object);
-
-  BLI_assert(object->pose->chan_array != NULL || BLI_listbase_is_empty(&object->pose->chanbase));
-}
-
-void BKE_pose_eval_proxy_done(struct Depsgraph *depsgraph, Object *object)
-{
-  BLI_assert(ID_IS_LINKED(object) && object->proxy_from != NULL);
-  DEG_debug_print_eval(depsgraph, __func__, object->id.name, object);
-}
-
-void BKE_pose_eval_proxy_cleanup(struct Depsgraph *depsgraph, Object *object)
-{
-  BLI_assert(ID_IS_LINKED(object) && object->proxy_from != NULL);
-  DEG_debug_print_eval(depsgraph, __func__, object->id.name, object);
-  pose_eval_cleanup_common(object);
-}
-
-void BKE_pose_eval_proxy_copy_bone(struct Depsgraph *depsgraph, Object *object, int pchan_index)
-{
-  const bArmature *armature = (bArmature *)object->data;
-  if (armature->edbo != NULL) {
-    return;
-  }
-  BLI_assert(ID_IS_LINKED(object) && object->proxy_from != NULL);
-  bPoseChannel *pchan = pose_pchan_get_indexed(object, pchan_index);
-  BLI_assert(pchan != NULL);
-  DEG_debug_print_eval_subdata(
-      depsgraph, __func__, object->id.name, object, "pchan", pchan->name, pchan);
-  /* TODO(sergey): Use indexed lookup, once it's guaranteed to be kept
-   * around for the time while proxies are evaluating.
-   */
-#if 0
-  bPoseChannel *pchan_from = pose_pchan_get_indexed(object->proxy_from, pchan_index);
-#else
-  bPoseChannel *pchan_from = BKE_pose_channel_find_name(object->proxy_from->pose, pchan->name);
-#endif
-  if (pchan_from == NULL) {
-    printf(
-        "WARNING: Could not find bone %s in linked ID anymore... "
-        "You should delete and re-generate your proxy.\n",
-        pchan->name);
-    return;
-  }
-  BKE_pose_copy_pchan_result(pchan, pchan_from);
-  copy_dq_dq(&pchan->runtime.deform_dual_quat, &pchan_from->runtime.deform_dual_quat);
-  BKE_pchan_bbone_segments_cache_copy(pchan, pchan_from);
-
-  pose_channel_flush_to_orig_if_needed(depsgraph, object, pchan);
 }

@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8-80 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 from __future__ import annotations
 
 if "bpy" in locals():
@@ -34,6 +16,7 @@ from bpy.props import (
     EnumProperty,
     StringProperty,
 )
+from bpy.app.translations import pgettext_tip as tip_
 
 
 class ANIM_OT_keying_set_export(Operator):
@@ -129,7 +112,7 @@ class ANIM_OT_keying_set_export(Operator):
                             break
 
                 if not found:
-                    self.report({'WARN'}, "Could not find material or light using Shader Node Tree - %s" % (ksp.id))
+                    self.report({'WARN'}, tip_("Could not find material or light using Shader Node Tree - %s") % (ksp.id))
             elif ksp.id.bl_rna.identifier.startswith("CompositorNodeTree"):
                 # Find compositor nodetree using this node tree...
                 for scene in bpy.data.scenes:
@@ -137,7 +120,7 @@ class ANIM_OT_keying_set_export(Operator):
                         id_bpy_path = "bpy.data.scenes[\"%s\"].node_tree" % (scene.name)
                         break
                 else:
-                    self.report({'WARN'}, "Could not find scene using Compositor Node Tree - %s" % (ksp.id))
+                    self.report({'WARN'}, tip_("Could not find scene using Compositor Node Tree - %s") % (ksp.id))
             elif ksp.id.bl_rna.name == "Key":
                 # "keys" conflicts with a Python keyword, hence the simple solution won't work
                 id_bpy_path = "bpy.data.shape_keys[\"%s\"]" % (ksp.id.name)
@@ -269,9 +252,14 @@ class NLA_OT_bake(Operator):
         do_pose = 'POSE' in self.bake_types
         do_object = 'OBJECT' in self.bake_types
 
-        objects = context.selected_editable_objects
-        if do_pose and not do_object:
-            objects = [obj for obj in objects if obj.pose is not None]
+        if do_pose and self.only_selected:
+            pose_bones = context.selected_pose_bones or []
+            armatures = {pose_bone.id_data for pose_bone in pose_bones}
+            objects = list(armatures)
+        else:
+            objects = context.selected_editable_objects
+            if do_pose and not do_object:
+                objects = [obj for obj in objects if obj.pose is not None]
 
         object_action_pairs = (
             [(obj, getattr(obj.animation_data, "action", None)) for obj in objects]
@@ -342,7 +330,7 @@ class ClearUselessActions(Operator):
                     action.user_clear()
                     removed += 1
 
-        self.report({'INFO'}, "Removed %d empty and/or fake-user only Actions"
+        self.report({'INFO'}, tip_("Removed %d empty and/or fake-user only Actions")
                               % removed)
         return {'FINISHED'}
 
@@ -427,7 +415,7 @@ class UpdateAnimatedTransformConstraint(Operator):
             print(log)
             text = bpy.data.texts.new("UpdateAnimatedTransformConstraint Report")
             text.from_string(log)
-            self.report({'INFO'}, "Complete report available on '%s' text datablock" % text.name)
+            self.report({'INFO'}, tip_("Complete report available on '%s' text datablock") % text.name)
         return {'FINISHED'}
 
 

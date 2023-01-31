@@ -1,24 +1,7 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- *
- * - Blender Foundation, 2003-2009
- * - Peter Schlaile <peter [at] schlaile [dot] de> 2005/2006
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved.
+ *           2003-2009 Blender Foundation.
+ *           2005-2006 Peter Schlaile <peter [at] schlaile [dot] de> */
 
 /** \file
  * \ingroup bke
@@ -50,11 +33,13 @@
 
 #include "DEG_depsgraph_query.h"
 
+#include "IMB_colormanagement.h"
 #include "IMB_imbuf.h"
 #include "IMB_imbuf_types.h"
 #include "IMB_metadata.h"
 
 #include "SEQ_add.h"
+#include "SEQ_edit.h"
 #include "SEQ_effects.h"
 #include "SEQ_relations.h"
 #include "SEQ_render.h"
@@ -66,18 +51,10 @@
 
 #include "multiview.h"
 #include "proxy.h"
+#include "sequencer.h"
+#include "strip_time.h"
 #include "utils.h"
 
-/**
- * Initialize common SeqLoadData members
- *
- * \param load_data: SeqLoadData to be initialized
- * \param name: strip name (can be NULL)
- * \param path: path to file that is used as strip input (can be NULL)
- * \param start_frame: timeline frame where strip will be created
- * \param channel: timeline channel where strip will be created
- *
- */
 void SEQ_add_load_data_init(SeqLoadData *load_data,
                             const char *name,
                             const char *path,
@@ -95,110 +72,92 @@ void SEQ_add_load_data_init(SeqLoadData *load_data,
   load_data->channel = channel;
 }
 
-static void seq_add_generic_update(Scene *scene, ListBase *seqbase, Sequence *seq)
+static void seq_add_generic_update(Scene *scene, Sequence *seq)
 {
-  SEQ_sequence_base_unique_name_recursive(seqbase, seq);
-  SEQ_time_update_sequence_bounds(scene, seq);
-  SEQ_sort(scene);
+  SEQ_sequence_base_unique_name_recursive(scene, &scene->ed->seqbase, seq);
   SEQ_relations_invalidate_cache_composite(scene, seq);
+  SEQ_sequence_lookup_tag(scene, SEQ_LOOKUP_TAG_INVALID);
+  SEQ_time_update_meta_strip_range(scene, seq_sequence_lookup_meta_by_seq(scene, seq));
 }
 
-static void seq_add_set_name(Sequence *seq, SeqLoadData *load_data)
+static void seq_add_set_name(Scene *scene, Sequence *seq, SeqLoadData *load_data)
 {
   if (load_data->name[0] != '\0') {
-    BLI_strncpy(seq->name + 2, load_data->name, sizeof(seq->name) - 2);
+    SEQ_edit_sequence_name_set(scene, seq, load_data->name);
   }
   else {
     if (seq->type == SEQ_TYPE_SCENE) {
-      BLI_strncpy(seq->name + 2, load_data->scene->id.name + 2, sizeof(seq->name) - 2);
+      SEQ_edit_sequence_name_set(scene, seq, load_data->scene->id.name + 2);
     }
     else if (seq->type == SEQ_TYPE_MOVIECLIP) {
-      BLI_strncpy(seq->name + 2, load_data->clip->id.name + 2, sizeof(seq->name) - 2);
+      SEQ_edit_sequence_name_set(scene, seq, load_data->clip->id.name + 2);
     }
     else if (seq->type == SEQ_TYPE_MASK) {
-      BLI_strncpy(seq->name + 2, load_data->mask->id.name + 2, sizeof(seq->name) - 2);
+      SEQ_edit_sequence_name_set(scene, seq, load_data->mask->id.name + 2);
     }
     else if ((seq->type & SEQ_TYPE_EFFECT) != 0) {
-      BLI_strncpy(seq->name + 2, SEQ_sequence_give_name(seq), sizeof(seq->name) - 2);
+      SEQ_edit_sequence_name_set(scene, seq, SEQ_sequence_give_name(seq));
     }
     else { /* Image, sound and movie. */
-      BLI_strncpy_utf8(seq->name + 2, load_data->name, sizeof(seq->name) - 2);
-      BLI_utf8_invalid_strip(seq->name + 2, strlen(seq->name + 2));
+      SEQ_edit_sequence_name_set(scene, seq, load_data->name);
     }
   }
 }
 
-/**
- * Add scene strip.
- *
- * \param scene: Scene where strips will be added
- * \param seqbase: ListBase where strips will be added
- * \param load_data: SeqLoadData with information necessary to create strip
- * \return created strip
- */
+static void seq_add_set_view_transform(Scene *scene, Sequence *seq, SeqLoadData *load_data)
+{
+  const char *strip_colorspace = seq->strip->colorspace_settings.name;
+
+  if (load_data->flags & SEQ_LOAD_SET_VIEW_TRANSFORM) {
+    const char *role_colorspace_byte;
+    role_colorspace_byte = IMB_colormanagement_role_colorspace_name_get(COLOR_ROLE_DEFAULT_BYTE);
+
+    if (STREQ(strip_colorspace, role_colorspace_byte)) {
+      struct ColorManagedDisplay *display = IMB_colormanagement_display_get_named(
+          scene->display_settings.display_device);
+      const char *default_view_transform =
+          IMB_colormanagement_display_get_default_view_transform_name(display);
+      STRNCPY(scene->view_settings.view_transform, default_view_transform);
+    }
+  }
+}
+
 Sequence *SEQ_add_scene_strip(Scene *scene, ListBase *seqbase, struct SeqLoadData *load_data)
 {
   Sequence *seq = SEQ_sequence_alloc(
       seqbase, load_data->start_frame, load_data->channel, SEQ_TYPE_SCENE);
-  seq->blend_mode = SEQ_TYPE_CROSS;
   seq->scene = load_data->scene;
   seq->len = load_data->scene->r.efra - load_data->scene->r.sfra + 1;
   id_us_ensure_real((ID *)load_data->scene);
-  seq_add_set_name(seq, load_data);
-  seq_add_generic_update(scene, seqbase, seq);
+  seq_add_set_name(scene, seq, load_data);
+  seq_add_generic_update(scene, seq);
   return seq;
 }
 
-/**
- * Add movieclip strip.
- *
- * \param scene: Scene where strips will be added
- * \param seqbase: ListBase where strips will be added
- * \param load_data: SeqLoadData with information necessary to create strip
- * \return created strip
- */
 Sequence *SEQ_add_movieclip_strip(Scene *scene, ListBase *seqbase, struct SeqLoadData *load_data)
 {
   Sequence *seq = SEQ_sequence_alloc(
       seqbase, load_data->start_frame, load_data->channel, SEQ_TYPE_MOVIECLIP);
-  seq->blend_mode = SEQ_TYPE_CROSS;
   seq->clip = load_data->clip;
   seq->len = BKE_movieclip_get_duration(load_data->clip);
   id_us_ensure_real((ID *)load_data->clip);
-  seq_add_set_name(seq, load_data);
-  seq_add_generic_update(scene, seqbase, seq);
+  seq_add_set_name(scene, seq, load_data);
+  seq_add_generic_update(scene, seq);
   return seq;
 }
 
-/**
- * Add mask strip.
- *
- * \param scene: Scene where strips will be added
- * \param seqbase: ListBase where strips will be added
- * \param load_data: SeqLoadData with information necessary to create strip
- * \return created strip
- */
 Sequence *SEQ_add_mask_strip(Scene *scene, ListBase *seqbase, struct SeqLoadData *load_data)
 {
   Sequence *seq = SEQ_sequence_alloc(
       seqbase, load_data->start_frame, load_data->channel, SEQ_TYPE_MASK);
-  seq->blend_mode = SEQ_TYPE_CROSS;
   seq->mask = load_data->mask;
   seq->len = BKE_mask_get_duration(load_data->mask);
   id_us_ensure_real((ID *)load_data->mask);
-  seq_add_set_name(seq, load_data);
-  seq_add_generic_update(scene, seqbase, seq);
+  seq_add_set_name(scene, seq, load_data);
+  seq_add_generic_update(scene, seq);
   return seq;
 }
 
-/**
- * Add effect strip.
- *
- * \param scene: Scene where strips will be added
- * \param seqbase: ListBase where strips will be added
- * \param load_data: SeqLoadData with information necessary to create strip
- * \return created strip
- */
 Sequence *SEQ_add_effect_strip(Scene *scene, ListBase *seqbase, struct SeqLoadData *load_data)
 {
   Sequence *seq = SEQ_sequence_alloc(
@@ -211,67 +170,41 @@ Sequence *SEQ_add_effect_strip(Scene *scene, ListBase *seqbase, struct SeqLoadDa
   seq->seq2 = load_data->effect.seq2;
   seq->seq3 = load_data->effect.seq3;
 
-  if (seq->type == SEQ_TYPE_COLOR) {
-    seq->blend_mode = SEQ_TYPE_CROSS;
-  }
-  else if (seq->type == SEQ_TYPE_ADJUSTMENT) {
-    seq->blend_mode = SEQ_TYPE_CROSS;
-  }
-  else if (seq->type == SEQ_TYPE_TEXT) {
-    seq->blend_mode = SEQ_TYPE_ALPHAOVER;
-  }
-  else if (SEQ_effect_get_num_inputs(seq->type) == 1) {
+  if (SEQ_effect_get_num_inputs(seq->type) == 1) {
     seq->blend_mode = seq->seq1->blend_mode;
   }
 
   if (!load_data->effect.seq1) {
     seq->len = 1; /* Effect is generator, set non zero length. */
-    SEQ_transform_set_right_handle_frame(seq, load_data->effect.end_frame);
+    SEQ_time_right_handle_frame_set(scene, seq, load_data->effect.end_frame);
   }
 
-  SEQ_relations_update_changed_seq_and_deps(scene, seq, 1, 1); /* Runs SEQ_time_update_sequence. */
-  seq_add_set_name(seq, load_data);
-  seq_add_generic_update(scene, seqbase, seq);
+  seq_add_set_name(scene, seq, load_data);
+  seq_add_generic_update(scene, seq);
+  seq_time_effect_range_set(scene, seq);
 
   return seq;
 }
 
-/**
- * Set directory used by image strip.
- *
- * \param seq: image strip to be changed
- * \param path: directory path
- */
 void SEQ_add_image_set_directory(Sequence *seq, char *path)
 {
   BLI_strncpy(seq->strip->dir, path, sizeof(seq->strip->dir));
 }
 
-/**
- * Set directory used by image strip.
- *
- * \param seq: image strip to be changed
- * \param strip_frame: frame index of strip to be changed
- * \param filename: image filename (only filename, not complete path)
- */
-void SEQ_add_image_load_file(Sequence *seq, size_t strip_frame, char *filename)
+void SEQ_add_image_load_file(Scene *scene, Sequence *seq, size_t strip_frame, char *filename)
 {
-  StripElem *se = SEQ_render_give_stripelem(seq, seq->start + strip_frame);
+  StripElem *se = SEQ_render_give_stripelem(
+      scene, seq, SEQ_time_start_frame_get(seq) + strip_frame);
   BLI_strncpy(se->name, filename, sizeof(se->name));
 }
 
-/**
- * Set image strip alpha mode
- *
- * \param seq: image strip to be changed
- */
 void SEQ_add_image_init_alpha_mode(Sequence *seq)
 {
   if (seq->strip && seq->strip->stripdata) {
     char name[FILE_MAX];
     ImBuf *ibuf;
 
-    BLI_join_dirfile(name, sizeof(name), seq->strip->dir, seq->strip->stripdata->name);
+    BLI_path_join(name, sizeof(name), seq->strip->dir, seq->strip->stripdata->name);
     BLI_path_abs(name, BKE_main_blendfile_path_from_global());
 
     /* Initialize input color space. */
@@ -294,21 +227,10 @@ void SEQ_add_image_init_alpha_mode(Sequence *seq)
   }
 }
 
-/**
- * Add image strip.
- * NOTE: Use SEQ_add_image_set_directory() and SEQ_add_image_load_file() to load image sequences
- *
- * \param main: Main reference
- * \param scene: Scene where strips will be added
- * \param seqbase: ListBase where strips will be added
- * \param load_data: SeqLoadData with information necessary to create strip
- * \return created strip
- */
 Sequence *SEQ_add_image_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqLoadData *load_data)
 {
   Sequence *seq = SEQ_sequence_alloc(
       seqbase, load_data->start_frame, load_data->channel, SEQ_TYPE_IMAGE);
-  seq->blend_mode = SEQ_TYPE_CROSS; /* so alpha adjustment fade to the strip below */
   seq->len = load_data->image.len;
   Strip *strip = seq->strip;
   strip->stripdata = MEM_callocN(load_data->image.len * sizeof(StripElem), "stripelem");
@@ -344,23 +266,28 @@ Sequence *SEQ_add_image_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqL
 
   /* Set Last active directory. */
   BLI_strncpy(scene->ed->act_imagedir, seq->strip->dir, sizeof(scene->ed->act_imagedir));
-  seq_add_set_name(seq, load_data);
-  seq_add_generic_update(scene, seqbase, seq);
+  seq_add_set_view_transform(scene, seq, load_data);
+  seq_add_set_name(scene, seq, load_data);
+  seq_add_generic_update(scene, seq);
 
   return seq;
 }
 
 #ifdef WITH_AUDASPACE
-/**
- * Add sound strip.
- * NOTE: Use SEQ_add_image_set_directory() and SEQ_add_image_load_file() to load image sequences
- *
- * \param main: Main reference
- * \param scene: Scene where strips will be added
- * \param seqbase: ListBase where strips will be added
- * \param load_data: SeqLoadData with information necessary to create strip
- * \return created strip
- */
+
+static void seq_add_sound_av_sync(Main *bmain, Scene *scene, Sequence *seq, SeqLoadData *load_data)
+{
+  SoundStreamInfo sound_stream;
+  if (!BKE_sound_stream_info_get(bmain, load_data->path, 0, &sound_stream)) {
+    return;
+  }
+
+  const double av_stream_offset = sound_stream.start - load_data->r_video_stream_start;
+  const int frame_offset = av_stream_offset * FPS;
+  /* Set sub-frame offset. */
+  seq->sound->offset_time = ((double)frame_offset / FPS) - av_stream_offset;
+  SEQ_transform_translate_sequence(scene, seq, frame_offset);
+}
 
 Sequence *SEQ_add_sound_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqLoadData *load_data)
 {
@@ -383,13 +310,16 @@ Sequence *SEQ_add_sound_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqL
   seq->sound = sound;
   seq->scene_sound = NULL;
 
-  /* We add a very small negative offset here, because
-   * ceil(132.0) == 133.0, not nice with videos, see T47135. */
-  seq->len = MAX2(1, (int)ceil((double)info.length * FPS - 1e-4));
+  /* We round the frame duration as the audio sample lengths usually does not
+   * line up with the video frames. Therefore we round this number to the
+   * nearest frame as the audio track usually overshoots or undershoots the
+   * end frame of the video by a little bit.
+   * See T47135 for under shoot example. */
+  seq->len = MAX2(1, round((info.length - sound->offset_time) * FPS));
 
   Strip *strip = seq->strip;
   /* We only need 1 element to store the filename. */
-  StripElem *se = strip->stripdata = se = MEM_callocN(sizeof(StripElem), "stripelem");
+  StripElem *se = strip->stripdata = MEM_callocN(sizeof(StripElem), "stripelem");
   BLI_split_dirfile(load_data->path, strip->dir, se->name, sizeof(strip->dir), sizeof(se->name));
 
   if (seq != NULL && seq->sound != NULL) {
@@ -404,10 +334,12 @@ Sequence *SEQ_add_sound_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqL
     }
   }
 
+  seq_add_sound_av_sync(bmain, scene, seq, load_data);
+
   /* Set Last active directory. */
   BLI_strncpy(scene->ed->act_sounddir, strip->dir, FILE_MAXDIR);
-  seq_add_set_name(seq, load_data);
-  seq_add_generic_update(scene, seqbase, seq);
+  seq_add_set_name(scene, seq, load_data);
+  seq_add_generic_update(scene, seq);
 
   return seq;
 }
@@ -422,15 +354,6 @@ Sequence *SEQ_add_sound_strip(Main *UNUSED(bmain),
 }
 #endif  // WITH_AUDASPACE
 
-/**
- * Add meta strip.
- *
- * \param scene: Scene where strips will be added
- * \param seqbase: ListBase where strips will be added
- * \param load_data: SeqLoadData with information necessary to create strip
- * \return created strip
- */
-
 Sequence *SEQ_add_meta_strip(Scene *scene, ListBase *seqbase, SeqLoadData *load_data)
 {
   /* Allocate sequence. */
@@ -438,25 +361,15 @@ Sequence *SEQ_add_meta_strip(Scene *scene, ListBase *seqbase, SeqLoadData *load_
       seqbase, load_data->start_frame, load_data->channel, SEQ_TYPE_META);
 
   /* Set name. */
-  seq_add_set_name(seqm, load_data);
+  seq_add_set_name(scene, seqm, load_data);
 
   /* Set frames start and length. */
   seqm->start = load_data->start_frame;
   seqm->len = 1;
-  SEQ_time_update_sequence(scene, seqm);
 
   return seqm;
 }
 
-/**
- * Add movie strip.
- *
- * \param main: Main reference
- * \param scene: Scene where strips will be added
- * \param seqbase: ListBase where strips will be added
- * \param load_data: SeqLoadData with information necessary to create strip
- * \return created strip
- */
 Sequence *SEQ_add_movie_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqLoadData *load_data)
 {
   char path[sizeof(load_data->path)];
@@ -503,6 +416,26 @@ Sequence *SEQ_add_movie_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqL
     return NULL;
   }
 
+  float video_fps = 0.0f;
+  load_data->r_video_stream_start = 0.0;
+
+  if (anim_arr[0] != NULL) {
+    short fps_denom;
+    float fps_num;
+
+    IMB_anim_get_fps(anim_arr[0], &fps_denom, &fps_num, true);
+
+    video_fps = fps_denom / fps_num;
+
+    /* Adjust scene's frame rate settings to match. */
+    if (load_data->flags & SEQ_LOAD_MOVIE_SYNC_FPS) {
+      scene->r.frs_sec = fps_denom;
+      scene->r.frs_sec_base = fps_num;
+    }
+
+    load_data->r_video_stream_start = IMD_anim_get_offset(anim_arr[0]);
+  }
+
   Sequence *seq = SEQ_sequence_alloc(
       seqbase, load_data->start_frame, load_data->channel, SEQ_TYPE_MOVIE);
 
@@ -526,27 +459,29 @@ Sequence *SEQ_add_movie_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqL
     }
   }
 
-  seq->blend_mode = SEQ_TYPE_CROSS; /* so alpha adjustment fade to the strip below */
-
   if (anim_arr[0] != NULL) {
-    seq->anim_preseek = IMB_anim_get_preseek(anim_arr[0]);
     seq->len = IMB_anim_get_duration(anim_arr[0], IMB_TC_RECORD_RUN);
 
     IMB_anim_load_metadata(anim_arr[0]);
-
-    /* Adjust scene's frame rate settings to match. */
-    if (load_data->flags & SEQ_LOAD_MOVIE_SYNC_FPS) {
-      IMB_anim_get_fps(anim_arr[0], &scene->r.frs_sec, &scene->r.frs_sec_base, true);
-    }
 
     /* Set initial scale based on load_data->fit_method. */
     orig_width = IMB_anim_get_image_width(anim_arr[0]);
     orig_height = IMB_anim_get_image_height(anim_arr[0]);
     SEQ_set_scale_to_fit(
         seq, orig_width, orig_height, scene->r.xsch, scene->r.ysch, load_data->fit_method);
+
+    short frs_sec;
+    float frs_sec_base;
+    if (IMB_anim_get_fps(anim_arr[0], &frs_sec, &frs_sec_base, true)) {
+      seq->media_playback_rate = (float)frs_sec / frs_sec_base;
+    }
   }
 
   seq->len = MAX2(1, seq->len);
+  if (load_data->adjust_playback_rate) {
+    seq->flag |= SEQ_AUTO_PLAYBACK_RATE;
+  }
+
   BLI_strncpy(seq->strip->colorspace_settings.name,
               colorspace,
               sizeof(seq->strip->colorspace_settings.name));
@@ -557,21 +492,22 @@ Sequence *SEQ_add_movie_strip(Main *bmain, Scene *scene, ListBase *seqbase, SeqL
   strip->stripdata = se = MEM_callocN(sizeof(StripElem), "stripelem");
   strip->stripdata->orig_width = orig_width;
   strip->stripdata->orig_height = orig_height;
+  strip->stripdata->orig_fps = video_fps;
   BLI_split_dirfile(load_data->path, strip->dir, se->name, sizeof(strip->dir), sizeof(se->name));
 
-  seq_add_set_name(seq, load_data);
-  seq_add_generic_update(scene, seqbase, seq);
+  seq_add_set_view_transform(scene, seq, load_data);
+  seq_add_set_name(scene, seq, load_data);
+  seq_add_generic_update(scene, seq);
 
   MEM_freeN(anim_arr);
   return seq;
 }
 
-/* note: caller should run SEQ_time_update_sequence(scene, seq) after */
 void SEQ_add_reload_new_file(Main *bmain, Scene *scene, Sequence *seq, const bool lock_range)
 {
   char path[FILE_MAX];
   int prev_startdisp = 0, prev_enddisp = 0;
-  /* note: don't rename the strip, will break animation curves */
+  /* NOTE: don't rename the strip, will break animation curves. */
 
   if (ELEM(seq->type,
            SEQ_TYPE_MOVIE,
@@ -586,9 +522,8 @@ void SEQ_add_reload_new_file(Main *bmain, Scene *scene, Sequence *seq, const boo
 
   if (lock_range) {
     /* keep so we don't have to move the actual start and end points (only the data) */
-    SEQ_time_update_sequence_bounds(scene, seq);
-    prev_startdisp = seq->startdisp;
-    prev_enddisp = seq->enddisp;
+    prev_startdisp = SEQ_time_left_handle_frame_get(scene, seq);
+    prev_enddisp = SEQ_time_right_handle_frame_get(scene, seq);
   }
 
   switch (seq->type) {
@@ -610,7 +545,7 @@ void SEQ_add_reload_new_file(Main *bmain, Scene *scene, Sequence *seq, const boo
       const bool is_multiview = (seq->flag & SEQ_USE_VIEWS) != 0 &&
                                 (scene->r.scemode & R_MULTIVIEW) != 0;
 
-      BLI_join_dirfile(path, sizeof(path), seq->strip->dir, seq->strip->stripdata->name);
+      BLI_path_join(path, sizeof(path), seq->strip->dir, seq->strip->stripdata->name);
       BLI_path_abs(path, BKE_main_blendfile_path_from_global());
 
       SEQ_relations_sequence_free_anim(seq);
@@ -669,8 +604,6 @@ void SEQ_add_reload_new_file(Main *bmain, Scene *scene, Sequence *seq, const boo
 
       seq->len = IMB_anim_get_duration(
           sanim->anim, seq->strip->proxy ? seq->strip->proxy->tc : IMB_TC_RECORD_RUN);
-
-      seq->anim_preseek = IMB_anim_get_preseek(sanim->anim);
 
       seq->len -= seq->anim_startofs;
       seq->len -= seq->anim_endofs;
@@ -733,12 +666,11 @@ void SEQ_add_reload_new_file(Main *bmain, Scene *scene, Sequence *seq, const boo
   free_proxy_seq(seq);
 
   if (lock_range) {
-    SEQ_transform_set_left_handle_frame(seq, prev_startdisp);
-    SEQ_transform_set_right_handle_frame(seq, prev_enddisp);
-    SEQ_transform_fix_single_image_seq_offsets(seq);
+    SEQ_time_left_handle_frame_set(scene, seq, prev_startdisp);
+    SEQ_time_right_handle_frame_set(scene, seq, prev_enddisp);
   }
 
-  SEQ_time_update_sequence(scene, seq);
+  SEQ_relations_invalidate_cache_raw(scene, seq);
 }
 
 void SEQ_add_movie_reload_if_needed(struct Main *bmain,

@@ -1,22 +1,5 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# The Original Code is Copyright (C) 2006, Blender Foundation
-# All rights reserved.
-# ***** END GPL LICENSE BLOCK *****
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright 2006 Blender Foundation. All rights reserved.
 
 macro(list_insert_after
   list_id item_check item_add
@@ -72,6 +55,25 @@ macro(path_ensure_trailing_slash
   string(REGEX REPLACE "[${_path_sep}]+$" "" ${path_new} ${path_input})
   set(${path_new} "${${path_new}}${_path_sep}")
   unset(_path_sep)
+endmacro()
+
+# Our own version of `cmake_path(IS_PREFIX ..)`.
+# This can be removed when 3.20 or greater is the minimum supported version.
+macro(path_is_prefix
+  path_prefix path result_var
+  )
+  # Remove when CMAKE version is bumped to "3.20" or greater.
+  # `cmake_path(IS_PREFIX ${path_prefix} ${path} NORMALIZE result_var)`
+  # Get the normalized paths (needed to remove `..`).
+  get_filename_component(_abs_prefix "${${path_prefix}}" ABSOLUTE)
+  get_filename_component(_abs_suffix "${${path}}" ABSOLUTE)
+  string(LENGTH "${_abs_prefix}" _len)
+  string(SUBSTRING "${_abs_suffix}" 0 "${_len}" _substr)
+  string(COMPARE EQUAL "${_abs_prefix}" "${_substr}" "${result_var}")
+  unset(_abs_prefix)
+  unset(_abs_suffix)
+  unset(_len)
+  unset(_substr)
 endmacro()
 
 # foo_bar.spam --> foo_barMySuffix.spam
@@ -151,12 +153,11 @@ endfunction()
 
 # Nicer makefiles with -I/1/foo/ instead of -I/1/2/3/../../foo/
 # use it instead of include_directories()
-function(blender_include_dirs
-  includes
-  )
+function(absolute_include_dirs
+  includes_absolute)
 
   set(_ALL_INCS "")
-  foreach(_INC ${ARGV})
+  foreach(_INC ${ARGN})
     get_filename_component(_ABS_INC ${_INC} ABSOLUTE)
     list(APPEND _ALL_INCS ${_ABS_INC})
     # for checking for invalid includes, disable for regular use
@@ -164,22 +165,24 @@ function(blender_include_dirs
     #   message(FATAL_ERROR "Include not found: ${_ABS_INC}/")
     # endif()
   endforeach()
-  include_directories(${_ALL_INCS})
+
+  set(${includes_absolute} ${_ALL_INCS} PARENT_SCOPE)
 endfunction()
 
-function(blender_include_dirs_sys
-  includes
+function(blender_target_include_dirs
+  name
   )
 
-  set(_ALL_INCS "")
-  foreach(_INC ${ARGV})
-    get_filename_component(_ABS_INC ${_INC} ABSOLUTE)
-    list(APPEND _ALL_INCS ${_ABS_INC})
-    # if(NOT EXISTS "${_ABS_INC}/")
-    #   message(FATAL_ERROR "Include not found: ${_ABS_INC}/")
-    # endif()
-  endforeach()
-  include_directories(SYSTEM ${_ALL_INCS})
+  absolute_include_dirs(_ALL_INCS ${ARGN})
+  target_include_directories(${name} PRIVATE ${_ALL_INCS})
+endfunction()
+
+function(blender_target_include_dirs_sys
+  name
+  )
+
+  absolute_include_dirs(_ALL_INCS ${ARGN})
+  target_include_directories(${name} SYSTEM PRIVATE ${_ALL_INCS})
 endfunction()
 
 # Set include paths for header files included with "*.h" syntax.
@@ -208,7 +211,7 @@ function(blender_source_group
   )
 
   # if enabled, use the sources directories as filters.
-  if(WINDOWS_USE_VISUAL_STUDIO_SOURCE_FOLDERS)
+  if(IDE_GROUP_SOURCES_IN_FOLDERS)
     foreach(_SRC ${sources})
       # remove ../'s
       get_filename_component(_SRC_DIR ${_SRC} REALPATH)
@@ -240,8 +243,8 @@ function(blender_source_group
     endforeach()
   endif()
 
-  # if enabled, set the FOLDER property for visual studio projects
-  if(WINDOWS_USE_VISUAL_STUDIO_PROJECT_FOLDERS)
+  # if enabled, set the FOLDER property for the projects
+  if(IDE_GROUP_PROJECTS_IN_FOLDERS)
     get_filename_component(FolderDir ${CMAKE_CURRENT_SOURCE_DIR} DIRECTORY)
     string(REPLACE ${CMAKE_SOURCE_DIR} "" FolderDir ${FolderDir})
     set_target_properties(${name} PROPERTIES FOLDER ${FolderDir})
@@ -285,12 +288,10 @@ function(blender_add_lib__impl
 
   # message(STATUS "Configuring library ${name}")
 
-  # include_directories(${includes})
-  # include_directories(SYSTEM ${includes_sys})
-  blender_include_dirs("${includes}")
-  blender_include_dirs_sys("${includes_sys}")
-
   add_library(${name} ${sources})
+
+  blender_target_include_dirs(${name} ${includes})
+  blender_target_include_dirs_sys(${name} ${includes_sys})
 
   # On Windows certain libraries have two sets of binaries: one for debug builds and one for
   # release builds. The root of this requirement goes into ABI, I believe, but that's outside
@@ -399,7 +400,7 @@ function(blender_add_test_suite)
   cmake_parse_arguments(ARGS "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   # Figure out the release dir, as some tests need files from there.
-  GET_BLENDER_TEST_INSTALL_DIR(TEST_INSTALL_DIR)
+  get_blender_test_install_dir(TEST_INSTALL_DIR)
   if(APPLE)
     set(_test_release_dir ${TEST_INSTALL_DIR}/Blender.app/Contents/Resources/${BLENDER_VERSION})
   else()
@@ -442,20 +443,20 @@ function(blender_add_test_lib
 
   # This duplicates logic that's also in GTestTesting.cmake, macro BLENDER_SRC_GTEST_EX.
   # TODO(Sybren): deduplicate after the general approach in D7649 has been approved.
-  LIST(APPEND includes
+  list(APPEND includes
     ${CMAKE_SOURCE_DIR}/tests/gtests
   )
-  LIST(APPEND includes_sys
+  list(APPEND includes_sys
     ${GLOG_INCLUDE_DIRS}
     ${GFLAGS_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/extern/gtest/include
     ${CMAKE_SOURCE_DIR}/extern/gmock/include
   )
-  add_definitions(-DBLENDER_GFLAGS_NAMESPACE=${GFLAGS_NAMESPACE})
-  add_definitions(${GFLAGS_DEFINES})
-  add_definitions(${GLOG_DEFINES})
 
   blender_add_lib__impl(${name} "${sources}" "${includes}" "${includes_sys}" "${library_deps}")
+
+  target_compile_definitions(${name} PRIVATE ${GFLAGS_DEFINES})
+  target_compile_definitions(${name} PRIVATE ${GLOG_DEFINES})
 
   set_property(GLOBAL APPEND PROPERTY BLENDER_TEST_LIBS ${name})
 
@@ -486,16 +487,15 @@ function(blender_add_test_executable
   ## Otherwise external projects will produce warnings that we cannot fix.
   remove_strict_flags()
 
-  include_directories(${includes})
-  include_directories(${includes_sys})
-  setup_libdirs()
-
-  BLENDER_SRC_GTEST_EX(
+  blender_src_gtest_ex(
     NAME ${name}
     SRC "${sources}"
     EXTRA_LIBS "${library_deps}"
     SKIP_ADD_TEST
   )
+
+  blender_target_include_dirs(${name}_test ${includes})
+  blender_target_include_dirs_sys(${name}_test ${includes_sys})
 
   blender_add_test_suite(
     TARGET ${name}_test
@@ -525,97 +525,17 @@ function(setup_heavy_lib_pool)
   endif()
 endfunction()
 
-function(SETUP_LIBDIRS)
-
-  # NOTE: For all new libraries, use absolute library paths.
-  # This should eventually be phased out.
-  # APPLE plaform uses full paths for linking libraries, and avoids link_directories.
-  if(NOT MSVC AND NOT APPLE)
-    link_directories(${JPEG_LIBPATH} ${PNG_LIBPATH} ${ZLIB_LIBPATH} ${FREETYPE_LIBPATH})
-
-    if(WITH_PYTHON)  #  AND NOT WITH_PYTHON_MODULE  # WIN32 needs
-      link_directories(${PYTHON_LIBPATH})
-    endif()
-    if(WITH_SDL AND NOT WITH_SDL_DYNLOAD)
-      link_directories(${SDL_LIBPATH})
-    endif()
-    if(WITH_CODEC_FFMPEG)
-      link_directories(${FFMPEG_LIBPATH})
-    endif()
-    if(WITH_IMAGE_OPENEXR)
-      link_directories(${OPENEXR_LIBPATH})
-    endif()
-    if(WITH_IMAGE_TIFF)
-      link_directories(${TIFF_LIBPATH})
-    endif()
-    if(WITH_BOOST)
-      link_directories(${BOOST_LIBPATH})
-    endif()
-    if(WITH_OPENIMAGEIO)
-      link_directories(${OPENIMAGEIO_LIBPATH})
-    endif()
-    if(WITH_OPENIMAGEDENOISE)
-      link_directories(${OPENIMAGEDENOISE_LIBPATH})
-    endif()
-    if(WITH_OPENCOLORIO)
-      link_directories(${OPENCOLORIO_LIBPATH})
-    endif()
-    if(WITH_OPENVDB)
-      link_directories(${OPENVDB_LIBPATH})
-    endif()
-    if(WITH_OPENAL)
-      link_directories(${OPENAL_LIBPATH})
-    endif()
-    if(WITH_JACK AND NOT WITH_JACK_DYNLOAD)
-      link_directories(${JACK_LIBPATH})
-    endif()
-    if(WITH_PULSEAUDIO AND NOT WITH_PULSEAUDIO_DYNLOAD)
-      link_directories(${LIBPULSE_LIBPATH})
-    endif()
-    if(WITH_CODEC_SNDFILE)
-      link_directories(${LIBSNDFILE_LIBPATH})
-    endif()
-    if(WITH_FFTW3)
-      link_directories(${FFTW3_LIBPATH})
-    endif()
-    if(WITH_OPENCOLLADA)
-      link_directories(${OPENCOLLADA_LIBPATH})
-      # # Never set
-      # link_directories(${PCRE_LIBPATH})
-      # link_directories(${EXPAT_LIBPATH})
-    endif()
-    if(WITH_LLVM)
-      link_directories(${LLVM_LIBPATH})
-    endif()
-
-    if(WITH_ALEMBIC)
-      link_directories(${ALEMBIC_LIBPATH})
-    endif()
-
-    if(WITH_GMP)
-      link_directories(${GMP_LIBPATH})
-    endif()
-
-    if(WITH_GHOST_WAYLAND)
-      link_directories(
-        ${wayland-client_LIBRARY_DIRS}
-        ${wayland-egl_LIBRARY_DIRS}
-        ${xkbcommon_LIBRARY_DIRS}
-        ${wayland-cursor_LIBRARY_DIRS})
-    endif()
-
-    if(WIN32 AND NOT UNIX)
-      link_directories(${PTHREADS_LIBPATH})
-    endif()
-  endif()
-endfunction()
-
 # Platform specific linker flags for targets.
 function(setup_platform_linker_flags
   target)
   set_property(TARGET ${target} APPEND_STRING PROPERTY LINK_FLAGS " ${PLATFORM_LINKFLAGS}")
   set_property(TARGET ${target} APPEND_STRING PROPERTY LINK_FLAGS_RELEASE " ${PLATFORM_LINKFLAGS_RELEASE}")
   set_property(TARGET ${target} APPEND_STRING PROPERTY LINK_FLAGS_DEBUG " ${PLATFORM_LINKFLAGS_DEBUG}")
+
+  get_target_property(target_type ${target} TYPE)
+  if (target_type STREQUAL "EXECUTABLE")
+    set_property(TARGET ${target} APPEND_STRING PROPERTY LINK_FLAGS " ${PLATFORM_LINKFLAGS_EXECUTABLE}")
+  endif()
 endfunction()
 
 # Platform specific libraries for targets.
@@ -702,7 +622,7 @@ macro(message_first_run)
 endmacro()
 
 # when we have warnings as errors applied globally this
-# needs to be removed for some external libs which we dont maintain.
+# needs to be removed for some external libs which we don't maintain.
 
 # utility macro
 macro(remove_cc_flag
@@ -802,7 +722,7 @@ macro(remove_extra_strict_flags)
 endmacro()
 
 # note, we can only append flags on a single file so we need to negate the options.
-# at the moment we cant shut up ffmpeg deprecations, so use this, but will
+# at the moment we can't shut up ffmpeg deprecations, so use this, but will
 # probably add more removals here.
 macro(remove_strict_c_flags_file
   filenames)
@@ -863,7 +783,7 @@ function(ADD_CHECK_C_COMPILER_FLAG
 
   include(CheckCCompilerFlag)
 
-  CHECK_C_COMPILER_FLAG("${_FLAG}" "${_CACHE_VAR}")
+  check_c_compiler_flag("${_FLAG}" "${_CACHE_VAR}")
   if(${_CACHE_VAR})
     # message(STATUS "Using CFLAG: ${_FLAG}")
     set(${_CFLAGS} "${${_CFLAGS}} ${_FLAG}" PARENT_SCOPE)
@@ -880,7 +800,7 @@ function(ADD_CHECK_CXX_COMPILER_FLAG
 
   include(CheckCXXCompilerFlag)
 
-  CHECK_CXX_COMPILER_FLAG("${_FLAG}" "${_CACHE_VAR}")
+  check_cxx_compiler_flag("${_FLAG}" "${_CACHE_VAR}")
   if(${_CACHE_VAR})
     # message(STATUS "Using CXXFLAG: ${_FLAG}")
     set(${_CXXFLAGS} "${${_CXXFLAGS}} ${_FLAG}" PARENT_SCOPE)
@@ -898,9 +818,11 @@ function(get_blender_version)
   # - BLENDER_VERSION_PATCH
   # - BLENDER_VERSION_CYCLE (alpha, beta, rc, release)
 
-  # So cmake depends on BKE_blender.h, beware of inf-loops!
-  CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/source/blender/blenkernel/BKE_blender_version.h
-                 ${CMAKE_BINARY_DIR}/source/blender/blenkernel/BKE_blender_version.h.done)
+  # So CMAKE depends on `BKE_blender.h`, beware of infinite-loops!
+  configure_file(
+    ${CMAKE_SOURCE_DIR}/source/blender/blenkernel/BKE_blender_version.h
+    ${CMAKE_BINARY_DIR}/source/blender/blenkernel/BKE_blender_version.h.done
+  )
 
   file(STRINGS ${CMAKE_SOURCE_DIR}/source/blender/blenkernel/BKE_blender_version.h _contents REGEX "^#define[ \t]+BLENDER_.*$")
 
@@ -971,14 +893,6 @@ macro(blender_project_hack_post)
   unset(_reset_standard_cflags_rel)
   unset(_reset_standard_cxxflags_rel)
 
-  # ------------------------------------------------------------------
-  # workaround for omission in cmake 2.8.4's GNU.cmake, fixed in 2.8.5
-  if(CMAKE_COMPILER_IS_GNUCC)
-    if(NOT DARWIN)
-      set(CMAKE_INCLUDE_SYSTEM_FLAG_C "-isystem ")
-    endif()
-  endif()
-
 endmacro()
 
 # pair of macros to allow libraries to be specify files to install, but to
@@ -990,7 +904,7 @@ function(delayed_install
   destination)
 
   foreach(f ${files})
-    if(IS_ABSOLUTE ${f})
+    if(IS_ABSOLUTE ${f} OR "${base}" STREQUAL "")
       set_property(GLOBAL APPEND PROPERTY DELAYED_INSTALL_FILES ${f})
     else()
       set_property(GLOBAL APPEND PROPERTY DELAYED_INSTALL_FILES ${base}/${f})
@@ -1100,7 +1014,8 @@ function(data_to_c_simple_icons
   add_custom_command(
     OUTPUT  ${_file_from} ${_file_to}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${_file_to_path}
-    # COMMAND python3 ${CMAKE_SOURCE_DIR}/source/blender/datatoc/datatoc_icon.py ${_path_from_abs} ${_file_from}
+    # COMMAND python3 ${CMAKE_SOURCE_DIR}/source/blender/datatoc/datatoc_icon.py
+    #         ${_path_from_abs} ${_file_from}
     COMMAND "$<TARGET_FILE:datatoc_icon>" ${_path_from_abs} ${_file_from}
     COMMAND "$<TARGET_FILE:datatoc>" ${_file_from} ${_file_to}
     DEPENDS
@@ -1178,23 +1093,27 @@ function(msgfmt_simple
 endfunction()
 
 function(find_python_package
-  package
-  relative_include_dir
+    package
+    relative_include_dir
   )
 
   string(TOUPPER ${package} _upper_package)
 
-  # set but invalid
+  # Set but invalid.
   if((NOT ${PYTHON_${_upper_package}_PATH} STREQUAL "") AND
      (NOT ${PYTHON_${_upper_package}_PATH} MATCHES NOTFOUND))
-#       if(NOT EXISTS "${PYTHON_${_upper_package}_PATH}/${package}")
-#           message(WARNING "PYTHON_${_upper_package}_PATH is invalid, ${package} not found in '${PYTHON_${_upper_package}_PATH}' "
-#                           "WITH_PYTHON_INSTALL_${_upper_package} option will be ignored when installing python")
-#           set(WITH_PYTHON_INSTALL${_upper_package} OFF)
-#       endif()
-  # not set, so initialize
+    # if(NOT EXISTS "${PYTHON_${_upper_package}_PATH}/${package}")
+    #   message(
+    #     WARNING
+    #     "PYTHON_${_upper_package}_PATH is invalid, ${package} not found in "
+    #     "'${PYTHON_${_upper_package}_PATH}' "
+    #     "WITH_PYTHON_INSTALL_${_upper_package} option will be ignored when installing Python"
+    #   )
+    #   set(WITH_PYTHON_INSTALL${_upper_package} OFF)
+    # endif()
+    # Not set, so initialize.
   else()
-    string(REPLACE "." ";" _PY_VER_SPLIT "${PYTHON_VERSION}")
+   string(REPLACE "." ";" _PY_VER_SPLIT "${PYTHON_VERSION}")
     list(GET _PY_VER_SPLIT 0 _PY_VER_MAJOR)
 
     # re-cache
@@ -1291,43 +1210,18 @@ endfunction()
 macro(openmp_delayload
   projectname
   )
-    if(MSVC)
-      if(WITH_OPENMP)
-        if(MSVC_CLANG)
-          set(OPENMP_DLL_NAME "libomp")
-        elseif(MSVC_VERSION EQUAL 1800)
-          set(OPENMP_DLL_NAME "vcomp120")
-        else()
-          set(OPENMP_DLL_NAME "vcomp140")
-        endif()
-        set_property(TARGET ${projectname} APPEND_STRING  PROPERTY LINK_FLAGS_RELEASE " /DELAYLOAD:${OPENMP_DLL_NAME}.dll delayimp.lib")
-        set_property(TARGET ${projectname} APPEND_STRING  PROPERTY LINK_FLAGS_DEBUG " /DELAYLOAD:${OPENMP_DLL_NAME}d.dll delayimp.lib")
-        set_property(TARGET ${projectname} APPEND_STRING  PROPERTY LINK_FLAGS_RELWITHDEBINFO " /DELAYLOAD:${OPENMP_DLL_NAME}.dll delayimp.lib")
-        set_property(TARGET ${projectname} APPEND_STRING  PROPERTY LINK_FLAGS_MINSIZEREL " /DELAYLOAD:${OPENMP_DLL_NAME}.dll delayimp.lib")
-      endif()
-    endif()
-endmacro()
-
-macro(blender_precompile_headers target cpp header)
   if(MSVC)
-    # get the name for the pch output file
-    get_filename_component(pchbase ${cpp} NAME_WE)
-    set(pchfinal "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/${pchbase}.pch")
-
-    # mark the cpp as the one outputting the pch
-    set_property(SOURCE ${cpp} APPEND PROPERTY OBJECT_OUTPUTS "${pchfinal}")
-
-    # get all sources for the target
-    get_target_property(sources ${target} SOURCES)
-
-    # make all sources depend on the pch to enforce the build order
-    foreach(src ${sources})
-      set_property(SOURCE ${src} APPEND PROPERTY OBJECT_DEPENDS "${pchfinal}")
-    endforeach()
-
-    target_sources(${target} PRIVATE ${cpp} ${header})
-    set_target_properties(${target} PROPERTIES COMPILE_FLAGS "/Yu${header} /Fp${pchfinal} /FI${header}")
-    set_source_files_properties(${cpp} PROPERTIES COMPILE_FLAGS "/Yc${header} /Fp${pchfinal}")
+    if(WITH_OPENMP)
+      if(MSVC_CLANG)
+        set(OPENMP_DLL_NAME "libomp")
+      else()
+        set(OPENMP_DLL_NAME "vcomp140")
+      endif()
+      set_property(TARGET ${projectname} APPEND_STRING  PROPERTY LINK_FLAGS_RELEASE " /DELAYLOAD:${OPENMP_DLL_NAME}.dll delayimp.lib")
+      set_property(TARGET ${projectname} APPEND_STRING  PROPERTY LINK_FLAGS_DEBUG " /DELAYLOAD:${OPENMP_DLL_NAME}d.dll delayimp.lib")
+      set_property(TARGET ${projectname} APPEND_STRING  PROPERTY LINK_FLAGS_RELWITHDEBINFO " /DELAYLOAD:${OPENMP_DLL_NAME}.dll delayimp.lib")
+      set_property(TARGET ${projectname} APPEND_STRING  PROPERTY LINK_FLAGS_MINSIZEREL " /DELAYLOAD:${OPENMP_DLL_NAME}.dll delayimp.lib")
+    endif()
   endif()
 endmacro()
 
@@ -1335,23 +1229,31 @@ macro(set_and_warn_dependency
   _dependency _setting _val)
   # when $_dependency is disabled, forces $_setting = $_val
   if(NOT ${${_dependency}} AND ${${_setting}})
-    message(STATUS "'${_dependency}' is disabled: forcing 'set(${_setting} ${_val})'")
+    if(WITH_STRICT_BUILD_OPTIONS)
+      message(SEND_ERROR "${_dependency} disabled but required by ${_setting}")
+    else()
+      message(STATUS "${_dependency} is disabled, setting ${_setting}=${_val}")
+    endif()
     set(${_setting} ${_val})
+  endif()
+endmacro()
+
+macro(set_and_warn_library_found
+  _library_name _library_found _setting)
+  if(((NOT ${_library_found}) OR (NOT ${${_library_found}})) AND ${${_setting}})
+    if(WITH_STRICT_BUILD_OPTIONS)
+      message(SEND_ERROR "${_library_name} required but not found")
+    else()
+      message(STATUS "${_library_name} not found, disabling ${_setting}")
+    endif()
+    set(${_setting} OFF)
   endif()
 endmacro()
 
 macro(without_system_libs_begin)
   set(CMAKE_IGNORE_PATH "${CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES};${CMAKE_SYSTEM_INCLUDE_PATH};${CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES};${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES}")
-  if(APPLE)
-    # Avoid searching for headers in frameworks (like Mono), and libraries in LIBDIR.
-    set(CMAKE_FIND_FRAMEWORK NEVER)
-  endif()
 endmacro()
 
 macro(without_system_libs_end)
   unset(CMAKE_IGNORE_PATH)
-  if(APPLE)
-    # FIRST is the default.
-    set(CMAKE_FIND_FRAMEWORK FIRST)
-  endif()
 endmacro()

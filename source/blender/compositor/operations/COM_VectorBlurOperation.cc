@@ -1,27 +1,7 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2011, Blender Foundation.
- */
-
-#include <cstring>
-
-#include "MEM_guardedalloc.h"
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2011 Blender Foundation. */
 
 #include "BLI_jitter_2d.h"
-#include "BLI_math.h"
 
 #include "COM_VectorBlurOperation.h"
 
@@ -45,104 +25,153 @@ void zbuf_free_span(ZSpan *zspan);
 void antialias_tagbuf(int xsize, int ysize, char *rectmove);
 
 /* VectorBlurOperation */
+
 VectorBlurOperation::VectorBlurOperation()
 {
-  this->addInputSocket(DataType::Color);
-  this->addInputSocket(DataType::Value);  // ZBUF
-  this->addInputSocket(DataType::Color);  // SPEED
-  this->addOutputSocket(DataType::Color);
-  this->m_settings = nullptr;
-  this->m_cachedInstance = nullptr;
-  this->m_inputImageProgram = nullptr;
-  this->m_inputSpeedProgram = nullptr;
-  this->m_inputZProgram = nullptr;
-  flags.complex = true;
+  this->add_input_socket(DataType::Color);
+  this->add_input_socket(DataType::Value); /* ZBUF */
+  this->add_input_socket(DataType::Color); /* SPEED */
+  this->add_output_socket(DataType::Color);
+  settings_ = nullptr;
+  cached_instance_ = nullptr;
+  input_image_program_ = nullptr;
+  input_speed_program_ = nullptr;
+  input_zprogram_ = nullptr;
+  flags_.complex = true;
+  flags_.is_fullframe_operation = true;
 }
-void VectorBlurOperation::initExecution()
+void VectorBlurOperation::init_execution()
 {
-  initMutex();
-  this->m_inputImageProgram = getInputSocketReader(0);
-  this->m_inputZProgram = getInputSocketReader(1);
-  this->m_inputSpeedProgram = getInputSocketReader(2);
-  this->m_cachedInstance = nullptr;
-  QualityStepHelper::initExecution(COM_QH_INCREASE);
+  init_mutex();
+  input_image_program_ = get_input_socket_reader(0);
+  input_zprogram_ = get_input_socket_reader(1);
+  input_speed_program_ = get_input_socket_reader(2);
+  cached_instance_ = nullptr;
+  QualityStepHelper::init_execution(COM_QH_INCREASE);
 }
 
-void VectorBlurOperation::executePixel(float output[4], int x, int y, void *data)
+void VectorBlurOperation::execute_pixel(float output[4], int x, int y, void *data)
 {
   float *buffer = (float *)data;
-  int index = (y * this->getWidth() + x) * COM_DATA_TYPE_COLOR_CHANNELS;
+  int index = (y * this->get_width() + x) * COM_DATA_TYPE_COLOR_CHANNELS;
   copy_v4_v4(output, &buffer[index]);
 }
 
-void VectorBlurOperation::deinitExecution()
+void VectorBlurOperation::deinit_execution()
 {
-  deinitMutex();
-  this->m_inputImageProgram = nullptr;
-  this->m_inputSpeedProgram = nullptr;
-  this->m_inputZProgram = nullptr;
-  if (this->m_cachedInstance) {
-    MEM_freeN(this->m_cachedInstance);
-    this->m_cachedInstance = nullptr;
+  deinit_mutex();
+  input_image_program_ = nullptr;
+  input_speed_program_ = nullptr;
+  input_zprogram_ = nullptr;
+  if (cached_instance_) {
+    MEM_freeN(cached_instance_);
+    cached_instance_ = nullptr;
   }
 }
-void *VectorBlurOperation::initializeTileData(rcti *rect)
+void *VectorBlurOperation::initialize_tile_data(rcti *rect)
 {
-  if (this->m_cachedInstance) {
-    return this->m_cachedInstance;
+  if (cached_instance_) {
+    return cached_instance_;
   }
 
-  lockMutex();
-  if (this->m_cachedInstance == nullptr) {
-    MemoryBuffer *tile = (MemoryBuffer *)this->m_inputImageProgram->initializeTileData(rect);
-    MemoryBuffer *speed = (MemoryBuffer *)this->m_inputSpeedProgram->initializeTileData(rect);
-    MemoryBuffer *z = (MemoryBuffer *)this->m_inputZProgram->initializeTileData(rect);
-    float *data = (float *)MEM_dupallocN(tile->getBuffer());
-    this->generateVectorBlur(data, tile, speed, z);
-    this->m_cachedInstance = data;
+  lock_mutex();
+  if (cached_instance_ == nullptr) {
+    MemoryBuffer *tile = (MemoryBuffer *)input_image_program_->initialize_tile_data(rect);
+    MemoryBuffer *speed = (MemoryBuffer *)input_speed_program_->initialize_tile_data(rect);
+    MemoryBuffer *z = (MemoryBuffer *)input_zprogram_->initialize_tile_data(rect);
+    float *data = (float *)MEM_dupallocN(tile->get_buffer());
+    this->generate_vector_blur(data, tile, speed, z);
+    cached_instance_ = data;
   }
-  unlockMutex();
-  return this->m_cachedInstance;
+  unlock_mutex();
+  return cached_instance_;
 }
 
-bool VectorBlurOperation::determineDependingAreaOfInterest(rcti * /*input*/,
-                                                           ReadBufferOperation *readOperation,
-                                                           rcti *output)
+bool VectorBlurOperation::determine_depending_area_of_interest(rcti * /*input*/,
+                                                               ReadBufferOperation *read_operation,
+                                                               rcti *output)
 {
-  if (this->m_cachedInstance == nullptr) {
-    rcti newInput;
-    newInput.xmax = this->getWidth();
-    newInput.xmin = 0;
-    newInput.ymax = this->getHeight();
-    newInput.ymin = 0;
-    return NodeOperation::determineDependingAreaOfInterest(&newInput, readOperation, output);
+  if (cached_instance_ == nullptr) {
+    rcti new_input;
+    new_input.xmax = this->get_width();
+    new_input.xmin = 0;
+    new_input.ymax = this->get_height();
+    new_input.ymin = 0;
+    return NodeOperation::determine_depending_area_of_interest(&new_input, read_operation, output);
   }
 
   return false;
 }
 
-void VectorBlurOperation::generateVectorBlur(float *data,
-                                             MemoryBuffer *inputImage,
-                                             MemoryBuffer *inputSpeed,
-                                             MemoryBuffer *inputZ)
+void VectorBlurOperation::get_area_of_interest(const int /*input_idx*/,
+                                               const rcti & /*output_area*/,
+                                               rcti &r_input_area)
 {
-  NodeBlurData blurdata;
-  blurdata.samples = this->m_settings->samples / QualityStepHelper::getStep();
-  blurdata.maxspeed = this->m_settings->maxspeed;
-  blurdata.minspeed = this->m_settings->minspeed;
-  blurdata.curved = this->m_settings->curved;
-  blurdata.fac = this->m_settings->fac;
-  zbuf_accumulate_vecblur(&blurdata,
-                          this->getWidth(),
-                          this->getHeight(),
-                          data,
-                          inputImage->getBuffer(),
-                          inputSpeed->getBuffer(),
-                          inputZ->getBuffer());
+  r_input_area = this->get_canvas();
 }
 
-/* ****************** Spans ******************************* */
-/* span fill in method, is also used to localize data for zbuffering */
+void VectorBlurOperation::update_memory_buffer(MemoryBuffer *output,
+                                               const rcti &area,
+                                               Span<MemoryBuffer *> inputs)
+{
+  /* TODO(manzanilla): once tiled implementation is removed, run multi-threaded where possible. */
+  if (!cached_instance_) {
+    MemoryBuffer *image = inputs[IMAGE_INPUT_INDEX];
+    const bool is_image_inflated = image->is_a_single_elem();
+    image = is_image_inflated ? image->inflate() : image;
+
+    /* Must be a copy because it's modified in #generate_vector_blur. */
+    MemoryBuffer *speed = inputs[SPEED_INPUT_INDEX];
+    speed = speed->is_a_single_elem() ? speed->inflate() : new MemoryBuffer(*speed);
+
+    MemoryBuffer *z = inputs[Z_INPUT_INDEX];
+    const bool is_z_inflated = z->is_a_single_elem();
+    z = is_z_inflated ? z->inflate() : z;
+
+    cached_instance_ = (float *)MEM_dupallocN(image->get_buffer());
+    this->generate_vector_blur(cached_instance_, image, speed, z);
+
+    if (is_image_inflated) {
+      delete image;
+    }
+    delete speed;
+    if (is_z_inflated) {
+      delete z;
+    }
+  }
+
+  const int num_channels = COM_data_type_num_channels(get_output_socket()->get_data_type());
+  MemoryBuffer buf(cached_instance_, num_channels, this->get_width(), this->get_height());
+  output->copy_from(&buf, area);
+}
+
+void VectorBlurOperation::generate_vector_blur(float *data,
+                                               MemoryBuffer *input_image,
+                                               MemoryBuffer *input_speed,
+                                               MemoryBuffer *inputZ)
+{
+  NodeBlurData blurdata;
+  blurdata.samples = settings_->samples / QualityStepHelper::get_step();
+  blurdata.maxspeed = settings_->maxspeed;
+  blurdata.minspeed = settings_->minspeed;
+  blurdata.curved = settings_->curved;
+  blurdata.fac = settings_->fac;
+  zbuf_accumulate_vecblur(&blurdata,
+                          this->get_width(),
+                          this->get_height(),
+                          data,
+                          input_image->get_buffer(),
+                          input_speed->get_buffer(),
+                          inputZ->get_buffer());
+}
+
+/* -------------------------------------------------------------------- */
+/** \name Spans
+ *
+ * Duplicated logic from `zbuf.c`.
+ * \{ */
+
+/** Span fill in method, is also used to localize data for Z-buffering. */
 struct ZSpan {
   /* range for clipping */
   int rectx, recty;
@@ -161,7 +190,10 @@ struct ZSpan {
   float clipcrop;
 };
 
-/* each zbuffer has coordinates transformed to local rect coordinates, so we can simply clip */
+/**
+ * Each Z-buffer has coordinates transformed to local rectangle coordinates,
+ * so we can simply clip.
+ */
 void zbuf_alloc_span(ZSpan *zspan, int rectx, int recty, float clipcrop)
 {
   memset(zspan, 0, sizeof(ZSpan));
@@ -288,10 +320,12 @@ static void zbuf_add_to_span(ZSpan *zspan, const float v1[2], const float v2[2])
   }
 
   for (y = my2; y >= my0; y--, xs0 += dx0) {
-    /* xs0 is the xcoord! */
+    /* xs0 is the X-coordinate! */
     span[y] = xs0;
   }
 }
+
+/** \} */
 
 /* ******************** VECBLUR ACCUM BUF ************************* */
 
@@ -300,6 +334,9 @@ struct DrawBufPixel {
   float alpha;
 };
 
+/**
+ * \note Near duplicate of `zspan_scanconvert` in `zbuf.c` with some minor adjustments.
+ */
 static void zbuf_fill_in_rgba(
     ZSpan *zspan, DrawBufPixel *col, float *v1, float *v2, float *v3, float *v4)
 {
@@ -351,9 +388,9 @@ static void zbuf_fill_in_rgba(
 
   xx1 = (x0 * v1[0] + y0 * v1[1]) / z0 + v1[2];
 
-  zxd = -(double)x0 / (double)z0;
-  zyd = -(double)y0 / (double)z0;
-  zy0 = ((double)my2) * zyd + (double)xx1;
+  zxd = -double(x0) / double(z0);
+  zyd = -double(y0) / double(z0);
+  zy0 = double(my2) * zyd + double(xx1);
 
   /* start-offset in rect */
   rectx = zspan->rectx;
@@ -385,13 +422,13 @@ static void zbuf_fill_in_rgba(
     }
 
     if (sn2 >= sn1) {
-      zverg = (double)sn1 * zxd + zy0;
+      zverg = double(sn1) * zxd + zy0;
       rz = rectzofs + sn1;
       rp = rectpofs + sn1;
       x = sn2 - sn1;
 
       while (x >= 0) {
-        if (zverg < (double)*rz) {
+        if (zverg < double(*rz)) {
           *rz = zverg;
           *rp = *col;
         }
@@ -432,7 +469,7 @@ void antialias_tagbuf(int xsize, int ysize, char *rectmove)
     }
   }
 
-  /* 2: evaluate horizontal scanlines and calculate alphas */
+  /* 2: evaluate horizontal scan-lines and calculate alphas. */
   row1 = rectmove;
   for (y = 0; y < ysize; y++) {
     row1++;
@@ -449,7 +486,7 @@ void antialias_tagbuf(int xsize, int ysize, char *rectmove)
           /* now we can blend values */
           next = row1[step];
 
-          /* note, prev value can be next value, but we do this loop to clear 128 then */
+          /* NOTE: prev value can be next value, but we do this loop to clear 128 then. */
           for (a = 0; a < step; a++) {
             int fac, mfac;
 
@@ -463,7 +500,7 @@ void antialias_tagbuf(int xsize, int ysize, char *rectmove)
     }
   }
 
-  /* 3: evaluate vertical scanlines and calculate alphas */
+  /* 3: evaluate vertical scan-lines and calculate alphas */
   /*    use for reading a copy of the original tagged buffer */
   for (x = 0; x < xsize; x++) {
     row1 = rectmove + x + xsize;
@@ -480,7 +517,7 @@ void antialias_tagbuf(int xsize, int ysize, char *rectmove)
         if (y + step != ysize) {
           /* now we can blend values */
           next = row1[step * xsize];
-          /* note, prev value can be next value, but we do this loop to clear 128 then */
+          /* NOTE: prev value can be next value, but we do this loop to clear 128 then. */
           for (a = 0; a < step; a++) {
             int fac, mfac;
 
@@ -494,7 +531,7 @@ void antialias_tagbuf(int xsize, int ysize, char *rectmove)
     }
   }
 
-  /* last: pixels with 0 we fill in zbuffer, with 1 we skip for mask */
+  /* last: pixels with 0 we fill in Z-buffer, with 1 we skip for mask */
   for (y = 2; y < ysize; y++) {
     /* setup rows */
     row1 = rectmove + (y - 2) * xsize;
@@ -556,15 +593,15 @@ void zbuf_accumulate_vecblur(NodeBlurData *nbd,
   const float *dimg, *dz, *ro;
   float *rectvz, *dvz, *dvec1, *dvec2, *dz1, *dz2, *rectz;
   float *minvecbufrect = nullptr, *rectweight, *rw, *rectmax, *rm;
-  float maxspeedsq = (float)nbd->maxspeed * nbd->maxspeed;
+  float maxspeedsq = float(nbd->maxspeed) * nbd->maxspeed;
   int y, x, step, maxspeed = nbd->maxspeed, samples = nbd->samples;
   int tsktsk = 0;
   static int firsttime = 1;
   char *rectmove, *dm;
 
   zbuf_alloc_span(&zspan, xsize, ysize, 1.0f);
-  zspan.zmulx = ((float)xsize) / 2.0f;
-  zspan.zmuly = ((float)ysize) / 2.0f;
+  zspan.zmulx = float(xsize) / 2.0f;
+  zspan.zmuly = float(ysize) / 2.0f;
   zspan.zofsx = 0.0f;
   zspan.zofsy = 0.0f;
 
@@ -593,7 +630,7 @@ void zbuf_accumulate_vecblur(NodeBlurData *nbd,
 
   /* Min speed? then copy speed-buffer to recalculate speed vectors. */
   if (nbd->minspeed) {
-    float minspeed = (float)nbd->minspeed;
+    float minspeed = float(nbd->minspeed);
     float minspeedsq = minspeed * minspeed;
 
     minvecbufrect = (float *)MEM_callocN(sizeof(float[4]) * xsize * ysize, "minspeed buf");
@@ -692,7 +729,7 @@ void zbuf_accumulate_vecblur(NodeBlurData *nbd,
         if (maxspeed) {
           float speedsq = dvz[0] * dvz[0] + dvz[1] * dvz[1];
           if (speedsq > maxspeedsq) {
-            speedsq = (float)maxspeed / sqrtf(speedsq);
+            speedsq = float(maxspeed) / sqrtf(speedsq);
             dvz[0] *= speedsq;
             dvz[1] *= speedsq;
           }
@@ -723,7 +760,7 @@ void zbuf_accumulate_vecblur(NodeBlurData *nbd,
   dm = rectmove;
   dvec1 = vecbufrect;
   for (x = xsize * ysize; x > 0; x--, dm++, dvec1 += 4) {
-    if ((dvec1[0] != 0.0f || dvec1[1] != 0.0f || dvec1[2] != 0.0f || dvec1[3] != 0.0f)) {
+    if (dvec1[0] != 0.0f || dvec1[1] != 0.0f || dvec1[2] != 0.0f || dvec1[3] != 0.0f) {
       *dm = 255;
     }
   }
@@ -742,7 +779,7 @@ void zbuf_accumulate_vecblur(NodeBlurData *nbd,
   /* accumulate */
   samples /= 2;
   for (step = 1; step <= samples; step++) {
-    float speedfac = 0.5f * nbd->fac * (float)step / (float)(samples + 1);
+    float speedfac = 0.5f * nbd->fac * float(step) / float(samples + 1);
     int side;
 
     for (side = 0; side < 2; side++) {
@@ -830,7 +867,7 @@ void zbuf_accumulate_vecblur(NodeBlurData *nbd,
               col.alpha = 0.0f;
             }
             else {
-              col.alpha = ((float)*dm) / 255.0f;
+              col.alpha = float(*dm) / 255.0f;
             }
             col.colpoin = dimg;
 
@@ -848,7 +885,7 @@ void zbuf_accumulate_vecblur(NodeBlurData *nbd,
        * we don't know what is behind it so we don't do that. this hack
        * overestimates the contribution of foreground pixels but looks a
        * bit better without a sudden cutoff. */
-      blendfac = ((samples - step) / (float)samples);
+      blendfac = ((samples - step) / float(samples));
       /* Smooth-step to make it look a bit nicer as well. */
       blendfac = 3.0f * pow(blendfac, 2.0f) - 2.0f * pow(blendfac, 3.0f);
 

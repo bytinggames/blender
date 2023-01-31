@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edcurve
@@ -42,11 +26,14 @@
 
 #include "BKE_context.h"
 #include "BKE_curve.h"
-#include "BKE_font.h"
+#include "BKE_layer.h"
 #include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_object.h"
 #include "BKE_report.h"
+#include "BKE_vfont.h"
+
+#include "BLT_translation.h"
 
 #include "DEG_depsgraph.h"
 #include "DEG_depsgraph_query.h"
@@ -59,6 +46,7 @@
 
 #include "ED_curve.h"
 #include "ED_object.h"
+#include "ED_outliner.h"
 #include "ED_screen.h"
 #include "ED_view3d.h"
 
@@ -70,13 +58,11 @@
 
 static int kill_selection(Object *obedit, int ins);
 
-/** \} */
-
 /* -------------------------------------------------------------------- */
 /** \name Internal Utilities
  * \{ */
 
-static char32_t findaccent(char32_t char1, uint code)
+static char32_t findaccent(char32_t char1, const char code)
 {
   char32_t new = 0;
 
@@ -439,37 +425,27 @@ static void text_update_edited(bContext *C, Object *obedit, int mode)
   WM_event_add_notifier(C, NC_GEOM | ND_DATA, obedit->data);
 }
 
-static int kill_selection(Object *obedit, int ins) /* 1 == new character */
+static int kill_selection(Object *obedit, int ins) /* ins == new character len */
 {
   Curve *cu = obedit->data;
   EditFont *ef = cu->editfont;
   int selend, selstart, direction;
-  int offset = 0;
   int getfrom;
 
   direction = BKE_vfont_select_get(obedit, &selstart, &selend);
   if (direction) {
     int size;
-    if (ins) {
-      offset = 1;
-    }
     if (ef->pos >= selstart) {
-      ef->pos = selstart + offset;
+      ef->pos = selstart + ins;
     }
     if ((direction == -1) && ins) {
-      selstart++;
-      selend++;
+      selstart += ins;
+      selend += ins;
     }
-    getfrom = selend + offset;
-    if (ins == 0) {
-      getfrom++;
-    }
-    size = (ef->len * sizeof(*ef->textbuf)) - (selstart * sizeof(*ef->textbuf)) +
-           (offset * sizeof(*ef->textbuf));
-    memmove(ef->textbuf + selstart, ef->textbuf + getfrom, size);
-    memmove(ef->textbufinfo + selstart,
-            ef->textbufinfo + getfrom,
-            ((ef->len - selstart) + offset) * sizeof(CharInfo));
+    getfrom = selend + 1;
+    size = ef->len - selend; /* This is equivalent to: `(ef->len - getfrom) + 1(null)`. */
+    memmove(ef->textbuf + selstart, ef->textbuf + getfrom, sizeof(*ef->textbuf) * size);
+    memmove(ef->textbufinfo + selstart, ef->textbufinfo + getfrom, sizeof(CharInfo) * size);
     ef->len -= ((selend - selstart) + 1);
     ef->selstart = ef->selend = 0;
   }
@@ -553,16 +529,16 @@ static bool font_paste_utf8(bContext *C, const char *str, const size_t str_len)
 /** \name Paste From File Operator
  * \{ */
 
-static int paste_from_file(bContext *C, ReportList *reports, const char *filename)
+static int paste_from_file(bContext *C, ReportList *reports, const char *filepath)
 {
   Object *obedit = CTX_data_edit_object(C);
   char *strp;
   size_t filelen;
   int retval;
 
-  strp = BLI_file_read_text_as_mem(filename, 1, &filelen);
+  strp = BLI_file_read_text_as_mem(filepath, 1, &filelen);
   if (strp == NULL) {
-    BKE_reportf(reports, RPT_ERROR, "Failed to open file '%s'", filename);
+    BKE_reportf(reports, RPT_ERROR, "Failed to open file '%s'", filepath);
     return OPERATOR_CANCELLED;
   }
   strp[filelen] = 0;
@@ -572,7 +548,7 @@ static int paste_from_file(bContext *C, ReportList *reports, const char *filenam
     retval = OPERATOR_FINISHED;
   }
   else {
-    BKE_reportf(reports, RPT_ERROR, "File too long %s", filename);
+    BKE_reportf(reports, RPT_ERROR, "File too long %s", filepath);
     retval = OPERATOR_CANCELLED;
   }
 
@@ -583,12 +559,12 @@ static int paste_from_file(bContext *C, ReportList *reports, const char *filenam
 
 static int paste_from_file_exec(bContext *C, wmOperator *op)
 {
-  char *path;
+  char *filepath;
   int retval;
 
-  path = RNA_string_get_alloc(op->ptr, "filepath", NULL, 0);
-  retval = paste_from_file(C, op->reports, path);
-  MEM_freeN(path);
+  filepath = RNA_string_get_alloc(op->ptr, "filepath", NULL, 0, NULL);
+  retval = paste_from_file(C, op->reports, filepath);
+  MEM_freeN(filepath);
 
   return retval;
 }
@@ -646,18 +622,19 @@ static void txt_add_object(bContext *C,
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Curve *cu;
   Object *obedit;
-  Base *base;
+  Object *object;
   const struct TextLine *tmp;
   int nchars = 0, nbytes = 0;
   char *s;
   int a;
   const float rot[3] = {0.0f, 0.0f, 0.0f};
 
-  obedit = BKE_object_add(bmain, view_layer, OB_FONT, NULL);
-  base = view_layer->basact;
+  obedit = BKE_object_add(bmain, scene, view_layer, OB_FONT, NULL);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  object = BKE_view_layer_active_object_get(view_layer);
 
-  /* seems to assume view align ? TODO - look into this, could be an operator option */
-  ED_object_base_init_transform_on_add(base->object, NULL, rot);
+  /* seems to assume view align ? TODO: look into this, could be an operator option. */
+  ED_object_base_init_transform_on_add(object, NULL, rot);
 
   BKE_object_where_is_calc(depsgraph, scene, obedit);
 
@@ -714,6 +691,7 @@ static void txt_add_object(bContext *C,
 
 void ED_text_to_object(bContext *C, const Text *text, const bool split_lines)
 {
+  Main *bmain = CTX_data_main(C);
   RegionView3D *rv3d = CTX_wm_region_view3d(C);
   const TextLine *line;
   float offset[3];
@@ -752,6 +730,9 @@ void ED_text_to_object(bContext *C, const Text *text, const bool split_lines)
 
     txt_add_object(C, text->lines.first, BLI_listbase_count(&text->lines), offset);
   }
+
+  DEG_relations_tag_update(bmain);
+  ED_outliner_select_sync_from_object_tag(C);
 }
 
 /** \} */
@@ -1179,14 +1160,13 @@ static int move_cursor(bContext *C, int type, const bool select)
     }
 
     case PREV_CHAR:
-      ef->pos--;
+      BLI_str_cursor_step_prev_utf32(ef->textbuf, ef->len, &ef->pos);
       cursmove = FO_CURS;
       break;
 
     case NEXT_CHAR:
-      ef->pos++;
+      BLI_str_cursor_step_next_utf32(ef->textbuf, ef->len, &ef->pos);
       cursmove = FO_CURS;
-
       break;
 
     case PREV_LINE:
@@ -1525,10 +1505,9 @@ static int delete_exec(bContext *C, wmOperator *op)
         return OPERATOR_CANCELLED;
       }
 
-      range[0] = ef->pos - 1;
       range[1] = ef->pos;
-
-      ef->pos--;
+      BLI_str_cursor_step_prev_utf32(ef->textbuf, ef->len, &ef->pos);
+      range[0] = ef->pos;
       break;
     case DEL_NEXT_CHAR:
       if (ef->pos >= ef->len) {
@@ -1536,7 +1515,8 @@ static int delete_exec(bContext *C, wmOperator *op)
       }
 
       range[0] = ef->pos;
-      range[1] = ef->pos + 1;
+      range[1] = ef->pos;
+      BLI_str_cursor_step_next_utf32(ef->textbuf, ef->len, &range[1]);
       break;
     case DEL_NEXT_WORD: {
       int pos = ef->pos;
@@ -1573,7 +1553,8 @@ static int delete_exec(bContext *C, wmOperator *op)
         else if (*sel >= range[1]) {
           *sel -= len_remove;
         }
-        else if (*sel < range[1]) {
+        else {
+          BLI_assert(*sel < range[1]);
           /* pass */
           *sel = range[0];
         }
@@ -1636,7 +1617,7 @@ static int insert_text_exec(bContext *C, wmOperator *op)
     return OPERATOR_CANCELLED;
   }
 
-  inserted_utf8 = RNA_string_get_alloc(op->ptr, "text", NULL, 0);
+  inserted_utf8 = RNA_string_get_alloc(op->ptr, "text", NULL, 0, NULL);
   len = BLI_strlen_utf8(inserted_utf8);
 
   inserted_text = MEM_callocN(sizeof(char32_t) * (len + 1), "FONT_insert_text");
@@ -1649,7 +1630,7 @@ static int insert_text_exec(bContext *C, wmOperator *op)
   MEM_freeN(inserted_text);
   MEM_freeN(inserted_utf8);
 
-  kill_selection(obedit, 1);
+  kill_selection(obedit, len);
   text_update_edited(C, obedit, FO_EDIT);
 
   return OPERATOR_FINISHED;
@@ -1660,10 +1641,11 @@ static int insert_text_invoke(bContext *C, wmOperator *op, const wmEvent *event)
   Object *obedit = CTX_data_edit_object(C);
   Curve *cu = obedit->data;
   EditFont *ef = cu->editfont;
-  static int accentcode = 0;
-  uintptr_t ascii = event->ascii;
-  int alt = event->alt, shift = event->shift, ctrl = event->ctrl;
-  int event_type = event->type, event_val = event->val;
+  static bool accentcode = false;
+  const bool alt = event->modifier & KM_ALT;
+  const bool shift = event->modifier & KM_SHIFT;
+  const bool ctrl = event->modifier & KM_CTRL;
+  char32_t insert_char_override = 0;
   char32_t inserted_text[2] = {0};
 
   if (RNA_struct_property_is_set(op->ptr, "text")) {
@@ -1672,59 +1654,53 @@ static int insert_text_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
   if (RNA_struct_property_is_set(op->ptr, "accent")) {
     if (ef->len != 0 && ef->pos > 0) {
-      accentcode = 1;
+      accentcode = true;
     }
     return OPERATOR_FINISHED;
   }
 
-  /* tab should exit editmode, but we allow it to be typed using modifier keys */
-  if (event_type == EVT_TABKEY) {
-    if ((alt || ctrl || shift) == 0) {
-      return OPERATOR_PASS_THROUGH;
-    }
-
-    ascii = 9;
-  }
-
-  if (event_type == EVT_BACKSPACEKEY) {
+  if (event->type == EVT_BACKSPACEKEY) {
     if (alt && ef->len != 0 && ef->pos > 0) {
-      accentcode = 1;
+      accentcode = true;
     }
     return OPERATOR_PASS_THROUGH;
   }
 
-  if (event_val && (ascii || event->utf8_buf[0])) {
-    /* handle case like TAB (== 9) */
-    if ((ascii > 31 && ascii < 254 && ascii != 127) || (ELEM(ascii, 13, 10)) || (ascii == 8) ||
-        (event->utf8_buf[0])) {
+  /* Tab typically exit edit-mode, but we allow it to be typed using modifier keys. */
+  if (event->type == EVT_TABKEY) {
+    if ((alt || ctrl || shift) == 0) {
+      return OPERATOR_PASS_THROUGH;
+    }
+    insert_char_override = '\t';
+  }
 
+  if (insert_char_override || event->utf8_buf[0]) {
+    if (insert_char_override) {
+      /* Handle case like TAB ('\t'). */
+      inserted_text[0] = insert_char_override;
+      insert_into_textbuf(obedit, insert_char_override);
+      text_update_edited(C, obedit, FO_EDIT);
+    }
+    else {
+      BLI_assert(event->utf8_buf[0]);
       if (accentcode) {
         if (ef->pos > 0) {
-          inserted_text[0] = findaccent(ef->textbuf[ef->pos - 1], ascii);
+          inserted_text[0] = findaccent(ef->textbuf[ef->pos - 1],
+                                        BLI_str_utf8_as_unicode(event->utf8_buf));
           ef->textbuf[ef->pos - 1] = inserted_text[0];
         }
-        accentcode = 0;
+        accentcode = false;
       }
       else if (event->utf8_buf[0]) {
         inserted_text[0] = BLI_str_utf8_as_unicode(event->utf8_buf);
-        ascii = inserted_text[0];
-        insert_into_textbuf(obedit, ascii);
-        accentcode = 0;
-      }
-      else if (ascii) {
-        insert_into_textbuf(obedit, ascii);
-        accentcode = 0;
+        insert_into_textbuf(obedit, inserted_text[0]);
+        accentcode = false;
       }
       else {
         BLI_assert(0);
       }
 
       kill_selection(obedit, 1);
-      text_update_edited(C, obedit, FO_EDIT);
-    }
-    else {
-      inserted_text[0] = ascii;
-      insert_into_textbuf(obedit, ascii);
       text_update_edited(C, obedit, FO_EDIT);
     }
   }
@@ -1738,11 +1714,6 @@ static int insert_text_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
     BLI_str_utf32_as_utf8(inserted_utf8, inserted_text, sizeof(inserted_utf8));
     RNA_string_set(op->ptr, "text", inserted_utf8);
-  }
-
-  /* reset property? */
-  if (event_val == 0) {
-    accentcode = 0;
   }
 
   return OPERATOR_FINISHED;
@@ -1994,6 +1965,8 @@ static int set_case_exec(bContext *C, wmOperator *op)
 
 void FONT_OT_case_set(wmOperatorType *ot)
 {
+  PropertyRNA *prop;
+
   /* identifiers */
   ot->name = "Set Case";
   ot->description = "Set font case";
@@ -2007,7 +1980,8 @@ void FONT_OT_case_set(wmOperatorType *ot)
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
 
   /* properties */
-  RNA_def_enum(ot->srna, "case", case_items, CASE_LOWER, "Case", "Lower or upper case");
+  prop = RNA_def_enum(ot->srna, "case", case_items, CASE_LOWER, "Case", "Lower or upper case");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_TEXT);
 }
 
 /** \} */
@@ -2111,7 +2085,7 @@ static int font_open_exec(bContext *C, wmOperator *op)
 static int open_invoke(bContext *C, wmOperator *op, const wmEvent *UNUSED(event))
 {
   VFont *vfont = NULL;
-  const char *path;
+  const char *filepath;
 
   PointerRNA idptr;
   PropertyPointerRNA *pprop;
@@ -2126,13 +2100,13 @@ static int open_invoke(bContext *C, wmOperator *op, const wmEvent *UNUSED(event)
     vfont = (VFont *)idptr.owner_id;
   }
 
-  path = (vfont && !BKE_vfont_is_builtin(vfont)) ? vfont->filepath : U.fontdir;
+  filepath = (vfont && !BKE_vfont_is_builtin(vfont)) ? vfont->filepath : U.fontdir;
 
   if (RNA_struct_property_is_set(op->ptr, "filepath")) {
     return font_open_exec(C, op);
   }
 
-  RNA_string_set(op->ptr, "filepath", path);
+  RNA_string_set(op->ptr, "filepath", filepath);
   WM_event_add_fileselect(C, op);
 
   return OPERATOR_RUNNING_MODAL;
@@ -2159,8 +2133,8 @@ void FONT_OT_open(wmOperatorType *ot)
                                  FILE_SPECIAL,
                                  FILE_OPENFILE,
                                  WM_FILESEL_FILEPATH | WM_FILESEL_RELPATH,
-                                 FILE_DEFAULTDISPLAY,
-                                 FILE_SORT_DEFAULT);
+                                 FILE_IMGDISPLAY,
+                                 FILE_SORT_ALPHA);
 }
 
 /** \} */
@@ -2203,11 +2177,11 @@ void FONT_OT_unlink(wmOperatorType *ot)
   ot->exec = font_unlink_exec;
 }
 
-/**
- * TextBox selection
- */
 bool ED_curve_editfont_select_pick(
-    bContext *C, const int mval[2], bool extend, bool deselect, bool toggle)
+    bContext *C,
+    const int mval[2],
+    /* NOTE: `params->deselect_all` is ignored as only one text-box is active at once. */
+    const struct SelectPick_Params *params)
 {
   Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
   Object *obedit = CTX_data_edit_object(C);
@@ -2226,9 +2200,7 @@ bool ED_curve_editfont_select_pick(
   ED_view3d_init_mats_rv3d(vc.obedit, vc.rv3d);
 
   /* currently only select active */
-  (void)extend;
-  (void)deselect;
-  (void)toggle;
+  (void)params;
 
   for (i_iter = 0; i_iter < cu->totbox; i_iter++) {
     int i = (i_iter + i_actbox) % cu->totbox;
@@ -2280,6 +2252,8 @@ bool ED_curve_editfont_select_pick(
     if (cu->actbox != actbox_select) {
       cu->actbox = actbox_select;
       WM_event_add_notifier(C, NC_GEOM | ND_DATA, obedit->data);
+      /* TODO: support #ID_RECALC_SELECT. */
+      DEG_id_tag_update(obedit->data, ID_RECALC_COPY_ON_WRITE);
     }
     return true;
   }

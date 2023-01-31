@@ -1,25 +1,9 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- * Constraint DNA data
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup DNA
+ * Constraint DNA data.
  */
 
 #pragma once
@@ -37,7 +21,7 @@ struct Ipo;
 struct Text;
 
 /* channels reside in Object or Action (ListBase) constraintChannels */
-// XXX deprecated... old AnimSys
+/* XXX: deprecated... old AnimSys. */
 typedef struct bConstraintChannel {
   struct bConstraintChannel *next, *prev;
   struct Ipo *ipo;
@@ -51,9 +35,9 @@ typedef struct bConstraint {
 
   /** Constraint data (a valid constraint type). */
   void *data;
-  /** Constraint type.    */
+  /** Constraint type. */
   short type;
-  /** Flag - General Settings.    */
+  /** Flag - General Settings. */
   short flag;
 
   /** Space that owner should be evaluated in. */
@@ -81,15 +65,15 @@ typedef struct bConstraint {
   /** Local influence ipo or driver */
   struct Ipo *ipo DNA_DEPRECATED;
 
-  /* below are readonly fields that are set at runtime
-   * by the solver for use in the GE (only IK atm) */
+  /* Below are read-only fields that are set at runtime
+   * by the solver for use in the GE (only IK at the moment). */
   /** Residual error on constraint expressed in blender unit. */
   float lin_error;
   /** Residual error on constraint expressed in radiant. */
   float rot_error;
 } bConstraint;
 
-/* Multiple-target constraints ---------------------  */
+/* Multiple-target constraints --------------------- */
 
 /* This struct defines a constraint target.
  * It is used during constraint solving regardless of how many targets the
@@ -121,8 +105,10 @@ typedef struct bConstraintTarget {
 
 /* bConstraintTarget -> flag */
 typedef enum eConstraintTargetFlag {
-  /** temporary target-struct that needs to be freed after use */
+  /** Temporary target-struct that needs to be freed after use. */
   CONSTRAINT_TAR_TEMP = (1 << 0),
+  /** Temporary target for the custom space reference. */
+  CONSTRAINT_TAR_CUSTOM_SPACE = (1 << 1),
 } eConstraintTargetFlag;
 
 /* bConstraintTarget/bConstraintOb -> type */
@@ -195,7 +181,7 @@ typedef struct bKinematicConstraint {
   float orientweight;
   /** CopyPose: for target-less IK. */
   float grabtarget[3];
-  /** Subtype of IK constraint: eConstraint_IK_Type. */
+  /** Sub-type of IK constraint: #eConstraint_IK_Type. */
   short type;
   /** Distance: how to limit in relation to clamping sphere: LIMITDIST_... */
   short mode;
@@ -257,16 +243,15 @@ typedef struct bArmatureConstraint {
   ListBase targets;
 } bArmatureConstraint;
 
-/* Single-target subobject constraints ---------------------  */
+/* Single-target subobject constraints --------------------- */
 
 /* Track To Constraint */
 typedef struct bTrackToConstraint {
   struct Object *tar;
   /**
-   * I'll be using reserved1 and reserved2 as Track and Up flags,
+   * NOTE(@theeth): I'll be using reserved1 and reserved2 as Track and Up flags,
    * not sure if that's what they were intended for anyway.
    * Not sure either if it would create backward incompatibility if I were to rename them.
-   * - theeth
    */
   int reserved1;
   int reserved2;
@@ -316,8 +301,9 @@ typedef struct bSameVolumeConstraint {
 /* Copy Transform Constraint */
 typedef struct bTransLikeConstraint {
   struct Object *tar;
+  int flag;
   char mix_mode;
-  char _pad[7];
+  char _pad[3];
   /** MAX_ID_NAME-2. */
   char subtarget[64];
 } bTransLikeConstraint;
@@ -424,7 +410,7 @@ typedef struct bRigidBodyJointConstraint {
 typedef struct bClampToConstraint {
   /** 'target' must be a curve. */
   struct Object *tar;
-  /** Which axis/plane to compare owner's location on . */
+  /** Which axis/plane to compare owner's location on. */
   int flag;
   /** For legacy reasons, this is flag2. used for any extra settings. */
   int flag2;
@@ -473,7 +459,7 @@ typedef struct bTransformConstraint {
   float from_min[3];
   /** To map on to to_min/max range. */
   float from_max[3];
-  /** Range of motion on owner caused by target . */
+  /** Range of motion on owner caused by target. */
   float to_min[3];
   float to_max[3];
 
@@ -481,7 +467,7 @@ typedef struct bTransformConstraint {
   float from_min_rot[3];
   /** To map on to to_min/max range. */
   float from_max_rot[3];
-  /** Range of motion on owner caused by target . */
+  /** Range of motion on owner caused by target. */
   float to_min_rot[3];
   float to_max_rot[3];
 
@@ -489,7 +475,7 @@ typedef struct bTransformConstraint {
   float from_min_scale[3];
   /** To map on to to_min/max range. */
   float from_max_scale[3];
-  /** Range of motion on owner caused by target . */
+  /** Range of motion on owner caused by target. */
   float to_min_scale[3];
   float to_max_scale[3];
 } bTransformConstraint;
@@ -517,7 +503,7 @@ typedef struct bPivotConstraint {
   short flag;
 } bPivotConstraint;
 
-/* transform limiting constraints - zero target ----------------------------  */
+/* transform limiting constraints - zero target ---------------------------- */
 /* Limit Location Constraint */
 typedef struct bLocLimitConstraint {
   float xmin, xmax;
@@ -534,6 +520,8 @@ typedef struct bRotLimitConstraint {
   float zmin, zmax;
   short flag;
   short flag2;
+  char euler_order;
+  char _pad[3];
 } bRotLimitConstraint;
 
 /* Limit Scale Constraint */
@@ -711,21 +699,19 @@ typedef enum eBConstraint_Flags {
   CONSTRAINT_SPACEONCE = (1 << 6),
   /* influence ipo is on constraint itself, not in action channel */
   CONSTRAINT_OWN_IPO = (1 << 7),
-  /* indicates that constraint was added locally (i.e.  didn't come from the proxy-lib) */
-  CONSTRAINT_PROXY_LOCAL = (1 << 8),
   /* indicates that constraint is temporarily disabled (only used in GE) */
   CONSTRAINT_OFF = (1 << 9),
   /* use bbone curve shape when calculating headtail values (also used by dependency graph!) */
   CONSTRAINT_BBONE_SHAPE = (1 << 10),
   /* That constraint has been inserted in local override (i.e. it can be fully edited!). */
   CONSTRAINT_OVERRIDE_LIBRARY_LOCAL = (1 << 11),
-  /* use full transformation (not just segment locations) - only set at runtime  */
+  /* use full transformation (not just segment locations) - only set at runtime. */
   CONSTRAINT_BBONE_SHAPE_FULL = (1 << 12),
 } eBConstraint_Flags;
 
 /* bConstraint->ownspace/tarspace */
 typedef enum eBConstraint_SpaceTypes {
-  /** Default for all - worldspace. */
+  /** Default for all - world-space. */
   CONSTRAINT_SPACE_WORLD = 0,
   /** For all - custom space. */
   CONSTRAINT_SPACE_CUSTOM = 5,
@@ -738,6 +724,8 @@ typedef enum eBConstraint_SpaceTypes {
   CONSTRAINT_SPACE_POSE = 2,
   /** For posechannels - local with parent. */
   CONSTRAINT_SPACE_PARLOCAL = 3,
+  /** For posechannels - local converted to the owner bone orientation. */
+  CONSTRAINT_SPACE_OWNLOCAL = 6,
   /** For files from between 2.43-2.46 (should have been parlocal). */
   CONSTRAINT_SPACE_INVALID = 4, /* do not exchange for anything! */
 } eBConstraint_SpaceTypes;
@@ -758,7 +746,7 @@ typedef enum eConstraint_EulerOrder {
 
 /* -------------------------------------- */
 
-/* bRotateLikeConstraint.flag */
+/** #bRotateLikeConstraint.flag */
 typedef enum eCopyRotation_Flags {
   ROTLIKE_X = (1 << 0),
   ROTLIKE_Y = (1 << 1),
@@ -771,7 +759,7 @@ typedef enum eCopyRotation_Flags {
 #endif
 } eCopyRotation_Flags;
 
-/* bRotateLikeConstraint.mix_mode */
+/** #bRotateLikeConstraint.mix_mode */
 typedef enum eCopyRotation_MixMode {
   /* Replace rotation channel values. */
   ROTLIKE_MIX_REPLACE = 0,
@@ -785,7 +773,7 @@ typedef enum eCopyRotation_MixMode {
   ROTLIKE_MIX_AFTER = 4,
 } eCopyRotation_MixMode;
 
-/* bLocateLikeConstraint.flag */
+/** #bLocateLikeConstraint.flag */
 typedef enum eCopyLocation_Flags {
   LOCLIKE_X = (1 << 0),
   LOCLIKE_Y = (1 << 1),
@@ -798,7 +786,7 @@ typedef enum eCopyLocation_Flags {
   LOCLIKE_OFFSET = (1 << 7),
 } eCopyLocation_Flags;
 
-/* bSizeLikeConstraint.flag */
+/** #bSizeLikeConstraint.flag */
 typedef enum eCopyScale_Flags {
   SIZELIKE_X = (1 << 0),
   SIZELIKE_Y = (1 << 1),
@@ -808,7 +796,13 @@ typedef enum eCopyScale_Flags {
   SIZELIKE_UNIFORM = (1 << 5),
 } eCopyScale_Flags;
 
-/* bTransLikeConstraint.mix_mode */
+/** #bTransLikeConstraint.flag */
+typedef enum eCopyTransforms_Flags {
+  /* Remove shear from the target matrix. */
+  TRANSLIKE_REMOVE_TARGET_SHEAR = (1 << 0),
+} eCopyTransforms_Flags;
+
+/** #bTransLikeConstraint.mix_mode */
 typedef enum eCopyTransforms_MixMode {
   /* Replace rotation channel values. */
   TRANSLIKE_MIX_REPLACE = 0,
@@ -816,6 +810,14 @@ typedef enum eCopyTransforms_MixMode {
   TRANSLIKE_MIX_BEFORE = 1,
   /* Multiply the copied transformation on the right, with anti-shear scale handling. */
   TRANSLIKE_MIX_AFTER = 2,
+  /* Multiply the copied transformation on the left, handling loc/rot/scale separately. */
+  TRANSLIKE_MIX_BEFORE_SPLIT = 3,
+  /* Multiply the copied transformation on the right, handling loc/rot/scale separately. */
+  TRANSLIKE_MIX_AFTER_SPLIT = 4,
+  /* Multiply the copied transformation on the left, using simple matrix multiplication. */
+  TRANSLIKE_MIX_BEFORE_FULL = 5,
+  /* Multiply the copied transformation on the right, using simple matrix multiplication. */
+  TRANSLIKE_MIX_AFTER_FULL = 6,
 } eCopyTransforms_MixMode;
 
 /* bTransformConstraint.to/from */
@@ -825,7 +827,7 @@ typedef enum eTransform_ToFrom {
   TRANS_SCALE = 2,
 } eTransform_ToFrom;
 
-/* bTransformConstraint.mix_mode_loc */
+/** #bTransformConstraint.mix_mode_loc */
 typedef enum eTransform_MixModeLoc {
   /* Add component values together (default). */
   TRANS_MIXLOC_ADD = 0,
@@ -833,7 +835,7 @@ typedef enum eTransform_MixModeLoc {
   TRANS_MIXLOC_REPLACE = 1,
 } eTransform_MixModeLoc;
 
-/* bTransformConstraint.mix_mode_rot */
+/** #bTransformConstraint.mix_mode_rot */
 typedef enum eTransform_MixModeRot {
   /* Add component values together (default). */
   TRANS_MIXROT_ADD = 0,
@@ -845,7 +847,7 @@ typedef enum eTransform_MixModeRot {
   TRANS_MIXROT_AFTER = 3,
 } eTransform_MixModeRot;
 
-/* bTransformConstraint.mix_mode_scale */
+/** #bTransformConstraint.mix_mode_scale */
 typedef enum eTransform_MixModeScale {
   /* Replace component values (default). */
   TRANS_MIXSCALE_REPLACE = 0,
@@ -853,14 +855,14 @@ typedef enum eTransform_MixModeScale {
   TRANS_MIXSCALE_MULTIPLY = 1,
 } eTransform_MixModeScale;
 
-/* bSameVolumeConstraint.free_axis */
+/** #bSameVolumeConstraint.free_axis */
 typedef enum eSameVolume_Axis {
   SAMEVOL_X = 0,
   SAMEVOL_Y = 1,
   SAMEVOL_Z = 2,
 } eSameVolume_Axis;
 
-/* bSameVolumeConstraint.mode */
+/** #bSameVolumeConstraint.mode */
 typedef enum eSameVolume_Mode {
   /* Strictly maintain the volume, overriding non-free axis scale. */
   SAMEVOL_STRICT = 0,
@@ -870,7 +872,7 @@ typedef enum eSameVolume_Mode {
   SAMEVOL_SINGLE_AXIS = 2,
 } eSameVolume_Mode;
 
-/* bActionConstraint.flag */
+/** #bActionConstraint.flag */
 typedef enum eActionConstraint_Flags {
   /* Bones use "object" part of target action, instead of "same bone name" part */
   ACTCON_BONE_USE_OBJECT_ACTION = (1 << 0),
@@ -878,14 +880,20 @@ typedef enum eActionConstraint_Flags {
   ACTCON_USE_EVAL_TIME = (1 << 1),
 } eActionConstraint_Flags;
 
-/* bActionConstraint.mix_mode */
+/** #bActionConstraint.mix_mode */
 typedef enum eActionConstraint_MixMode {
   /* Multiply the action transformation on the right. */
   ACTCON_MIX_AFTER_FULL = 0,
+  /* Multiply the action transformation on the left. */
+  ACTCON_MIX_BEFORE_FULL = 3,
   /* Multiply the action transformation on the right, with anti-shear scale handling. */
   ACTCON_MIX_AFTER = 1,
   /* Multiply the action transformation on the left, with anti-shear scale handling. */
   ACTCON_MIX_BEFORE = 2,
+  /* Separately combine Translation, Rotation and Scale, with rotation on the right. */
+  ACTCON_MIX_AFTER_SPLIT = 4,
+  /* Separately combine Translation, Rotation and Scale, with rotation on the left. */
+  ACTCON_MIX_BEFORE_SPLIT = 5,
 } eActionConstraint_MixMode;
 
 /* Locked-Axis Values (Locked Track) */
@@ -914,7 +922,7 @@ typedef enum eTrackToAxis_Modes {
 
 /* Shrinkwrap flags */
 typedef enum eShrinkwrap_Flags {
-  /* Also raycast in the opposite direction. */
+  /* Also ray-cast in the opposite direction. */
   CON_SHRINKWRAP_PROJECT_OPPOSITE = (1 << 0),
   /* Invert the cull mode when projecting opposite. */
   CON_SHRINKWRAP_PROJECT_INVERT_CULL = (1 << 1),
@@ -1063,7 +1071,7 @@ typedef enum eTransformLimits_Flags2 {
   LIMIT_TRANSFORM = (1 << 1),
 } eTransformLimits_Flags2;
 
-/* transform limiting constraints -> flag (own flags)  */
+/* transform limiting constraints -> flag (own flags). */
 typedef enum eTransformLimits_Flags {
   LIMIT_XMIN = (1 << 0),
   LIMIT_XMAX = (1 << 1),
@@ -1073,7 +1081,7 @@ typedef enum eTransformLimits_Flags {
   LIMIT_ZMAX = (1 << 5),
 } eTransformLimits_Flags;
 
-/* limit rotation constraint -> flag (own flags) */
+/* limit rotation constraint -> flag (own flags). */
 typedef enum eRotLimit_Flags {
   LIMIT_XROT = (1 << 0),
   LIMIT_YROT = (1 << 1),
@@ -1083,7 +1091,7 @@ typedef enum eRotLimit_Flags {
 /* distance limit constraint */
 /* bDistLimitConstraint->flag */
 typedef enum eDistLimit_Flag {
-  /* "soft" cushion effect when reaching the limit sphere */  // NOT IMPLEMENTED!
+  /* "soft" cushion effect when reaching the limit sphere */ /* NOT IMPLEMENTED! */
   LIMITDIST_USESOFT = (1 << 0),
   /* as for all Limit constraints - allow to be used during transform? */
   LIMITDIST_TRANSFORM = (1 << 1),
@@ -1176,13 +1184,6 @@ typedef enum eStretchTo_Flags {
   STRETCHTOCON_USE_BULGE_MIN = (1 << 0),
   STRETCHTOCON_USE_BULGE_MAX = (1 << 1),
 } eStretchTo_Flags;
-
-/* important: these defines need to match up with PHY_DynamicTypes headerfile */
-#define CONSTRAINT_RB_BALL 1
-#define CONSTRAINT_RB_HINGE 2
-#define CONSTRAINT_RB_CONETWIST 4
-#define CONSTRAINT_RB_VEHICLE 11
-#define CONSTRAINT_RB_GENERIC6DOF 12
 
 #ifdef __cplusplus
 }

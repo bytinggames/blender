@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup DNA
@@ -58,7 +42,7 @@ typedef struct MetaElem {
   float rad2;
   /** Stiffness, how much of the element to fill. */
   float s;
-  /** Old, only used for backwards compat. use dimensions now. */
+  /** Old, only used for backwards compatibility. use dimensions now. */
   float len;
 
   /** Matrix and inverted matrix. */
@@ -79,12 +63,12 @@ typedef struct MetaBall {
   /* material of the mother ball will define the material used of all others */
   struct Material **mat;
 
-  /** Flag is enum for updates, flag2 is bitflags for settings. */
+  /** Flag is enum for updates, flag2 is bit-flags for settings. */
   char flag, flag2;
   short totcol;
   /** Used to store MB_AUTOSPACE. */
-  short texflag;
-  char _pad[1];
+  char texflag;
+  char _pad[2];
 
   /**
    * ID data is older than edit-mode data (TODO: move to edit-mode struct).
@@ -106,10 +90,8 @@ typedef struct MetaBall {
   float thresh;
 
   /* used in editmode */
-  /*ListBase edit_elems;*/
+  // ListBase edit_elems;
   MetaElem *lastelem;
-
-  void *batch_cache;
 } MetaBall;
 
 /* **************** METABALL ********************* */

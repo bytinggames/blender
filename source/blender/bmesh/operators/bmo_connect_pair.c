@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -97,7 +83,7 @@ typedef struct PathContext {
   /* only to access BMO flags */
   BMesh *bm_bmoflag;
 
-  BMVert *v_a, *v_b;
+  BMVert *v_pair[2];
 
   BLI_mempool *link_pool;
 } PathContext;
@@ -120,19 +106,18 @@ typedef struct PathLinkState {
   float co_prev[3];
 } PathLinkState;
 
-/**
- * \name Min Dist Dir Util
+/* -------------------------------------------------------------------- */
+/** \name Min Dist Dir Util
  *
  * Simply getting the closest intersecting vert/edge is _not_ good enough. see T43792
  * we need to get the closest in both directions since the absolute closest may be a dead-end.
  *
  * Logic is simple:
  *
- * - first intersection, store the direction.
- * - successive intersections will update the first distance if its aligned with the first hit.
+ * - First intersection, store the direction.
+ * - Successive intersections will update the first distance if its aligned with the first hit.
  *   otherwise update the opposite distance.
- * - caller stores best outcome in both directions.
- *
+ * - Caller stores best outcome in both directions.
  * \{ */
 
 typedef struct MinDistDir {
@@ -180,8 +165,8 @@ static void min_dist_dir_update(MinDistDir *dist, const float dist_dir[3])
 
 static int state_isect_co_pair(const PathContext *pc, const float co_a[3], const float co_b[3])
 {
-  const float diff_a = dot_m3_v3_row_x((float(*)[3])pc->matrix, co_a) - pc->axis_sep;
-  const float diff_b = dot_m3_v3_row_x((float(*)[3])pc->matrix, co_b) - pc->axis_sep;
+  const float diff_a = dot_m3_v3_row_x(pc->matrix, co_a) - pc->axis_sep;
+  const float diff_b = dot_m3_v3_row_x(pc->matrix, co_b) - pc->axis_sep;
 
   const int test_a = (fabsf(diff_a) < CONNECT_EPS) ? 0 : (diff_a < 0.0f) ? -1 : 1;
   const int test_b = (fabsf(diff_b) < CONNECT_EPS) ? 0 : (diff_b < 0.0f) ? -1 : 1;
@@ -194,7 +179,7 @@ static int state_isect_co_pair(const PathContext *pc, const float co_a[3], const
 
 static int state_isect_co_exact(const PathContext *pc, const float co[3])
 {
-  const float diff = dot_m3_v3_row_x((float(*)[3])pc->matrix, co) - pc->axis_sep;
+  const float diff = dot_m3_v3_row_x(pc->matrix, co) - pc->axis_sep;
   return (fabsf(diff) <= CONNECT_EPS);
 }
 
@@ -204,8 +189,8 @@ static float state_calc_co_pair_fac(const PathContext *pc,
 {
   float diff_a, diff_b, diff_tot;
 
-  diff_a = fabsf(dot_m3_v3_row_x((float(*)[3])pc->matrix, co_a) - pc->axis_sep);
-  diff_b = fabsf(dot_m3_v3_row_x((float(*)[3])pc->matrix, co_b) - pc->axis_sep);
+  diff_a = fabsf(dot_m3_v3_row_x(pc->matrix, co_a) - pc->axis_sep);
+  diff_b = fabsf(dot_m3_v3_row_x(pc->matrix, co_b) - pc->axis_sep);
   diff_tot = (diff_a + diff_b);
   return (diff_tot > FLT_EPSILON) ? (diff_a / diff_tot) : 0.5f;
 }
@@ -436,7 +421,7 @@ static bool state_step(PathContext *pc, PathLinkState *state)
     BM_ITER_ELEM (l_start, &liter, e, BM_LOOPS_OF_EDGE) {
       if ((l_start->f != ele_from) && FACE_WALK_TEST(l_start->f)) {
         MinDistDir mddir = MIN_DIST_DIR_INIT;
-        /* very similar to block below */
+        /* Very similar to block below. */
         state = state_step__face_edges(pc, state, &state_orig, l_start->next, l_start, &mddir);
         state = state_step__face_verts(
             pc, state, &state_orig, l_start->next->next, l_start, &mddir);
@@ -446,7 +431,7 @@ static bool state_step(PathContext *pc, PathLinkState *state)
   else if (ele->head.htype == BM_VERT) {
     BMVert *v = (BMVert *)ele;
 
-    /* vert loops */
+    /* Vert loops. */
     {
       BMIter liter;
       BMLoop *l_start;
@@ -454,11 +439,11 @@ static bool state_step(PathContext *pc, PathLinkState *state)
       BM_ITER_ELEM (l_start, &liter, v, BM_LOOPS_OF_VERT) {
         if ((l_start->f != ele_from) && FACE_WALK_TEST(l_start->f)) {
           MinDistDir mddir = MIN_DIST_DIR_INIT;
-          /* very similar to block above */
+          /* Very similar to block above. */
           state = state_step__face_edges(
               pc, state, &state_orig, l_start->next, l_start->prev, &mddir);
           if (l_start->f->len > 3) {
-            /* adjacent verts are handled in state_step__vert_edges */
+            /* Adjacent verts are handled in #state_step__vert_edges. */
             state = state_step__face_verts(
                 pc, state, &state_orig, l_start->next->next, l_start->prev, &mddir);
           }
@@ -466,7 +451,7 @@ static bool state_step(PathContext *pc, PathLinkState *state)
       }
     }
 
-    /* vert edges  */
+    /* Vert edges. */
     {
       BMIter eiter;
       BMEdge *e;
@@ -571,7 +556,7 @@ static void bm_vert_pair_to_matrix(BMVert *v_pair[2], float r_unit_mat[3][3])
     }
 
     /* create a new 'basis_nor' from the best direction.
-     * note: we could add the directions,
+     * NOTE: we could add the directions,
      * but this more often gives 45d rotated matrix, so just use the best one. */
     copy_v3_v3(basis_nor, axis_pair[axis_pair[0].angle_cos < axis_pair[1].angle_cos].nor);
     project_plane_normalized_v3_v3v3(basis_nor, basis_nor, basis_dir);
@@ -608,17 +593,17 @@ void bmo_connect_vert_pair_exec(BMesh *bm, BMOperator *op)
   }
 
   pc.bm_bmoflag = bm;
-  pc.v_a = ((BMVert **)op_verts_slot->data.p)[0];
-  pc.v_b = ((BMVert **)op_verts_slot->data.p)[1];
+  pc.v_pair[0] = ((BMVert **)op_verts_slot->data.p)[0];
+  pc.v_pair[1] = ((BMVert **)op_verts_slot->data.p)[1];
 
   /* fail! */
-  if (!(pc.v_a && pc.v_b)) {
+  if (!(pc.v_pair[0] && pc.v_pair[1])) {
     return;
   }
 
 #ifdef DEBUG_PRINT
-  printf("%s: v_a: %d\n", __func__, BM_elem_index_get(pc.v_a));
-  printf("%s: v_b: %d\n", __func__, BM_elem_index_get(pc.v_b));
+  printf("%s: v_pair[0]: %d\n", __func__, BM_elem_index_get(pc.v_pair[0]));
+  printf("%s: v_pair[1]: %d\n", __func__, BM_elem_index_get(pc.v_pair[1]));
 #endif
 
   /* tag so we won't touch ever (typically hidden faces) */
@@ -633,15 +618,15 @@ void bmo_connect_vert_pair_exec(BMesh *bm, BMOperator *op)
 
   /* calculate matrix */
   {
-    bm_vert_pair_to_matrix(&pc.v_a, pc.matrix);
-    pc.axis_sep = dot_m3_v3_row_x(pc.matrix, pc.v_a->co);
+    bm_vert_pair_to_matrix(pc.v_pair, pc.matrix);
+    pc.axis_sep = dot_m3_v3_row_x(pc.matrix, pc.v_pair[0]->co);
   }
 
   /* add first vertex */
   {
     PathLinkState *state;
     state = MEM_callocN(sizeof(*state), __func__);
-    state_link_add(&pc, state, (BMElem *)pc.v_a, NULL);
+    state_link_add(&pc, state, (BMElem *)pc.v_pair[0], NULL);
     BLI_heapsimple_insert(pc.states, state->dist, state);
   }
 
@@ -657,7 +642,7 @@ void bmo_connect_vert_pair_exec(BMesh *bm, BMOperator *op)
       /* either we insert this into 'pc.states' or its freed */
       bool continue_search;
 
-      if (state->link_last->ele == (BMElem *)pc.v_b) {
+      if (state->link_last->ele == (BMElem *)pc.v_pair[1]) {
         /* pass, wait until all are found */
 #ifdef DEBUG_PRINT
         printf("%s: state %p loop found %.4f\n", __func__, state, state->dist);
@@ -713,8 +698,8 @@ void bmo_connect_vert_pair_exec(BMesh *bm, BMOperator *op)
     } while ((link = link->next));
   }
 
-  BMO_vert_flag_enable(bm, pc.v_a, VERT_OUT);
-  BMO_vert_flag_enable(bm, pc.v_b, VERT_OUT);
+  BMO_vert_flag_enable(bm, pc.v_pair[0], VERT_OUT);
+  BMO_vert_flag_enable(bm, pc.v_pair[1], VERT_OUT);
 
   BLI_mempool_destroy(pc.link_pool);
 

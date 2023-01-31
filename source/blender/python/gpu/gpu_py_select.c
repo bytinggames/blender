@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bpygpu
@@ -22,8 +8,8 @@
  * \note Currently only used for gizmo selection,
  * will need to add begin/end and a way to access the hits.
  *
- * - Use ``bpygpu_`` for local API.
- * - Use ``BPyGPU`` for public API.
+ * - Use `bpygpu_` for local API.
+ * - Use `BPyGPU` for public API.
  */
 
 #include <Python.h>
@@ -34,7 +20,7 @@
 
 #include "GPU_select.h"
 
-#include "gpu_py_select.h" /* own include */
+#include "gpu_py_select.h" /* Own include. */
 
 /* -------------------------------------------------------------------- */
 /** \name Methods
@@ -45,7 +31,7 @@ PyDoc_STRVAR(pygpu_select_load_id_doc,
              "\n"
              "   Set the selection ID.\n"
              "\n"
-             "   :param id: Number (32-bit uint).\n"
+             "   :arg id: Number (32-bit uint).\n"
              "   :type select: int\n");
 static PyObject *pygpu_select_load_id(PyObject *UNUSED(self), PyObject *value)
 {
@@ -56,6 +42,7 @@ static PyObject *pygpu_select_load_id(PyObject *UNUSED(self), PyObject *value)
   GPU_select_load_id(id);
   Py_RETURN_NONE;
 }
+
 /** \} */
 
 /* -------------------------------------------------------------------- */

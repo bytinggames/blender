@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2017, Blender Foundation
- * This is a new part of Blender
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2017 Blender Foundation. */
 
 /** \file
  * \ingroup shader_fx
@@ -65,8 +49,8 @@ static void panel_draw(const bContext *UNUSED(C), Panel *panel)
   uiLayoutSetPropSep(layout, true);
 
   row = uiLayoutRowWithHeading(layout, true, IFACE_("Axis"));
-  uiItemR(row, ptr, "flip_horizontal", toggles_flag, NULL, ICON_NONE);
-  uiItemR(row, ptr, "flip_vertical", toggles_flag, NULL, ICON_NONE);
+  uiItemR(row, ptr, "use_flip_x", toggles_flag, NULL, ICON_NONE);
+  uiItemR(row, ptr, "use_flip_y", toggles_flag, NULL, ICON_NONE);
 
   shaderfx_panel_end(layout, ptr);
 }
@@ -77,7 +61,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 ShaderFxTypeInfo shaderfx_Type_Flip = {
-    /* name */ "Flip",
+    /* name */ N_("Flip"),
     /* structName */ "FlipShaderFxData",
     /* structSize */ sizeof(FlipShaderFxData),
     /* type */ eShaderFxType_GpencilType,

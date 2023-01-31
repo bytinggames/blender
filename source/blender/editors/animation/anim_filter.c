@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation, Joshua Leung
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation, Joshua Leung. All rights reserved. */
 
 /** \file
  * \ingroup edanimation
@@ -32,7 +16,7 @@
  * are being edited. Likewise, the NLA Editor also uses this for its channel list and in
  * its operators.
  *
- * Note: much of the original system this was based on was built before the creation of the RNA
+ * NOTE: much of the original system this was based on was built before the creation of the RNA
  * system. In future, it would be interesting to replace some parts of this code with RNA queries,
  * however, RNA does not eliminate some of the boiler-plate reduction benefits presented by this
  * system, so if any such work does occur, it should only be used for the internals used here...
@@ -47,8 +31,8 @@
 #include "DNA_brush_types.h"
 #include "DNA_cachefile_types.h"
 #include "DNA_camera_types.h"
+#include "DNA_curves_types.h"
 #include "DNA_gpencil_types.h"
-#include "DNA_hair_types.h"
 #include "DNA_key_types.h"
 #include "DNA_lattice_types.h"
 #include "DNA_layer_types.h"
@@ -131,14 +115,16 @@ static void animedit_get_yscale_factor(bAnimContext *ac)
 /* ----------- Private Stuff - Action Editor ------------- */
 
 /* Get shapekey data being edited (for Action Editor -> ShapeKey mode) */
-/* Note: there's a similar function in key.c (BKE_key_from_object) */
+/* NOTE: there's a similar function in key.c #BKE_key_from_object. */
 static Key *actedit_get_shapekeys(bAnimContext *ac)
 {
+  Scene *scene = ac->scene;
   ViewLayer *view_layer = ac->view_layer;
   Object *ob;
   Key *key;
 
-  ob = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  ob = BKE_view_layer_active_object_get(view_layer);
   if (ob == NULL) {
     return NULL;
   }
@@ -222,9 +208,9 @@ static bool actedit_get_context(bAnimContext *ac, SpaceAction *saction)
       ac->mode = saction->mode;
       return true;
 
-    case SACTCONT_MASK: /* Mask */ /* XXX review how this mode is handled... */
+    case SACTCONT_MASK: /* Mask */ /* XXX: review how this mode is handled. */
     {
-      /* TODO, other methods to get the mask */
+      /* TODO: other methods to get the mask. */
 #if 0
       Sequence *seq = SEQ_select_active_get(ac->scene);
       MovieClip *clip = ac->scene->clip;
@@ -362,11 +348,6 @@ static bool nlaedit_get_context(bAnimContext *ac, SpaceNla *snla)
 
 /* ----------- Public API --------------- */
 
-/* Obtain current anim-data context,
- * given that context info from Blender context has already been set:
- * - AnimContext to write to is provided as pointer to var on stack so that we don't have
- *   allocation/freeing costs (which are not that avoidable with channels).
- */
 bool ANIM_animdata_context_getdata(bAnimContext *ac)
 {
   SpaceLink *sl = ac->sl;
@@ -397,11 +378,6 @@ bool ANIM_animdata_context_getdata(bAnimContext *ac)
   return (ok && ac->data);
 }
 
-/* Obtain current anim-data context from Blender Context info
- * - AnimContext to write to is provided as pointer to var on stack so that we don't have
- *   allocation/freeing costs (which are not that avoidable with channels).
- * - Clears data and sets the information from Blender Context which is useful
- */
 bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
 {
   Main *bmain = CTX_data_main(C);
@@ -419,12 +395,13 @@ bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
   /* get useful default context settings from context */
   ac->bmain = bmain;
   ac->scene = scene;
+  ac->view_layer = CTX_data_view_layer(C);
   if (scene) {
     ac->markers = ED_context_get_markers(C);
+    BKE_view_layer_synced_ensure(ac->scene, ac->view_layer);
   }
-  ac->view_layer = CTX_data_view_layer(C);
   ac->depsgraph = CTX_data_depsgraph_pointer(C);
-  ac->obact = (ac->view_layer->basact) ? ac->view_layer->basact->object : NULL;
+  ac->obact = BKE_view_layer_active_object_get(ac->view_layer);
   ac->area = area;
   ac->region = region;
   ac->sl = sl;
@@ -438,6 +415,11 @@ bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
   /* XXX: if the below fails, try to grab this info from context instead...
    * (to allow for scripting). */
   return ANIM_animdata_context_getdata(ac);
+}
+
+bool ANIM_animdata_can_have_greasepencil(const eAnimCont_Types type)
+{
+  return ELEM(type, ANIMCONT_GPENCIL, ANIMCONT_DOPESHEET, ANIMCONT_TIMELINE);
 }
 
 /* ************************************************************ */
@@ -454,7 +436,7 @@ bool ANIM_animdata_get_context(const bContext *C, bAnimContext *ac)
  *    keep expander channels with no sub-data out, as those cases should get
  *    dealt with by the recursive detection idiom in place.
  *
- * Implementation Note:
+ * Implementation NOTE:
  *  YES the _doSubChannels variable is NOT read anywhere. BUT, this is NOT an excuse
  *  to go steamrolling the logic into a single-line expression as from experience,
  *  those are notoriously difficult to read + debug when extending later on. The code
@@ -801,10 +783,10 @@ static bAnimListElem *make_new_animlistelem(void *data,
         break;
       }
       case ANIMTYPE_DSHAIR: {
-        Hair *hair = (Hair *)data;
-        AnimData *adt = hair->adt;
+        Curves *curves = (Curves *)data;
+        AnimData *adt = curves->adt;
 
-        ale->flag = FILTER_HAIR_OBJD(hair);
+        ale->flag = FILTER_CURVES_OBJD(curves);
 
         ale->key_data = (adt) ? adt->action : NULL;
         ale->datatype = ALE_ACT;
@@ -1061,20 +1043,17 @@ static bool skip_fcurve_selected_data(bDopeSheet *ads, FCurve *fcu, ID *owner_id
 
   if (GS(owner_id->name) == ID_OB) {
     Object *ob = (Object *)owner_id;
+    bPoseChannel *pchan = NULL;
+    char bone_name[sizeof(pchan->name)];
 
-    /* only consider if F-Curve involves pose.bones */
-    if ((fcu->rna_path) && strstr(fcu->rna_path, "pose.bones")) {
-
-      /* get bone-name, and check if this bone is selected */
-      bPoseChannel *pchan = NULL;
-      char *bone_name = BLI_str_quoted_substrN(fcu->rna_path, "pose.bones[");
-      if (bone_name) {
-        pchan = BKE_pose_channel_find_name(ob->pose, bone_name);
-        MEM_freeN(bone_name);
-      }
+    /* Only consider if F-Curve involves `pose.bones`. */
+    if (fcu->rna_path &&
+        BLI_str_quoted_substr(fcu->rna_path, "pose.bones[", bone_name, sizeof(bone_name))) {
+      /* Get bone-name, and check if this bone is selected. */
+      pchan = BKE_pose_channel_find_name(ob->pose, bone_name);
 
       /* check whether to continue or skip */
-      if ((pchan) && (pchan->bone)) {
+      if (pchan && pchan->bone) {
         /* If only visible channels,
          * skip if bone not visible unless user wants channels from hidden data too. */
         if (skip_hidden) {
@@ -1101,24 +1080,41 @@ static bool skip_fcurve_selected_data(bDopeSheet *ads, FCurve *fcu, ID *owner_id
   }
   else if (GS(owner_id->name) == ID_SCE) {
     Scene *scene = (Scene *)owner_id;
+    Sequence *seq = NULL;
+    char seq_name[sizeof(seq->name)];
 
-    /* only consider if F-Curve involves sequence_editor.sequences */
-    if ((fcu->rna_path) && strstr(fcu->rna_path, "sequences_all")) {
-      Editing *ed = SEQ_editing_get(scene, false);
-      Sequence *seq = NULL;
-
+    /* Only consider if F-Curve involves `sequence_editor.sequences`. */
+    if (fcu->rna_path &&
+        BLI_str_quoted_substr(fcu->rna_path, "sequences_all[", seq_name, sizeof(seq_name))) {
+      /* Get strip name, and check if this strip is selected. */
+      Editing *ed = SEQ_editing_get(scene);
       if (ed) {
-        /* get strip name, and check if this strip is selected */
-        char *seq_name = BLI_str_quoted_substrN(fcu->rna_path, "sequences_all[");
-        if (seq_name) {
-          seq = SEQ_get_sequence_by_name(ed->seqbasep, seq_name, false);
-          MEM_freeN(seq_name);
-        }
+        seq = SEQ_get_sequence_by_name(ed->seqbasep, seq_name, false);
       }
 
-      /* can only add this F-Curve if it is selected */
+      /* Can only add this F-Curve if it is selected. */
       if (ads->filterflag & ADS_FILTER_ONLYSEL) {
-        if ((seq == NULL) || (seq->flag & SELECT) == 0) {
+
+        /* NOTE(@campbellbarton): The `seq == NULL` check doesn't look right
+         * (compared to other checks in this function which skip data that can't be found).
+         *
+         * This is done since the search for sequence strips doesn't use a global lookup:
+         * - Nested meta-strips are excluded.
+         * - When inside a meta-strip - strips outside the meta-strip excluded.
+         *
+         * Instead, only the strips directly visible to the user are considered for selection.
+         * The NULL check here means everything else is considered unselected and is not shown.
+         *
+         * There is a subtle difference between nodes, pose-bones ... etc
+         * since data-paths that point to missing strips are not shown.
+         * If this is an important difference, the NULL case could perform a global lookup,
+         * only returning `true` if the sequence strip exists elsewhere
+         * (ignoring it's selection state). */
+        if (seq == NULL) {
+          return true;
+        }
+
+        if ((seq->flag & SELECT) == 0) {
           return true;
         }
       }
@@ -1126,22 +1122,21 @@ static bool skip_fcurve_selected_data(bDopeSheet *ads, FCurve *fcu, ID *owner_id
   }
   else if (GS(owner_id->name) == ID_NT) {
     bNodeTree *ntree = (bNodeTree *)owner_id;
+    bNode *node = NULL;
+    char node_name[sizeof(node->name)];
 
-    /* check for selected nodes */
-    if ((fcu->rna_path) && strstr(fcu->rna_path, "nodes")) {
-      bNode *node = NULL;
+    /* Check for selected nodes. */
+    if (fcu->rna_path &&
+        BLI_str_quoted_substr(fcu->rna_path, "nodes[", node_name, sizeof(node_name))) {
+      /* Get strip name, and check if this strip is selected. */
+      node = nodeFindNodebyName(ntree, node_name);
 
-      /* get strip name, and check if this strip is selected */
-      char *node_name = BLI_str_quoted_substrN(fcu->rna_path, "nodes[");
-      if (node_name) {
-        node = nodeFindNodebyName(ntree, node_name);
-        MEM_freeN(node_name);
-      }
-
-      /* can only add this F-Curve if it is selected */
-      if (ads->filterflag & ADS_FILTER_ONLYSEL) {
-        if ((node) && (node->flag & NODE_SELECT) == 0) {
-          return true;
+      /* Can only add this F-Curve if it is selected. */
+      if (node) {
+        if (ads->filterflag & ADS_FILTER_ONLYSEL) {
+          if ((node->flag & NODE_SELECT) == 0) {
+            return true;
+          }
         }
       }
     }
@@ -1217,7 +1212,7 @@ static bool skip_fcurve_with_name(
  *
  * \return true if F-Curve has errors/is disabled
  */
-static bool fcurve_has_errors(FCurve *fcu)
+static bool fcurve_has_errors(const FCurve *fcu)
 {
   /* F-Curve disabled - path eval error */
   if (fcu->flag & FCURVE_DISABLED) {
@@ -1226,7 +1221,7 @@ static bool fcurve_has_errors(FCurve *fcu)
 
   /* driver? */
   if (fcu->driver) {
-    ChannelDriver *driver = fcu->driver;
+    const ChannelDriver *driver = fcu->driver;
     DriverVar *dvar;
 
     /* error flag on driver usually means that there is an error
@@ -1351,7 +1346,7 @@ static size_t animfilter_fcurves(ListBase *anim_data,
    *    Back to step 2 :)
    */
   for (fcu = first;
-       ((fcu = animfilter_fcurve_next(ads, fcu, fcurve_type, filter_mode, owner, owner_id)));
+       (fcu = animfilter_fcurve_next(ads, fcu, fcurve_type, filter_mode, owner, owner_id));
        fcu = fcu->next) {
     if (UNLIKELY(fcurve_type == ANIMTYPE_NLACURVE)) {
       /* NLA Control Curve - Basically the same as normal F-Curves,
@@ -1475,7 +1470,7 @@ static size_t animfilter_action(bAnimContext *ac,
   /* don't include anything from this action if it is linked in from another file,
    * and we're getting stuff for editing...
    */
-  if ((filter_mode & ANIMFILTER_FOREDIT) && ID_IS_LINKED(act)) {
+  if ((filter_mode & ANIMFILTER_FOREDIT) && (ID_IS_LINKED(act) || ID_IS_OVERRIDE_LIBRARY(act))) {
     return 0;
   }
 
@@ -1612,7 +1607,7 @@ static size_t animfilter_nla_controls(
 
   /* add control curves from each NLA strip... */
   /* NOTE: ANIMTYPE_FCURVES are created here, to avoid duplicating the code needed */
-  BEGIN_ANIMFILTER_SUBCHANNELS (((adt->flag & ADT_NLA_SKEYS_COLLAPSED) == 0)) {
+  BEGIN_ANIMFILTER_SUBCHANNELS ((adt->flag & ADT_NLA_SKEYS_COLLAPSED) == 0) {
     NlaTrack *nlt;
     NlaStrip *strip;
 
@@ -1820,11 +1815,13 @@ static size_t animdata_filter_gpencil_data(ListBase *anim_data,
     ListBase tmp_data = {NULL, NULL};
     size_t tmp_items = 0;
 
-    /* add gpencil animation channels */
-    BEGIN_ANIMFILTER_SUBCHANNELS (EXPANDED_GPD(gpd)) {
-      tmp_items += animdata_filter_gpencil_layers_data(&tmp_data, ads, gpd, filter_mode);
+    if (!(filter_mode & ANIMFILTER_FCURVESONLY)) {
+      /* add gpencil animation channels */
+      BEGIN_ANIMFILTER_SUBCHANNELS (EXPANDED_GPD(gpd)) {
+        tmp_items += animdata_filter_gpencil_layers_data(&tmp_data, ads, gpd, filter_mode);
+      }
+      END_ANIMFILTER_SUBCHANNELS;
     }
-    END_ANIMFILTER_SUBCHANNELS;
 
     /* did we find anything? */
     if (tmp_items) {
@@ -1857,8 +1854,8 @@ static size_t animdata_filter_gpencil(bAnimContext *ac,
   bDopeSheet *ads = ac->ads;
   size_t items = 0;
 
+  Scene *scene = ac->scene;
   ViewLayer *view_layer = (ViewLayer *)ac->view_layer;
-  Base *base;
 
   /* Include all annotation datablocks. */
   if (((ads->filterflag & ADS_FILTER_ONLYSEL) == 0) ||
@@ -1870,7 +1867,8 @@ static size_t animdata_filter_gpencil(bAnimContext *ac,
     }
   }
   /* Objects in the scene */
-  for (base = view_layer->object_bases.first; base; base = base->next) {
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  LISTBASE_FOREACH (Base *, base, BKE_view_layer_object_bases_get(view_layer)) {
     /* Only consider this object if it has got some GP data (saving on all the other tests) */
     if (base->object && (base->object->type == OB_GPENCIL)) {
       Object *ob = base->object;
@@ -1887,18 +1885,19 @@ static size_t animdata_filter_gpencil(bAnimContext *ac,
       if ((filter_mode & ANIMFILTER_DATA_VISIBLE) && !(ads->filterflag & ADS_FILTER_INCL_HIDDEN)) {
         /* Layer visibility - we check both object and base,
          * since these may not be in sync yet. */
-        if ((base->flag & BASE_VISIBLE_DEPSGRAPH) == 0) {
+        if ((base->flag & BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT) == 0 ||
+            (base->flag & BASE_ENABLED_AND_VISIBLE_IN_DEFAULT_VIEWPORT) == 0) {
           continue;
         }
 
         /* outliner restrict-flag */
-        if (ob->restrictflag & OB_RESTRICT_VIEWPORT) {
+        if (ob->visibility_flag & OB_HIDE_VIEWPORT) {
           continue;
         }
       }
 
       /* check selection and object type filters */
-      if ((ads->filterflag & ADS_FILTER_ONLYSEL) && !((base->flag & BASE_SELECTED))) {
+      if ((ads->filterflag & ADS_FILTER_ONLYSEL) && !(base->flag & BASE_SELECTED)) {
         /* only selected should be shown */
         continue;
       }
@@ -1937,6 +1936,9 @@ static size_t animdata_filter_ds_gpencil(
     tmp_items += animfilter_block_data(ac, &tmp_data, ads, &gpd->id, filter_mode);
 
     /* add Grease Pencil layers */
+    if (!(filter_mode & ANIMFILTER_FCURVESONLY)) {
+      tmp_items += animdata_filter_gpencil_layers_data(&tmp_data, ads, gpd, filter_mode);
+    }
 
     /* TODO: do these need a separate expander?
      * XXX:  what order should these go in? */
@@ -2046,10 +2048,12 @@ static size_t animdata_filter_mask(Main *bmain,
     }
 
     /* add mask animation channels */
-    BEGIN_ANIMFILTER_SUBCHANNELS (EXPANDED_MASK(mask)) {
-      tmp_items += animdata_filter_mask_data(&tmp_data, mask, filter_mode);
+    if (!(filter_mode & ANIMFILTER_FCURVESONLY)) {
+      BEGIN_ANIMFILTER_SUBCHANNELS (EXPANDED_MASK(mask)) {
+        tmp_items += animdata_filter_mask_data(&tmp_data, mask, filter_mode);
+      }
+      END_ANIMFILTER_SUBCHANNELS;
     }
-    END_ANIMFILTER_SUBCHANNELS;
 
     /* did we find anything? */
     if (tmp_items) {
@@ -2542,9 +2546,9 @@ static size_t animdata_filter_ds_obdata(
       expanded = FILTER_LAM_OBJD(la);
       break;
     }
-    case OB_CURVE: /* ------- Curve ---------- */
-    case OB_SURF:  /* ------- Nurbs Surface ---------- */
-    case OB_FONT:  /* ------- Text Curve ---------- */
+    case OB_CURVES_LEGACY: /* ------- Curve ---------- */
+    case OB_SURF:          /* ------- Nurbs Surface ---------- */
+    case OB_FONT:          /* ------- Text Curve ---------- */
     {
       Curve *cu = (Curve *)ob->data;
 
@@ -2612,16 +2616,16 @@ static size_t animdata_filter_ds_obdata(
       expanded = FILTER_SPK_OBJD(spk);
       break;
     }
-    case OB_HAIR: /* ---------- Hair ----------- */
+    case OB_CURVES: /* ---------- Curves ----------- */
     {
-      Hair *hair = (Hair *)ob->data;
+      Curves *curves = (Curves *)ob->data;
 
       if (ads->filterflag2 & ADS_FILTER_NOHAIR) {
         return 0;
       }
 
       type = ANIMTYPE_DSHAIR;
-      expanded = FILTER_HAIR_OBJD(hair);
+      expanded = FILTER_CURVES_OBJD(curves);
       break;
     }
     case OB_POINTCLOUD: /* ---------- PointCloud ----------- */
@@ -3074,7 +3078,10 @@ static size_t animdata_filter_dopesheet_movieclips(bAnimContext *ac,
 }
 
 /* Helper for animdata_filter_dopesheet() - For checking if an object should be included or not */
-static bool animdata_filter_base_is_ok(bDopeSheet *ads, Base *base, int filter_mode)
+static bool animdata_filter_base_is_ok(bDopeSheet *ads,
+                                       Base *base,
+                                       const eObjectMode object_mode,
+                                       int filter_mode)
 {
   Object *ob = base->object;
 
@@ -3093,12 +3100,13 @@ static bool animdata_filter_base_is_ok(bDopeSheet *ads, Base *base, int filter_m
    */
   if ((filter_mode & ANIMFILTER_DATA_VISIBLE) && !(ads->filterflag & ADS_FILTER_INCL_HIDDEN)) {
     /* layer visibility - we check both object and base, since these may not be in sync yet */
-    if ((base->flag & BASE_VISIBLE_DEPSGRAPH) == 0 || (base->flag & BASE_VISIBLE_VIEWLAYER) == 0) {
+    if ((base->flag & BASE_ENABLED_AND_MAYBE_VISIBLE_IN_VIEWPORT) == 0 ||
+        (base->flag & BASE_ENABLED_AND_VISIBLE_IN_DEFAULT_VIEWPORT) == 0) {
       return false;
     }
 
     /* outliner restrict-flag */
-    if (ob->restrictflag & OB_RESTRICT_VIEWPORT) {
+    if (ob->visibility_flag & OB_HIDE_VIEWPORT) {
       return false;
     }
   }
@@ -3131,10 +3139,21 @@ static bool animdata_filter_base_is_ok(bDopeSheet *ads, Base *base, int filter_m
   }
 
   /* check selection and object type filters */
-  if ((ads->filterflag & ADS_FILTER_ONLYSEL) &&
-      !((base->flag & BASE_SELECTED) /*|| (base == sce->basact)*/)) {
-    /* only selected should be shown */
-    return false;
+  if (ads->filterflag & ADS_FILTER_ONLYSEL) {
+    if (object_mode & OB_MODE_POSE) {
+      /* When in pose-mode handle all pose-mode objects.
+       * This avoids problems with pose-mode where objects may be unselected,
+       * where a selected bone of an unselected object would be hidden. see: T81922. */
+      if (!(base->object->mode & object_mode)) {
+        return false;
+      }
+    }
+    else {
+      /* only selected should be shown (ignore active) */
+      if (!(base->flag & BASE_SELECTED)) {
+        return false;
+      }
+    }
   }
 
   /* check if object belongs to the filtering group if option to filter
@@ -3162,17 +3181,20 @@ static int ds_base_sorting_cmp(const void *base1_ptr, const void *base2_ptr)
 
 /* Get a sorted list of all the bases - for inclusion in dopesheet (when drawing channels) */
 static Base **animdata_filter_ds_sorted_bases(bDopeSheet *ads,
+                                              const Scene *scene,
                                               ViewLayer *view_layer,
                                               int filter_mode,
                                               size_t *r_usable_bases)
 {
   /* Create an array with space for all the bases, but only containing the usable ones */
-  size_t tot_bases = BLI_listbase_count(&view_layer->object_bases);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  ListBase *object_bases = BKE_view_layer_object_bases_get(view_layer);
+  size_t tot_bases = BLI_listbase_count(object_bases);
   size_t num_bases = 0;
 
   Base **sorted_bases = MEM_mallocN(sizeof(Base *) * tot_bases, "Dopesheet Usable Sorted Bases");
-  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
-    if (animdata_filter_base_is_ok(ads, base, filter_mode)) {
+  LISTBASE_FOREACH (Base *, base, object_bases) {
+    if (animdata_filter_base_is_ok(ads, base, OB_MODE_OBJECT, filter_mode)) {
       sorted_bases[num_bases++] = base;
     }
   }
@@ -3241,14 +3263,17 @@ static size_t animdata_filter_dopesheet(bAnimContext *ac,
    * - Don't do this if this behavior has been turned off (i.e. due to it being too slow)
    * - Don't do this if there's just a single object
    */
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  ListBase *object_bases = BKE_view_layer_object_bases_get(view_layer);
   if ((filter_mode & ANIMFILTER_LIST_CHANNELS) && !(ads->flag & ADS_FLAG_NO_DB_SORT) &&
-      (view_layer->object_bases.first != view_layer->object_bases.last)) {
+      (object_bases->first != object_bases->last)) {
     /* Filter list of bases (i.e. objects), sort them, then add their contents normally... */
     /* TODO: Cache the old sorted order - if the set of bases hasn't changed, don't re-sort... */
     Base **sorted_bases;
     size_t num_bases;
 
-    sorted_bases = animdata_filter_ds_sorted_bases(ads, view_layer, filter_mode, &num_bases);
+    sorted_bases = animdata_filter_ds_sorted_bases(
+        ads, scene, view_layer, filter_mode, &num_bases);
     if (sorted_bases) {
       /* Add the necessary channels for these bases... */
       for (size_t i = 0; i < num_bases; i++) {
@@ -3265,8 +3290,10 @@ static size_t animdata_filter_dopesheet(bAnimContext *ac,
     /* Filter and add contents of each base (i.e. object) without them sorting first
      * NOTE: This saves performance in cases where order doesn't matter
      */
-    LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
-      if (animdata_filter_base_is_ok(ads, base, filter_mode)) {
+    Object *obact = BKE_view_layer_active_object_get(view_layer);
+    const eObjectMode object_mode = obact ? obact->mode : OB_MODE_OBJECT;
+    LISTBASE_FOREACH (Base *, base, object_bases) {
+      if (animdata_filter_base_is_ok(ads, base, object_mode, filter_mode)) {
         /* since we're still here, this object should be usable */
         items += animdata_filter_dopesheet_ob(ac, anim_data, ads, base, filter_mode);
       }
@@ -3397,9 +3424,8 @@ static size_t animdata_filter_remove_duplis(ListBase *anim_data)
   GSet *gs;
   size_t items = 0;
 
-  /* build new hashtable to efficiently store and retrieve which entries have been
-   * encountered already while searching
-   */
+  /* Build new hash-table to efficiently store and retrieve which entries have been
+   * encountered already while searching. */
   gs = BLI_gset_ptr_new(__func__);
 
   /* loop through items, removing them from the list if a similar item occurs already */
@@ -3430,14 +3456,6 @@ static size_t animdata_filter_remove_duplis(ListBase *anim_data)
 
 /* ----------- Public API --------------- */
 
-/**
- * This function filters the active data source to leave only animation channels suitable for
- * usage by the caller. It will return the length of the list
- *
- * \param anim_data: Is a pointer to a #ListBase,
- * to which the filtered animation channels will be placed for use.
- * \param filter_mode: how should the data be filtered - bit-mapping accessed flags.
- */
 size_t ANIM_animdata_filter(bAnimContext *ac,
                             ListBase *anim_data,
                             eAnimFilter_Flags filter_mode,

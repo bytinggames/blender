@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2019, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2019 Blender Foundation. */
 
 /** \file
  * \ingroup EEVEE
@@ -53,7 +38,7 @@ void EEVEE_shadows_cube_add(EEVEE_LightsInfo *linfo, EEVEE_Light *evli, Object *
   /* Saving light bounds for later. */
   BoundSphere *cube_bound = linfo->shadow_bounds + linfo->cube_len;
   copy_v3_v3(cube_bound->center, evli->position);
-  cube_bound->radius = sqrt(1.0f / evli->invsqrdist);
+  cube_bound->radius = sqrt(1.0f / min_ff(evli->invsqrdist, evli->invsqrdist_volume));
 
   linfo->shadow_cube_light_indices[linfo->cube_len] = linfo->num_light;
   evli->shadow_id = linfo->shadow_len++;
@@ -95,7 +80,6 @@ start:
   add_v3_v3(ws_sample_pos, jitter);
 }
 
-/* Return true if sample has changed and light needs to be updated. */
 bool EEVEE_shadows_cube_setup(EEVEE_LightsInfo *linfo, const EEVEE_Light *evli, int sample_ofs)
 {
   EEVEE_Shadow *shdw_data = linfo->shadow_data + (int)evli->shadow_id;
@@ -103,7 +87,7 @@ bool EEVEE_shadows_cube_setup(EEVEE_LightsInfo *linfo, const EEVEE_Light *evli, 
 
   eevee_light_matrix_get(evli, cube_data->shadowmat);
 
-  shdw_data->far = max_ff(sqrt(1.0f / evli->invsqrdist), 3e-4);
+  shdw_data->far = max_ff(sqrt(1.0f / min_ff(evli->invsqrdist, evli->invsqrdist_volume)), 3e-4);
   shdw_data->near = min_ff(shdw_data->near, shdw_data->far - 1e-4);
 
   bool update = false;

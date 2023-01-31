@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2018 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2018 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup depsgraph
@@ -48,7 +32,7 @@ namespace deg = blender::deg;
 
 /*************************** Evaluation Query API *****************************/
 
-static ePhysicsRelationType modifier_to_relation_type(unsigned int modifier_type)
+static ePhysicsRelationType modifier_to_relation_type(uint modifier_type)
 {
   switch (modifier_type) {
     case eModifierType_Collision:
@@ -59,7 +43,7 @@ static ePhysicsRelationType modifier_to_relation_type(unsigned int modifier_type
       return DEG_PHYSICS_DYNAMIC_BRUSH;
   }
 
-  BLI_assert(!"Unknown collision modifier type");
+  BLI_assert_msg(0, "Unknown collision modifier type");
   return DEG_PHYSICS_RELATIONS_NUM;
 }
 /* Get ID from an ID type object, in a safe manner. This means that object can be nullptr,
@@ -80,7 +64,7 @@ ListBase *DEG_get_effector_relations(const Depsgraph *graph, Collection *collect
   if (hash == nullptr) {
     return nullptr;
   }
-  /* Note: nullptr is a valid lookup key here as it means that the relation is not bound to a
+  /* NOTE: nullptr is a valid lookup key here as it means that the relation is not bound to a
    * specific collection. */
   ID *collection_orig = DEG_get_original_id(object_id_safe(collection));
   return hash->lookup_default(collection_orig, nullptr);
@@ -88,7 +72,7 @@ ListBase *DEG_get_effector_relations(const Depsgraph *graph, Collection *collect
 
 ListBase *DEG_get_collision_relations(const Depsgraph *graph,
                                       Collection *collection,
-                                      unsigned int modifier_type)
+                                      uint modifier_type)
 {
   const deg::Depsgraph *deg_graph = reinterpret_cast<const deg::Depsgraph *>(graph);
   const ePhysicsRelationType type = modifier_to_relation_type(modifier_type);
@@ -96,7 +80,7 @@ ListBase *DEG_get_collision_relations(const Depsgraph *graph,
   if (hash == nullptr) {
     return nullptr;
   }
-  /* Note: nullptr is a valid lookup key here as it means that the relation is not bound to a
+  /* NOTE: nullptr is a valid lookup key here as it means that the relation is not bound to a
    * specific collection. */
   ID *collection_orig = DEG_get_original_id(object_id_safe(collection));
   return hash->lookup_default(collection_orig, nullptr);
@@ -107,7 +91,7 @@ ListBase *DEG_get_collision_relations(const Depsgraph *graph,
 void DEG_add_collision_relations(DepsNodeHandle *handle,
                                  Object *object,
                                  Collection *collection,
-                                 unsigned int modifier_type,
+                                 uint modifier_type,
                                  DEG_CollobjFilterFunction filter_function,
                                  const char *name)
 {
@@ -190,13 +174,11 @@ ListBase *build_effector_relations(Depsgraph *graph, Collection *collection)
   ID *collection_id = object_id_safe(collection);
   return hash->lookup_or_add_cb(collection_id, [&]() {
     ::Depsgraph *depsgraph = reinterpret_cast<::Depsgraph *>(graph);
-    return BKE_effector_relations_create(depsgraph, graph->view_layer, collection);
+    return BKE_effector_relations_create(depsgraph, graph->scene, graph->view_layer, collection);
   });
 }
 
-ListBase *build_collision_relations(Depsgraph *graph,
-                                    Collection *collection,
-                                    unsigned int modifier_type)
+ListBase *build_collision_relations(Depsgraph *graph, Collection *collection, uint modifier_type)
 {
   const ePhysicsRelationType type = modifier_to_relation_type(modifier_type);
   Map<const ID *, ListBase *> *hash = graph->physics_relations[type];

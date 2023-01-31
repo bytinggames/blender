@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -35,9 +19,10 @@
 #include "UI_interface.h"
 
 #include "transform.h"
-#include "transform_mode.h"
+#include "transform_convert.h"
 #include "transform_snap.h"
 
+#include "transform_mode.h"
 /* -------------------------------------------------------------------- */
 /** \name Transform (Normal Rotation)
  * \{ */
@@ -94,16 +79,16 @@ static void applyNormalRotation(TransInfo *t, const int UNUSED(mval[2]))
 
     float axis[3];
     float mat[3][3];
-    float angle = t->values[0];
+    float angle = t->values[0] + t->values_modal_offset[0];
     copy_v3_v3(axis, axis_final);
 
     transform_snap_increment(t, &angle);
 
-    applySnapping(t, &angle);
+    applySnappingAsGroup(t, &angle);
 
     applyNumInput(&t->num, &angle);
 
-    headerRotation(t, str, angle);
+    headerRotation(t, str, sizeof(str), angle);
 
     axis_angle_normalized_to_mat3(mat, axis, angle);
 
@@ -148,5 +133,8 @@ void initNormalRotation(TransInfo *t)
 
     storeCustomLNorValue(tc, bm);
   }
+
+  transform_mode_default_modal_orientation_set(t, V3D_ORIENT_VIEW);
 }
+
 /** \} */

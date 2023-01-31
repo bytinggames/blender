@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -25,6 +11,8 @@
 #include "../BPy_Interface1D.h"
 
 #include "UnaryFunction1D_unsigned_int/BPy_QuantitativeInvisibilityF1D.h"
+
+#include "BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -88,11 +76,10 @@ static int UnaryFunction1DUnsigned___init__(BPy_UnaryFunction1DUnsigned *self,
   }
 
   if (!obj) {
-    self->uf1D_unsigned = new UnaryFunction1D<unsigned int>();
+    self->uf1D_unsigned = new UnaryFunction1D<uint>();
   }
   else {
-    self->uf1D_unsigned = new UnaryFunction1D<unsigned int>(
-        IntegrationType_from_BPy_IntegrationType(obj));
+    self->uf1D_unsigned = new UnaryFunction1D<uint>(IntegrationType_from_BPy_IntegrationType(obj));
   }
 
   self->uf1D_unsigned->py_uf1D = (PyObject *)self;
@@ -123,7 +110,7 @@ static PyObject *UnaryFunction1DUnsigned___call__(BPy_UnaryFunction1DUnsigned *s
     return nullptr;
   }
 
-  if (typeid(*(self->uf1D_unsigned)) == typeid(UnaryFunction1D<unsigned int>)) {
+  if (typeid(*(self->uf1D_unsigned)) == typeid(UnaryFunction1D<uint>)) {
     PyErr_SetString(PyExc_TypeError, "__call__ method not properly overridden");
     return nullptr;
   }
@@ -144,14 +131,14 @@ PyDoc_STRVAR(integration_type_doc,
              "\n"
              ":type: :class:`IntegrationType`");
 
-static PyObject *integration_type_get(BPy_UnaryFunction1DUnsigned *self, void *UNUSED(closure))
+static PyObject *integration_type_get(BPy_UnaryFunction1DUnsigned *self, void * /*closure*/)
 {
   return BPy_IntegrationType_from_IntegrationType(self->uf1D_unsigned->getIntegrationType());
 }
 
 static int integration_type_set(BPy_UnaryFunction1DUnsigned *self,
                                 PyObject *value,
-                                void *UNUSED(closure))
+                                void * /*closure*/)
 {
   if (!BPy_IntegrationType_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be an IntegrationType");
@@ -185,7 +172,7 @@ PyTypeObject UnaryFunction1DUnsigned_Type = {
     nullptr,                                                     /* tp_as_number */
     nullptr,                                                     /* tp_as_sequence */
     nullptr,                                                     /* tp_as_mapping */
-    nullptr,                                                     /* tp_hash  */
+    nullptr,                                                     /* tp_hash */
     (ternaryfunc)UnaryFunction1DUnsigned___call__,               /* tp_call */
     nullptr,                                                     /* tp_str */
     nullptr,                                                     /* tp_getattro */

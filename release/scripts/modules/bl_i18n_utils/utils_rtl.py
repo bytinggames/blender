@@ -1,24 +1,5 @@
 #!/usr/bin/env python3
-
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ***** END GPL LICENSE BLOCK *****
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # Pre-process right-to-left languages.
 # You can use it either standalone, or through import_po_from_branches or
@@ -84,10 +65,10 @@ def protect_format_seq(msg):
 #    LRM = "\u200E"
 #    RLM = "\u200F"
     LRE = "\u202A"
-    RLE = "\u202B"
+#    RLE = "\u202B"
     PDF = "\u202C"
     LRO = "\u202D"
-    RLO = "\u202E"
+#    RLO = "\u202E"
     # uctrl = {LRE, RLE, PDF, LRO, RLO}
     # Most likely incomplete, but seems to cover current needs.
     format_codes = set("tslfd")

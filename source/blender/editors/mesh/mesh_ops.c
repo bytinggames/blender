@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edmesh
@@ -150,15 +134,19 @@ void ED_operatortypes_mesh(void)
 
   WM_operatortype_append(MESH_OT_uv_texture_add);
   WM_operatortype_append(MESH_OT_uv_texture_remove);
-  WM_operatortype_append(MESH_OT_vertex_color_add);
-  WM_operatortype_append(MESH_OT_vertex_color_remove);
-  WM_operatortype_append(MESH_OT_sculpt_vertex_color_add);
-  WM_operatortype_append(MESH_OT_sculpt_vertex_color_remove);
   WM_operatortype_append(MESH_OT_customdata_mask_clear);
   WM_operatortype_append(MESH_OT_customdata_skin_add);
   WM_operatortype_append(MESH_OT_customdata_skin_clear);
   WM_operatortype_append(MESH_OT_customdata_custom_splitnormals_add);
   WM_operatortype_append(MESH_OT_customdata_custom_splitnormals_clear);
+  WM_operatortype_append(MESH_OT_customdata_bevel_weight_vertex_add);
+  WM_operatortype_append(MESH_OT_customdata_bevel_weight_vertex_clear);
+  WM_operatortype_append(MESH_OT_customdata_bevel_weight_edge_add);
+  WM_operatortype_append(MESH_OT_customdata_bevel_weight_edge_clear);
+  WM_operatortype_append(MESH_OT_customdata_crease_vertex_add);
+  WM_operatortype_append(MESH_OT_customdata_crease_vertex_clear);
+  WM_operatortype_append(MESH_OT_customdata_crease_edge_add);
+  WM_operatortype_append(MESH_OT_customdata_crease_edge_clear);
 
   WM_operatortype_append(MESH_OT_edgering_select);
   WM_operatortype_append(MESH_OT_loopcut);
@@ -336,7 +324,7 @@ void ED_operatormacros_mesh(void)
 
   ot = WM_operatortype_append_macro("MESH_OT_polybuild_face_at_cursor_move",
                                     "Face at Cursor Move",
-                                    "",
+                                    NULL,
                                     OPTYPE_UNDO | OPTYPE_REGISTER);
   WM_operatortype_macro_define(ot, "MESH_OT_polybuild_face_at_cursor");
   otmacro = WM_operatortype_macro_define(ot, "TRANSFORM_OT_translate");
@@ -345,7 +333,7 @@ void ED_operatormacros_mesh(void)
 
   ot = WM_operatortype_append_macro("MESH_OT_polybuild_split_at_cursor_move",
                                     "Split at Cursor Move",
-                                    "",
+                                    NULL,
                                     OPTYPE_UNDO | OPTYPE_REGISTER);
   WM_operatortype_macro_define(ot, "MESH_OT_polybuild_split_at_cursor");
   otmacro = WM_operatortype_macro_define(ot, "TRANSFORM_OT_translate");
@@ -354,7 +342,7 @@ void ED_operatormacros_mesh(void)
 
   ot = WM_operatortype_append_macro("MESH_OT_polybuild_transform_at_cursor_move",
                                     "Transform at Cursor Move",
-                                    "",
+                                    NULL,
                                     OPTYPE_UNDO | OPTYPE_REGISTER);
   WM_operatortype_macro_define(ot, "MESH_OT_polybuild_transform_at_cursor");
   otmacro = WM_operatortype_macro_define(ot, "TRANSFORM_OT_translate");
@@ -363,7 +351,7 @@ void ED_operatormacros_mesh(void)
 
   ot = WM_operatortype_append_macro("MESH_OT_polybuild_extrude_at_cursor_move",
                                     "Extrude at Cursor Move",
-                                    "",
+                                    NULL,
                                     OPTYPE_UNDO | OPTYPE_REGISTER);
   WM_operatortype_macro_define(ot, "MESH_OT_polybuild_transform_at_cursor");
   otmacro = WM_operatortype_macro_define(ot, "MESH_OT_extrude_edges_indiv");
@@ -372,7 +360,6 @@ void ED_operatormacros_mesh(void)
   RNA_boolean_set(otmacro->ptr, "mirror", false);
 }
 
-/* note mesh keymap also for other space? */
 void ED_keymap_mesh(wmKeyConfig *keyconf)
 {
   wmKeyMap *keymap = WM_keymap_ensure(keyconf, "Mesh", 0, 0);

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -138,7 +124,7 @@ PyDoc_STRVAR(AdjacencyIterator_object_doc,
              "\n"
              ":type: :class:`ViewEdge`");
 
-static PyObject *AdjacencyIterator_object_get(BPy_AdjacencyIterator *self, void *UNUSED(closure))
+static PyObject *AdjacencyIterator_object_get(BPy_AdjacencyIterator *self, void * /*closure*/)
 {
   if (self->a_it->isEnd()) {
     PyErr_SetString(PyExc_RuntimeError, "iteration has stopped");
@@ -157,8 +143,7 @@ PyDoc_STRVAR(AdjacencyIterator_is_incoming_doc,
              "\n"
              ":type: bool");
 
-static PyObject *AdjacencyIterator_is_incoming_get(BPy_AdjacencyIterator *self,
-                                                   void *UNUSED(closure))
+static PyObject *AdjacencyIterator_is_incoming_get(BPy_AdjacencyIterator *self, void * /*closure*/)
 {
   if (self->a_it->isEnd()) {
     PyErr_SetString(PyExc_RuntimeError, "iteration has stopped");
@@ -196,7 +181,7 @@ PyTypeObject AdjacencyIterator_Type = {
     nullptr,                                               /* tp_as_number */
     nullptr,                                               /* tp_as_sequence */
     nullptr,                                               /* tp_as_mapping */
-    nullptr,                                               /* tp_hash  */
+    nullptr,                                               /* tp_hash */
     nullptr,                                               /* tp_call */
     nullptr,                                               /* tp_str */
     nullptr,                                               /* tp_getattro */

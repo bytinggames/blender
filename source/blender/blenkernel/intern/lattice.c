@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -87,6 +71,8 @@ static void lattice_copy_data(Main *bmain, ID *id_dst, const ID *id_src, const i
     lattice_dst->key->from = &lattice_dst->id;
   }
 
+  BKE_defgroup_copy_list(&lattice_dst->vertex_group_names, &lattice_src->vertex_group_names);
+
   if (lattice_src->dvert) {
     int tot = lattice_src->pntsu * lattice_src->pntsv * lattice_src->pntsw;
     lattice_dst->dvert = MEM_mallocN(sizeof(MDeformVert) * tot, "Lattice MDeformVert");
@@ -102,6 +88,8 @@ static void lattice_free_data(ID *id)
   Lattice *lattice = (Lattice *)id;
 
   BKE_lattice_batch_cache_free(lattice);
+
+  BLI_freelistN(&lattice->vertex_group_names);
 
   MEM_SAFE_FREE(lattice->def);
   if (lattice->dvert) {
@@ -127,31 +115,31 @@ static void lattice_free_data(ID *id)
 static void lattice_foreach_id(ID *id, LibraryForeachIDData *data)
 {
   Lattice *lattice = (Lattice *)id;
-  BKE_LIB_FOREACHID_PROCESS(data, lattice->key, IDWALK_CB_USER);
+  BKE_LIB_FOREACHID_PROCESS_IDSUPER(data, lattice->key, IDWALK_CB_USER);
 }
 
 static void lattice_blend_write(BlendWriter *writer, ID *id, const void *id_address)
 {
   Lattice *lt = (Lattice *)id;
-  if (lt->id.us > 0 || BLO_write_is_undo(writer)) {
-    /* Clean up, important in undo case to reduce false detection of changed datablocks. */
-    lt->editlatt = NULL;
-    lt->batch_cache = NULL;
 
-    /* write LibData */
-    BLO_write_id_struct(writer, Lattice, id_address, &lt->id);
-    BKE_id_blend_write(writer, &lt->id);
+  /* Clean up, important in undo case to reduce false detection of changed datablocks. */
+  lt->editlatt = NULL;
+  lt->batch_cache = NULL;
 
-    /* write animdata */
-    if (lt->adt) {
-      BKE_animdata_blend_write(writer, lt->adt);
-    }
+  /* write LibData */
+  BLO_write_id_struct(writer, Lattice, id_address, &lt->id);
+  BKE_id_blend_write(writer, &lt->id);
 
-    /* direct data */
-    BLO_write_struct_array(writer, BPoint, lt->pntsu * lt->pntsv * lt->pntsw, lt->def);
-
-    BKE_defvert_blend_write(writer, lt->pntsu * lt->pntsv * lt->pntsw, lt->dvert);
+  /* write animdata */
+  if (lt->adt) {
+    BKE_animdata_blend_write(writer, lt->adt);
   }
+
+  /* direct data */
+  BLO_write_struct_array(writer, BPoint, lt->pntsu * lt->pntsv * lt->pntsw, lt->def);
+
+  BKE_defbase_blend_write(writer, &lt->vertex_group_names);
+  BKE_defvert_blend_write(writer, lt->pntsu * lt->pntsv * lt->pntsw, lt->dvert);
 }
 
 static void lattice_blend_read_data(BlendDataReader *reader, ID *id)
@@ -161,6 +149,7 @@ static void lattice_blend_read_data(BlendDataReader *reader, ID *id)
 
   BLO_read_data_address(reader, &lt->dvert);
   BKE_defvert_blend_read(reader, lt->pntsu * lt->pntsv * lt->pntsw, lt->dvert);
+  BLO_read_list(reader, &lt->vertex_group_names);
 
   lt->editlatt = NULL;
   lt->batch_cache = NULL;
@@ -191,7 +180,8 @@ IDTypeInfo IDType_ID_LT = {
     .name = "Lattice",
     .name_plural = "lattices",
     .translation_context = BLT_I18NCONTEXT_ID_LATTICE,
-    .flags = 0,
+    .flags = IDTYPE_FLAGS_APPEND_IS_REUSABLE,
+    .asset_type_info = NULL,
 
     .init_data = lattice_init_data,
     .copy_data = lattice_copy_data,
@@ -199,7 +189,8 @@ IDTypeInfo IDType_ID_LT = {
     .make_local = NULL,
     .foreach_id = lattice_foreach_id,
     .foreach_cache = NULL,
-    .owner_get = NULL,
+    .foreach_path = NULL,
+    .owner_pointer_get = NULL,
 
     .blend_write = lattice_blend_write,
     .blend_read_data = lattice_blend_read_data,
@@ -254,7 +245,7 @@ int BKE_lattice_index_flip(
 void BKE_lattice_bitmap_from_flag(
     Lattice *lt, BLI_bitmap *bitmap, const uint8_t flag, const bool clear, const bool respecthide)
 {
-  const unsigned int tot = lt->pntsu * lt->pntsv * lt->pntsw;
+  const uint tot = lt->pntsu * lt->pntsv * lt->pntsw;
   BPoint *bp;
 
   bp = lt->def;
@@ -364,10 +355,10 @@ void BKE_lattice_resize(Lattice *lt, int uNew, int vNew, int wNew, Object *ltOb)
       BKE_displist_free(&ltOb->runtime.curve_cache->disp);
     }
 
-    copy_m4_m4(mat, ltOb->obmat);
-    unit_m4(ltOb->obmat);
+    copy_m4_m4(mat, ltOb->object_to_world);
+    unit_m4(ltOb->object_to_world);
     BKE_lattice_deform_coords(ltOb, NULL, vert_coords, uNew * vNew * wNew, 0, NULL, 1.0f);
-    copy_m4_m4(ltOb->obmat, mat);
+    copy_m4_m4(ltOb->object_to_world, mat);
 
     lt->typeu = typeu;
     lt->typev = typev;
@@ -407,21 +398,6 @@ Lattice *BKE_lattice_add(Main *bmain, const char *name)
   return lt;
 }
 
-bool object_deform_mball(Object *ob, ListBase *dispbase)
-{
-  if (ob->parent && ob->parent->type == OB_LATTICE && ob->partype == PARSKEL) {
-    DispList *dl;
-
-    for (dl = dispbase->first; dl; dl = dl->next) {
-      BKE_lattice_deform_coords(ob->parent, ob, (float(*)[3])dl->verts, dl->nr, 0, NULL, 1.0f);
-    }
-
-    return true;
-  }
-
-  return false;
-}
-
 static BPoint *latt_bp(Lattice *lt, int u, int v, int w)
 {
   return &lt->def[BKE_lattice_index_from_uvw(lt, u, v, w)];
@@ -459,7 +435,7 @@ void outside_lattice(Lattice *lt)
             bp->hide = 1;
             bp->f1 &= ~SELECT;
 
-            /* u extrema */
+            /* U extrema. */
             bp1 = latt_bp(lt, 0, v, w);
             bp2 = latt_bp(lt, lt->pntsu - 1, v, w);
 
@@ -468,7 +444,7 @@ void outside_lattice(Lattice *lt)
             bp->vec[1] = (1.0f - fac1) * bp1->vec[1] + fac1 * bp2->vec[1];
             bp->vec[2] = (1.0f - fac1) * bp1->vec[2] + fac1 * bp2->vec[2];
 
-            /* v extrema */
+            /* V extrema. */
             bp1 = latt_bp(lt, u, 0, w);
             bp2 = latt_bp(lt, u, lt->pntsv - 1, w);
 
@@ -477,7 +453,7 @@ void outside_lattice(Lattice *lt)
             bp->vec[1] += (1.0f - fac1) * bp1->vec[1] + fac1 * bp2->vec[1];
             bp->vec[2] += (1.0f - fac1) * bp1->vec[2] + fac1 * bp2->vec[2];
 
-            /* w extrema */
+            /* W extrema. */
             bp1 = latt_bp(lt, u, v, 0);
             bp2 = latt_bp(lt, u, v, lt->pntsw - 1);
 

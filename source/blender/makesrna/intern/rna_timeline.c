@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -33,16 +19,10 @@
 #  include "BKE_idprop.h"
 #  include "WM_api.h"
 
-static IDProperty *rna_TimelineMarker_idprops(PointerRNA *ptr, bool create)
+static IDProperty **rna_TimelineMarker_idprops(PointerRNA *ptr)
 {
   TimeMarker *marker = ptr->data;
-
-  if (create && marker->prop == NULL) {
-    IDPropertyTemplate val = {0};
-    marker->prop = IDP_New(IDP_GROUP, &val, "Marker ID properties");
-  }
-
-  return marker->prop;
+  return &marker->prop;
 }
 
 static void rna_TimelineMarker_update(Main *UNUSED(bmain),

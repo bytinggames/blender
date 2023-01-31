@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 import bpy
 from bpy.types import Menu, Panel, UIList
 from rna_prop_ui import PropertyPanel
@@ -93,8 +75,8 @@ class GPENCIL_MT_layer_context_menu(Menu):
         gpd = ob.data
         gpl = gpd.layers.active
 
-        layout.operator("gpencil.layer_duplicate", text="Duplicate", icon='DUPLICATE').mode='ALL'
-        layout.operator("gpencil.layer_duplicate", text="Duplicate Empty Keyframes").mode='EMPTY'
+        layout.operator("gpencil.layer_duplicate", text="Duplicate", icon='DUPLICATE').mode = 'ALL'
+        layout.operator("gpencil.layer_duplicate", text="Duplicate Empty Keyframes").mode = 'EMPTY'
 
         layout.separator()
 
@@ -110,10 +92,12 @@ class GPENCIL_MT_layer_context_menu(Menu):
 
         layout.separator()
 
-        layout.operator("gpencil.layer_merge", icon='SORT_ASC', text="Merge Down")
+        layout.operator("gpencil.layer_merge", icon='SORT_ASC', text="Merge Down").mode = 'ACTIVE'
+        layout.operator("gpencil.layer_merge", text="Merge All").mode = 'ALL'
 
         layout.separator()
-        layout.menu("VIEW3D_MT_gpencil_copy_layer")
+        layout.operator("gpencil.layer_duplicate_object", text="Copy Layer to Selected").only_active = True
+        layout.operator("gpencil.layer_duplicate_object", text="Copy All Layers to Selected").only_active = False
 
 
 class DATA_PT_gpencil_layers(DataButtonsPanel, Panel):
@@ -340,6 +324,11 @@ class DATA_PT_gpencil_vertex_groups(ObjectButtonsPanel, Panel):
         col = row.column(align=True)
         col.operator("object.vertex_group_add", icon='ADD', text="")
         col.operator("object.vertex_group_remove", icon='REMOVE', text="").all = False
+
+        if group:
+            col.separator()
+            col.operator("object.vertex_group_move", icon='TRIA_UP', text="").direction = 'UP'
+            col.operator("object.vertex_group_move", icon='TRIA_DOWN', text="").direction = 'DOWN'
 
         if ob.vertex_groups:
             row = layout.row()

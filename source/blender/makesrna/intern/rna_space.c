@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -33,12 +19,17 @@
 #include "BKE_movieclip.h"
 #include "BKE_node.h"
 #include "BKE_studiolight.h"
+#include "BKE_viewer_path.h"
 
+#include "ED_asset.h"
 #include "ED_spreadsheet.h"
 #include "ED_text.h"
 
 #include "BLI_listbase.h"
 #include "BLI_math.h"
+#include "BLI_string.h"
+#include "BLI_sys_types.h"
+#include "BLI_uuid.h"
 
 #include "DNA_action_types.h"
 #include "DNA_gpencil_types.h"
@@ -69,12 +60,36 @@
 
 #include "RNA_enum_types.h"
 
+const EnumPropertyItem rna_enum_geometry_component_type_items[] = {
+    {GEO_COMPONENT_TYPE_MESH,
+     "MESH",
+     ICON_MESH_DATA,
+     "Mesh",
+     "Mesh component containing point, corner, edge and face data"},
+    {GEO_COMPONENT_TYPE_POINT_CLOUD,
+     "POINTCLOUD",
+     ICON_POINTCLOUD_DATA,
+     "Point Cloud",
+     "Point cloud component containing only point data"},
+    {GEO_COMPONENT_TYPE_CURVE,
+     "CURVE",
+     ICON_CURVE_DATA,
+     "Curve",
+     "Curve component containing spline and control point data"},
+    {GEO_COMPONENT_TYPE_INSTANCES,
+     "INSTANCES",
+     ICON_EMPTY_AXIS,
+     "Instances",
+     "Instances of objects or collections"},
+    {0, NULL, 0, NULL, NULL},
+};
+
 const EnumPropertyItem rna_enum_space_type_items[] = {
     /* empty must be here for python, is skipped for UI */
     {SPACE_EMPTY, "EMPTY", ICON_NONE, "Empty", ""},
 
-    /* General */
-    {0, "", ICON_NONE, "General", ""},
+    /* General. */
+    RNA_ENUM_ITEM_HEADING(N_("General"), NULL),
     {SPACE_VIEW3D,
      "VIEW_3D",
      ICON_VIEW3D,
@@ -93,8 +108,8 @@ const EnumPropertyItem rna_enum_space_type_items[] = {
     {SPACE_SEQ, "SEQUENCE_EDITOR", ICON_SEQUENCE, "Video Sequencer", "Video editing tools"},
     {SPACE_CLIP, "CLIP_EDITOR", ICON_TRACKER, "Movie Clip Editor", "Motion tracking tools"},
 
-    /* Animation */
-    {0, "", ICON_NONE, "Animation", ""},
+    /* Animation. */
+    RNA_ENUM_ITEM_HEADING(N_("Animation"), NULL),
 #if 0
     {SPACE_ACTION,
      "TIMELINE",
@@ -110,8 +125,8 @@ const EnumPropertyItem rna_enum_space_type_items[] = {
      "Edit drivers and keyframe interpolation"},
     {SPACE_NLA, "NLA_EDITOR", ICON_NLA, "Nonlinear Animation", "Combine and layer Actions"},
 
-    /* Scripting */
-    {0, "", ICON_NONE, "Scripting", ""},
+    /* Scripting. */
+    RNA_ENUM_ITEM_HEADING(N_("Scripting"), NULL),
     {SPACE_TEXT,
      "TEXT_EDITOR",
      ICON_TEXT,
@@ -138,8 +153,8 @@ const EnumPropertyItem rna_enum_space_type_items[] = {
      "Global bar at the bottom of the "
      "screen for general status information"},
 
-    /* Data */
-    {0, "", ICON_NONE, "Data", ""},
+    /* Data. */
+    RNA_ENUM_ITEM_HEADING(N_("Data"), NULL),
     {SPACE_OUTLINER,
      "OUTLINER",
      ICON_OUTLINER,
@@ -177,7 +192,11 @@ const EnumPropertyItem rna_enum_space_graph_mode_items[] = {
 const EnumPropertyItem rna_enum_space_sequencer_view_type_items[] = {
     {SEQ_VIEW_SEQUENCE, "SEQUENCER", ICON_SEQ_SEQUENCER, "Sequencer", ""},
     {SEQ_VIEW_PREVIEW, "PREVIEW", ICON_SEQ_PREVIEW, "Preview", ""},
-    {SEQ_VIEW_SEQUENCE_PREVIEW, "SEQUENCER_PREVIEW", ICON_SEQ_SPLITVIEW, "Sequencer/Preview", ""},
+    {SEQ_VIEW_SEQUENCE_PREVIEW,
+     "SEQUENCER_PREVIEW",
+     ICON_SEQ_SPLITVIEW,
+     "Sequencer & Preview",
+     ""},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -355,7 +374,7 @@ static const EnumPropertyItem display_channels_items[] = {
      "Color and Alpha",
      "Display image with RGB colors and alpha transparency"},
     {0, "COLOR", ICON_IMAGE_RGB, "Color", "Display image with RGB colors"},
-    {SI_SHOW_ALPHA, "ALPHA", ICON_IMAGE_ALPHA, "Alpha", "Display  alpha transparency channel"},
+    {SI_SHOW_ALPHA, "ALPHA", ICON_IMAGE_ALPHA, "Alpha", "Display alpha transparency channel"},
     {SI_SHOW_ZBUF,
      "Z_BUFFER",
      ICON_IMAGE_ZDEPTH,
@@ -406,8 +425,12 @@ static const EnumPropertyItem rna_enum_shading_color_type_items[] = {
     {V3D_SHADING_SINGLE_COLOR, "SINGLE", 0, "Single", "Show scene in a single color"},
     {V3D_SHADING_OBJECT_COLOR, "OBJECT", 0, "Object", "Show object color"},
     {V3D_SHADING_RANDOM_COLOR, "RANDOM", 0, "Random", "Show random object color"},
-    {V3D_SHADING_VERTEX_COLOR, "VERTEX", 0, "Vertex", "Show active vertex color"},
-    {V3D_SHADING_TEXTURE_COLOR, "TEXTURE", 0, "Texture", "Show texture"},
+    {V3D_SHADING_VERTEX_COLOR, "VERTEX", 0, "Attribute", "Show active color attribute"},
+    {V3D_SHADING_TEXTURE_COLOR,
+     "TEXTURE",
+     0,
+     "Texture",
+     "Show the texture from the active image texture node using the active UV map coordinates"},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -417,28 +440,31 @@ static const EnumPropertyItem rna_enum_studio_light_items[] = {
 };
 
 static const EnumPropertyItem rna_enum_view3dshading_render_pass_type_items[] = {
-    {0, "", ICON_NONE, "General", ""},
+    RNA_ENUM_ITEM_HEADING(N_("General"), NULL),
     {EEVEE_RENDER_PASS_COMBINED, "COMBINED", 0, "Combined", ""},
     {EEVEE_RENDER_PASS_EMIT, "EMISSION", 0, "Emission", ""},
     {EEVEE_RENDER_PASS_ENVIRONMENT, "ENVIRONMENT", 0, "Environment", ""},
     {EEVEE_RENDER_PASS_AO, "AO", 0, "Ambient Occlusion", ""},
     {EEVEE_RENDER_PASS_SHADOW, "SHADOW", 0, "Shadow", ""},
 
-    {0, "", ICON_NONE, "Light", ""},
+    RNA_ENUM_ITEM_HEADING(N_("Light"), NULL),
     {EEVEE_RENDER_PASS_DIFFUSE_LIGHT, "DIFFUSE_LIGHT", 0, "Diffuse Light", ""},
     {EEVEE_RENDER_PASS_DIFFUSE_COLOR, "DIFFUSE_COLOR", 0, "Diffuse Color", ""},
     {EEVEE_RENDER_PASS_SPECULAR_LIGHT, "SPECULAR_LIGHT", 0, "Specular Light", ""},
     {EEVEE_RENDER_PASS_SPECULAR_COLOR, "SPECULAR_COLOR", 0, "Specular Color", ""},
     {EEVEE_RENDER_PASS_VOLUME_LIGHT, "VOLUME_LIGHT", 0, "Volume Light", ""},
 
-    {0, "", ICON_NONE, "Effects", ""},
+    RNA_ENUM_ITEM_HEADING(N_("Effects"), NULL),
     {EEVEE_RENDER_PASS_BLOOM, "BLOOM", 0, "Bloom", ""},
 
-    {0, "", ICON_NONE, "Data", ""},
+    RNA_ENUM_ITEM_HEADING(N_("Data"), NULL),
     {EEVEE_RENDER_PASS_NORMAL, "NORMAL", 0, "Normal", ""},
     {EEVEE_RENDER_PASS_MIST, "MIST", 0, "Mist", ""},
+    {EEVEE_RENDER_PASS_CRYPTOMATTE_OBJECT, "CryptoObject", 0, "CryptoObject", ""},
+    {EEVEE_RENDER_PASS_CRYPTOMATTE_ASSET, "CryptoAsset", 0, "CryptoAsset", ""},
+    {EEVEE_RENDER_PASS_CRYPTOMATTE_MATERIAL, "CryptoMaterial", 0, "CryptoMaterial", ""},
 
-    {0, "", ICON_NONE, "Shader AOV", ""},
+    RNA_ENUM_ITEM_HEADING(N_("Shader AOV"), NULL),
     {EEVEE_RENDER_PASS_AOV, "AOV", 0, "AOV", ""},
 
     {0, NULL, 0, NULL, NULL},
@@ -505,6 +531,7 @@ static const EnumPropertyItem rna_enum_curve_display_handle_items[] = {
 #ifdef RNA_RUNTIME
 
 #  include "DNA_anim_types.h"
+#  include "DNA_asset_types.h"
 #  include "DNA_scene_types.h"
 #  include "DNA_screen_types.h"
 #  include "DNA_userdef_types.h"
@@ -531,6 +558,7 @@ static const EnumPropertyItem rna_enum_curve_display_handle_items[] = {
 #  include "DEG_depsgraph_build.h"
 
 #  include "ED_anim_api.h"
+#  include "ED_asset.h"
 #  include "ED_buttons.h"
 #  include "ED_clip.h"
 #  include "ED_fileselect.h"
@@ -772,6 +800,33 @@ static void rna_Space_show_region_toolbar_update(bContext *C, PointerRNA *ptr)
   rna_Space_bool_from_region_flag_update_by_type(C, ptr, RGN_TYPE_TOOLS, RGN_FLAG_HIDDEN);
 }
 
+static bool rna_Space_show_region_tool_props_get(PointerRNA *ptr)
+{
+  return !rna_Space_bool_from_region_flag_get_by_type(ptr, RGN_TYPE_TOOL_PROPS, RGN_FLAG_HIDDEN);
+}
+static void rna_Space_show_region_tool_props_set(PointerRNA *ptr, bool value)
+{
+  rna_Space_bool_from_region_flag_set_by_type(ptr, RGN_TYPE_TOOL_PROPS, RGN_FLAG_HIDDEN, !value);
+}
+static void rna_Space_show_region_tool_props_update(bContext *C, PointerRNA *ptr)
+{
+  rna_Space_bool_from_region_flag_update_by_type(C, ptr, RGN_TYPE_TOOL_PROPS, RGN_FLAG_HIDDEN);
+}
+
+/* Channels Region. */
+static bool rna_Space_show_region_channels_get(PointerRNA *ptr)
+{
+  return !rna_Space_bool_from_region_flag_get_by_type(ptr, RGN_TYPE_CHANNELS, RGN_FLAG_HIDDEN);
+}
+static void rna_Space_show_region_channels_set(PointerRNA *ptr, bool value)
+{
+  rna_Space_bool_from_region_flag_set_by_type(ptr, RGN_TYPE_CHANNELS, RGN_FLAG_HIDDEN, !value);
+}
+static void rna_Space_show_region_channels_update(bContext *C, PointerRNA *ptr)
+{
+  rna_Space_bool_from_region_flag_update_by_type(C, ptr, RGN_TYPE_CHANNELS, RGN_FLAG_HIDDEN);
+}
+
 /* UI Region */
 static bool rna_Space_show_region_ui_get(PointerRNA *ptr)
 {
@@ -823,6 +878,14 @@ static void rna_Space_view2d_sync_set(PointerRNA *ptr, bool value)
   ARegion *region;
 
   area = rna_area_from_space(ptr); /* can be NULL */
+  if ((area != NULL) && !UI_view2d_area_supports_sync(area)) {
+    BKE_reportf(NULL,
+                RPT_ERROR,
+                "'show_locked_time' is not supported for the '%s' editor",
+                area->type->name);
+    return;
+  }
+
   region = BKE_area_find_region_type(area, RGN_TYPE_WINDOW);
   if (region) {
     View2D *v2d = &region->v2d;
@@ -873,7 +936,7 @@ static void rna_GPencil_update(Main *bmain, Scene *UNUSED(scene), PointerRNA *UN
 static void rna_SpaceView3D_camera_update(Main *bmain, Scene *scene, PointerRNA *ptr)
 {
   View3D *v3d = (View3D *)(ptr->data);
-  if (v3d->scenelock) {
+  if (v3d->scenelock && scene != NULL) {
     wmWindowManager *wm = bmain->wm.first;
 
     scene->camera = v3d->camera;
@@ -891,8 +954,8 @@ static void rna_SpaceView3D_use_local_camera_set(PointerRNA *ptr, bool value)
   if (!value) {
     Scene *scene = ED_screen_scene_find(screen, G_MAIN->wm.first);
     /* NULL if the screen isn't in an active window (happens when setting from Python).
-     * This could be moved to the update function, in that case the scene wont relate to the screen
-     * so keep it working this way. */
+     * This could be moved to the update function, in that case the scene won't relate to the
+     * screen so keep it working this way. */
     if (scene != NULL) {
       v3d->camera = scene->camera;
     }
@@ -920,11 +983,18 @@ static PointerRNA rna_SpaceView3D_region_3d_get(PointerRNA *ptr)
   void *regiondata = NULL;
   if (area) {
     ListBase *regionbase = (area->spacedata.first == v3d) ? &area->regionbase : &v3d->regionbase;
-    ARegion *region = regionbase->last; /* always last in list, weak .. */
+    ARegion *region = regionbase->last; /* always last in list, weak. */
     regiondata = region->regiondata;
   }
 
   return rna_pointer_inherit_refine(ptr, &RNA_RegionView3D, regiondata);
+}
+
+static void rna_SpaceView3D_object_type_visibility_update(Main *UNUSED(bmain),
+                                                          Scene *scene,
+                                                          PointerRNA *UNUSED(ptr))
+{
+  DEG_id_tag_update(&scene->id, ID_RECALC_BASE_FLAGS);
 }
 
 static void rna_SpaceView3D_region_quadviews_begin(CollectionPropertyIterator *iter,
@@ -985,6 +1055,24 @@ static void rna_RegionView3D_quadview_clip_update(Main *UNUSED(main),
   }
 }
 
+/**
+ * After the rotation changes, either clear the view axis
+ * or update it not to be aligned to an axis, without this the viewport will show
+ * text that doesn't match the rotation.
+ */
+static void rna_RegionView3D_view_rotation_set_validate_view_axis(RegionView3D *rv3d)
+{
+  /* Never rotate from a "User" view into an axis aligned view,
+   * otherwise rotation could be aligned by accident - giving unexpected behavior. */
+  if (!RV3D_VIEW_IS_AXIS(rv3d->view)) {
+    return;
+  }
+  /* Keep this small as script authors wont expect the assigned value to change. */
+  const float eps_quat = 1e-6f;
+  ED_view3d_quat_to_axis_view_and_reset_quat(
+      rv3d->viewquat, eps_quat, &rv3d->view, &rv3d->view_axis_roll);
+}
+
 static void rna_RegionView3D_view_location_get(PointerRNA *ptr, float *values)
 {
   RegionView3D *rv3d = (RegionView3D *)(ptr->data);
@@ -1007,6 +1095,7 @@ static void rna_RegionView3D_view_rotation_set(PointerRNA *ptr, const float *val
 {
   RegionView3D *rv3d = (RegionView3D *)(ptr->data);
   invert_qt_qt(rv3d->viewquat, values);
+  rna_RegionView3D_view_rotation_set_validate_view_axis(rv3d);
 }
 
 static void rna_RegionView3D_view_matrix_set(PointerRNA *ptr, const float *values)
@@ -1015,24 +1104,45 @@ static void rna_RegionView3D_view_matrix_set(PointerRNA *ptr, const float *value
   float mat[4][4];
   invert_m4_m4(mat, (float(*)[4])values);
   ED_view3d_from_m4(mat, rv3d->ofs, rv3d->viewquat, &rv3d->dist);
+  rna_RegionView3D_view_rotation_set_validate_view_axis(rv3d);
 }
 
 static bool rna_RegionView3D_is_orthographic_side_view_get(PointerRNA *ptr)
 {
+  /* NOTE: only checks axis alignment, not orthographic,
+   * we may deprecate the current name to reflect this. */
   RegionView3D *rv3d = (RegionView3D *)(ptr->data);
   return RV3D_VIEW_IS_AXIS(rv3d->view);
 }
 
-static IDProperty *rna_View3DShading_idprops(PointerRNA *ptr, bool create)
+static void rna_RegionView3D_is_orthographic_side_view_set(PointerRNA *ptr, bool value)
+{
+  RegionView3D *rv3d = (RegionView3D *)(ptr->data);
+  const bool was_axis_view = RV3D_VIEW_IS_AXIS(rv3d->view);
+  if (value) {
+    /* Already axis aligned, nothing to do. */
+    if (was_axis_view) {
+      return;
+    }
+    /* Use a large value as we always want to set this to the closest axis. */
+    const float eps_quat = FLT_MAX;
+    ED_view3d_quat_to_axis_view_and_reset_quat(
+        rv3d->viewquat, eps_quat, &rv3d->view, &rv3d->view_axis_roll);
+  }
+  else {
+    /* Only allow changing from axis-views to user view as camera view for e.g.
+     * doesn't make sense to update. */
+    if (!was_axis_view) {
+      return;
+    }
+    rv3d->view = RV3D_VIEW_USER;
+  }
+}
+
+static IDProperty **rna_View3DShading_idprops(PointerRNA *ptr)
 {
   View3DShading *shading = ptr->data;
-
-  if (create && !shading->prop) {
-    IDPropertyTemplate val = {0};
-    shading->prop = IDP_New(IDP_GROUP, &val, "View3DShading ID properties");
-  }
-
-  return shading->prop;
+  return &shading->prop;
 }
 
 static void rna_3DViewShading_type_update(Main *bmain, Scene *scene, PointerRNA *ptr)
@@ -1328,6 +1438,7 @@ static const EnumPropertyItem *rna_3DViewShading_render_pass_itemf(bContext *C,
 
   const bool bloom_enabled = scene->eevee.flag & SCE_EEVEE_BLOOM_ENABLED;
   const bool aov_available = BKE_view_layer_has_valid_aov(view_layer);
+  const bool eevee_next_active = STREQ(scene->r.engine, "BLENDER_EEVEE_NEXT");
 
   int totitem = 0;
   EnumPropertyItem *result = NULL;
@@ -1347,6 +1458,12 @@ static const EnumPropertyItem *rna_3DViewShading_render_pass_itemf(bContext *C,
         RNA_enum_item_add(&result, &totitem, &aov_template);
         aov_template.value++;
       }
+    }
+    else if (ELEM(item->value,
+                  EEVEE_RENDER_PASS_CRYPTOMATTE_OBJECT,
+                  EEVEE_RENDER_PASS_CRYPTOMATTE_ASSET,
+                  EEVEE_RENDER_PASS_CRYPTOMATTE_MATERIAL) &&
+             !eevee_next_active) {
     }
     else if (!((!bloom_enabled &&
                 (item->value == EEVEE_RENDER_PASS_BLOOM || STREQ(item->name, "Effects"))) ||
@@ -1424,7 +1541,7 @@ static void rna_SpaceView3D_use_local_collections_update(bContext *C, PointerRNA
   View3D *v3d = (View3D *)ptr->data;
 
   if (ED_view3d_local_collections_set(bmain, v3d)) {
-    BKE_layer_collection_local_sync(view_layer, v3d);
+    BKE_layer_collection_local_sync(scene, view_layer, v3d);
     DEG_id_tag_update(&scene->id, ID_RECALC_BASE_FLAGS);
   }
 }
@@ -1466,15 +1583,11 @@ static void rna_SpaceView3D_mirror_xr_session_update(Main *main,
 static int rna_SpaceView3D_icon_from_show_object_viewport_get(PointerRNA *ptr)
 {
   const View3D *v3d = (View3D *)ptr->data;
-  /* Ignore selection values when view is off,
-   * intent is to show if visible objects aren't selectable. */
-  const int view_value = (v3d->object_type_exclude_viewport != 0);
-  const int select_value = (v3d->object_type_exclude_select &
-                            ~v3d->object_type_exclude_viewport) != 0;
-  return ICON_VIS_SEL_11 + (view_value << 1) + select_value;
+  return rna_object_type_visibility_icon_get_common(v3d->object_type_exclude_viewport,
+                                                    &v3d->object_type_exclude_select);
 }
 
-static char *rna_View3DShading_path(PointerRNA *UNUSED(ptr))
+static char *rna_View3DShading_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("shading");
 }
@@ -1484,7 +1597,7 @@ static PointerRNA rna_SpaceView3D_overlay_get(PointerRNA *ptr)
   return rna_pointer_inherit_refine(ptr, &RNA_View3DOverlay, ptr->data);
 }
 
-static char *rna_View3DOverlay_path(PointerRNA *UNUSED(ptr))
+static char *rna_View3DOverlay_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("overlay");
 }
@@ -1496,12 +1609,12 @@ static PointerRNA rna_SpaceImage_overlay_get(PointerRNA *ptr)
   return rna_pointer_inherit_refine(ptr, &RNA_SpaceImageOverlay, ptr->data);
 }
 
-static char *rna_SpaceImageOverlay_path(PointerRNA *UNUSED(ptr))
+static char *rna_SpaceImageOverlay_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("overlay");
 }
 
-static char *rna_SpaceUVEditor_path(PointerRNA *UNUSED(ptr))
+static char *rna_SpaceUVEditor_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("uv_editor");
 }
@@ -1513,10 +1626,12 @@ static PointerRNA rna_SpaceImageEditor_uvedit_get(PointerRNA *ptr)
 
 static void rna_SpaceImageEditor_mode_update(Main *bmain, Scene *scene, PointerRNA *UNUSED(ptr))
 {
-  ED_space_image_paint_update(bmain, bmain->wm.first, scene);
+  if (scene != NULL) {
+    ED_space_image_paint_update(bmain, bmain->wm.first, scene);
+  }
 }
 
-static void rna_SpaceImageEditor_show_stereo_set(PointerRNA *ptr, int value)
+static void rna_SpaceImageEditor_show_stereo_set(PointerRNA *ptr, bool value)
 {
   SpaceImage *sima = (SpaceImage *)(ptr->data);
 
@@ -1570,8 +1685,10 @@ static bool rna_SpaceImageEditor_show_uvedit_get(PointerRNA *ptr)
   Object *obedit = NULL;
   wmWindow *win = ED_screen_window_find(screen, G_MAIN->wm.first);
   if (win != NULL) {
+    Scene *scene = WM_window_get_active_scene(win);
     ViewLayer *view_layer = WM_window_get_active_view_layer(win);
-    obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+    BKE_view_layer_synced_ensure(scene, view_layer);
+    obedit = BKE_view_layer_edit_object_get(view_layer);
   }
   return ED_space_image_show_uvedit(sima, obedit);
 }
@@ -1583,8 +1700,10 @@ static bool rna_SpaceImageEditor_show_maskedit_get(PointerRNA *ptr)
   Object *obedit = NULL;
   wmWindow *win = ED_screen_window_find(screen, G_MAIN->wm.first);
   if (win != NULL) {
+    Scene *scene = WM_window_get_active_scene(win);
     ViewLayer *view_layer = WM_window_get_active_view_layer(win);
-    obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+    BKE_view_layer_synced_ensure(scene, view_layer);
+    obedit = BKE_view_layer_edit_object_get(view_layer);
   }
   return ED_space_image_check_show_maskedit(sima, obedit);
 }
@@ -1595,14 +1714,7 @@ static void rna_SpaceImageEditor_image_set(PointerRNA *ptr,
 {
   BLI_assert(BKE_id_is_in_global_main(value.data));
   SpaceImage *sima = ptr->data;
-  bScreen *screen = (bScreen *)ptr->owner_id;
-  Object *obedit = NULL;
-  wmWindow *win = ED_screen_window_find(screen, G_MAIN->wm.first);
-  if (win != NULL) {
-    ViewLayer *view_layer = WM_window_get_active_view_layer(win);
-    obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
-  }
-  ED_space_image_set(G_MAIN, sima, obedit, (Image *)value.data, false);
+  ED_space_image_set(G_MAIN, sima, (Image *)value.data, false);
 }
 
 static void rna_SpaceImageEditor_mask_set(PointerRNA *ptr,
@@ -1776,6 +1888,25 @@ static const EnumPropertyItem *rna_SpaceImageEditor_pivot_itemf(bContext *UNUSED
   }
 }
 
+static void rna_SpaceUVEditor_tile_grid_shape_set(PointerRNA *ptr, const int *values)
+{
+  SpaceImage *data = (SpaceImage *)(ptr->data);
+
+  int clamp[2] = {10, 100};
+  for (int i = 0; i < 2; i++) {
+    data->tile_grid_shape[i] = CLAMPIS(values[i], 1, clamp[i]);
+  }
+}
+
+static void rna_SpaceUVEditor_custom_grid_subdiv_set(PointerRNA *ptr, const int *values)
+{
+  SpaceImage *data = (SpaceImage *)(ptr->data);
+
+  for (int i = 0; i < 2; i++) {
+    data->custom_grid_subdiv[i] = CLAMPIS(values[i], 1, 5000);
+  }
+}
+
 /* Space Text Editor */
 
 static void rna_SpaceTextEditor_word_wrap_set(PointerRNA *ptr, bool value)
@@ -1793,6 +1924,9 @@ static void rna_SpaceTextEditor_text_set(PointerRNA *ptr,
   SpaceText *st = (SpaceText *)(ptr->data);
 
   st->text = value.data;
+  if (st->text != NULL) {
+    id_us_ensure_real((ID *)st->text);
+  }
 
   ScrArea *area = rna_area_from_space(ptr);
   if (area) {
@@ -1821,7 +1955,7 @@ static void rna_SpaceTextEditor_updateEdited(Main *UNUSED(bmain),
 
 /* Space Properties */
 
-/* note: this function exists only to avoid id refcounting */
+/* NOTE: this function exists only to avoid id refcounting. */
 static void rna_SpaceProperties_pin_id_set(PointerRNA *ptr,
                                            PointerRNA value,
                                            struct ReportList *UNUSED(reports))
@@ -1925,7 +2059,7 @@ static void rna_SpaceProperties_context_update(Main *UNUSED(bmain),
   }
 }
 
-static int rna_SpaceProperties_tab_search_results_getlength(PointerRNA *ptr,
+static int rna_SpaceProperties_tab_search_results_getlength(const PointerRNA *ptr,
                                                             int length[RNA_MAX_ARRAY_DIMENSION])
 {
   SpaceProperties *sbuts = ptr->data;
@@ -2075,10 +2209,12 @@ static void rna_SpaceDopeSheetEditor_action_set(PointerRNA *ptr,
 static void rna_SpaceDopeSheetEditor_action_update(bContext *C, PointerRNA *ptr)
 {
   SpaceAction *saction = (SpaceAction *)(ptr->data);
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Main *bmain = CTX_data_main(C);
 
-  Object *obact = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *obact = BKE_view_layer_active_object_get(view_layer);
   if (obact == NULL) {
     return;
   }
@@ -2088,7 +2224,7 @@ static void rna_SpaceDopeSheetEditor_action_update(bContext *C, PointerRNA *ptr)
   switch (saction->mode) {
     case SACTCONT_ACTION:
       /* TODO: context selector could help decide this with more control? */
-      adt = BKE_animdata_add_id(&obact->id);
+      adt = BKE_animdata_ensure_id(&obact->id);
       id = &obact->id;
       break;
     case SACTCONT_SHAPEKEY: {
@@ -2096,7 +2232,7 @@ static void rna_SpaceDopeSheetEditor_action_update(bContext *C, PointerRNA *ptr)
       if (key == NULL) {
         return;
       }
-      adt = BKE_animdata_add_id(&key->id);
+      adt = BKE_animdata_ensure_id(&key->id);
       id = &key->id;
       break;
     }
@@ -2118,7 +2254,7 @@ static void rna_SpaceDopeSheetEditor_action_update(bContext *C, PointerRNA *ptr)
     return;
   }
 
-  /* Exit editmode first - we cannot change actions while in tweakmode. */
+  /* Exit editmode first - we cannot change actions while in tweak-mode. */
   BKE_nla_tweakmode_exit(adt);
 
   /* To prevent data loss (i.e. if users flip between actions using the Browse menu),
@@ -2150,8 +2286,10 @@ static void rna_SpaceDopeSheetEditor_mode_update(bContext *C, PointerRNA *ptr)
 {
   SpaceAction *saction = (SpaceAction *)(ptr->data);
   ScrArea *area = CTX_wm_area(C);
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *obact = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *obact = BKE_view_layer_active_object_get(view_layer);
 
   /* special exceptions for ShapeKey Editor mode */
   if (saction->mode == SACTCONT_SHAPEKEY) {
@@ -2254,7 +2392,7 @@ static void seq_build_proxy(bContext *C, PointerRNA *ptr)
 
   SpaceSeq *sseq = ptr->data;
   Scene *scene = CTX_data_scene(C);
-  ListBase *seqbase = SEQ_active_seqbase_get(SEQ_editing_get(scene, false));
+  ListBase *seqbase = SEQ_active_seqbase_get(SEQ_editing_get(scene));
 
   GSet *file_list = BLI_gset_new(BLI_ghashutil_strhash_p, BLI_ghashutil_strcmp, "file list");
   wmJob *wm_job = ED_seq_proxy_wm_job_get(C);
@@ -2269,7 +2407,8 @@ static void seq_build_proxy(bContext *C, PointerRNA *ptr)
     seq->strip->proxy->build_size_flags |= SEQ_rendersize_to_proxysize(sseq->render_size);
 
     /* Build proxy. */
-    SEQ_proxy_rebuild_context(pj->main, pj->depsgraph, pj->scene, seq, file_list, &pj->queue);
+    SEQ_proxy_rebuild_context(
+        pj->main, pj->depsgraph, pj->scene, seq, file_list, &pj->queue, true);
   }
 
   BLI_gset_free(file_list, MEM_freeN);
@@ -2288,6 +2427,36 @@ static void rna_SequenceEditor_render_size_update(bContext *C, PointerRNA *ptr)
   rna_SequenceEditor_update_cache(CTX_data_main(C), CTX_data_scene(C), ptr);
 }
 
+static bool rna_SequenceEditor_clamp_view_get(PointerRNA *ptr)
+{
+  SpaceSeq *sseq = ptr->data;
+  return (sseq->flag & SEQ_CLAMP_VIEW) != 0;
+}
+
+static void rna_SequenceEditor_clamp_view_set(PointerRNA *ptr, bool value)
+{
+  SpaceSeq *sseq = ptr->data;
+  ScrArea *area;
+  ARegion *region;
+
+  area = rna_area_from_space(ptr); /* can be NULL */
+  if (area == NULL) {
+    return;
+  }
+
+  region = BKE_area_find_region_type(area, RGN_TYPE_WINDOW);
+  if (region) {
+    if (value) {
+      sseq->flag |= SEQ_CLAMP_VIEW;
+      region->v2d.align &= ~V2D_ALIGN_NO_NEG_Y;
+    }
+    else {
+      sseq->flag &= ~SEQ_CLAMP_VIEW;
+      region->v2d.align |= V2D_ALIGN_NO_NEG_Y;
+    }
+  }
+}
+
 static void rna_Sequencer_view_type_update(Main *UNUSED(bmain),
                                            Scene *UNUSED(scene),
                                            PointerRNA *ptr)
@@ -2296,7 +2465,26 @@ static void rna_Sequencer_view_type_update(Main *UNUSED(bmain),
   ED_area_tag_refresh(area);
 }
 
+static char *rna_SpaceSequencerPreviewOverlay_path(const PointerRNA *UNUSED(ptr))
+{
+  return BLI_strdup("preview_overlay");
+}
+
+static char *rna_SpaceSequencerTimelineOverlay_path(const PointerRNA *UNUSED(ptr))
+{
+  return BLI_strdup("timeline_overlay");
+}
+
 /* Space Node Editor */
+static PointerRNA rna_SpaceNode_overlay_get(PointerRNA *ptr)
+{
+  return rna_pointer_inherit_refine(ptr, &RNA_SpaceNodeOverlay, ptr->data);
+}
+
+static char *rna_SpaceNodeOverlay_path(const PointerRNA *UNUSED(ptr))
+{
+  return BLI_strdup("overlay");
+}
 
 static void rna_SpaceNodeEditor_node_tree_set(PointerRNA *ptr,
                                               const PointerRNA value,
@@ -2486,7 +2674,7 @@ static void rna_SpaceClipEditor_view_type_update(Main *UNUSED(bmain),
 
 /* File browser. */
 
-static char *rna_FileSelectParams_path(PointerRNA *UNUSED(ptr))
+static char *rna_FileSelectParams_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("params");
 }
@@ -2555,122 +2743,58 @@ static int rna_FileAssetSelectParams_asset_library_get(PointerRNA *ptr)
   /* Just an extra sanity check to ensure this isn't somehow called for RNA_FileSelectParams. */
   BLI_assert(ptr->type == &RNA_FileAssetSelectParams);
 
-  /* Simple case: Predefined repo, just set the value. */
-  if (params->asset_library.type < FILE_ASSET_LIBRARY_CUSTOM) {
-    return params->asset_library.type;
-  }
-
-  /* Note that the path isn't checked for validity here. If an invalid library path is used, the
-   * Asset Browser can give a nice hint on what's wrong. */
-  const bUserAssetLibrary *user_library = BKE_preferences_asset_library_find_from_index(
-      &U, params->asset_library.custom_library_index);
-  if (user_library) {
-    return FILE_ASSET_LIBRARY_CUSTOM + params->asset_library.custom_library_index;
-  }
-
-  BLI_assert(0);
-  return FILE_ASSET_LIBRARY_LOCAL;
+  return ED_asset_library_reference_to_enum_value(&params->asset_library_ref);
 }
 
 static void rna_FileAssetSelectParams_asset_library_set(PointerRNA *ptr, int value)
 {
   FileAssetSelectParams *params = ptr->data;
-
-  /* Simple case: Predefined repo, just set the value. */
-  if (value < FILE_ASSET_LIBRARY_CUSTOM) {
-    params->asset_library.type = value;
-    params->asset_library.custom_library_index = -1;
-    BLI_assert(ELEM(value, FILE_ASSET_LIBRARY_LOCAL));
-    return;
-  }
-
-  const bUserAssetLibrary *user_library = BKE_preferences_asset_library_find_from_index(
-      &U, value - FILE_ASSET_LIBRARY_CUSTOM);
-
-  /* Note that the path isn't checked for validity here. If an invalid library path is used, the
-   * Asset Browser can give a nice hint on what's wrong. */
-  const bool is_valid = (user_library->name[0] && user_library->path[0]);
-  if (!user_library) {
-    params->asset_library.type = FILE_ASSET_LIBRARY_LOCAL;
-    params->asset_library.custom_library_index = -1;
-  }
-  else if (user_library && is_valid) {
-    params->asset_library.custom_library_index = value - FILE_ASSET_LIBRARY_CUSTOM;
-    params->asset_library.type = FILE_ASSET_LIBRARY_CUSTOM;
-  }
+  params->asset_library_ref = ED_asset_library_reference_from_enum_value(value);
 }
 
-static const EnumPropertyItem *rna_FileAssetSelectParams_asset_library_itemf(
-    bContext *UNUSED(C), PointerRNA *UNUSED(ptr), PropertyRNA *UNUSED(prop), bool *r_free)
+static PointerRNA rna_FileAssetSelectParams_filter_id_get(PointerRNA *ptr)
 {
-  const EnumPropertyItem predefined_items[] = {
-      /* For the future. */
-      // {FILE_ASSET_REPO_BUNDLED, "BUNDLED", 0, "Bundled", "Show the default user assets"},
-      {FILE_ASSET_LIBRARY_LOCAL,
-       "LOCAL",
-       ICON_BLENDER,
-       "Current File",
-       "Show the assets currently available in this Blender session"},
-      {0, NULL, 0, NULL, NULL},
-  };
-
-  EnumPropertyItem *item = NULL;
-  int totitem = 0;
-
-  /* Add separator if needed. */
-  if (!BLI_listbase_is_empty(&U.asset_libraries)) {
-    const EnumPropertyItem sepr = {0, "", 0, "Custom", NULL};
-    RNA_enum_item_add(&item, &totitem, &sepr);
-  }
-
-  int i = 0;
-  for (bUserAssetLibrary *user_library = U.asset_libraries.first; user_library;
-       user_library = user_library->next, i++) {
-    /* Note that the path itself isn't checked for validity here. If an invalid library path is
-     * used, the Asset Browser can give a nice hint on what's wrong. */
-    const bool is_valid = (user_library->name[0] && user_library->path[0]);
-    if (!is_valid) {
-      continue;
-    }
-
-    /* Use library path as description, it's a nice hint for users. */
-    EnumPropertyItem tmp = {FILE_ASSET_LIBRARY_CUSTOM + i,
-                            user_library->name,
-                            ICON_NONE,
-                            user_library->name,
-                            user_library->path};
-    RNA_enum_item_add(&item, &totitem, &tmp);
-  }
-
-  if (totitem) {
-    const EnumPropertyItem sepr = {0, "", 0, "Built-in", NULL};
-    RNA_enum_item_add(&item, &totitem, &sepr);
-  }
-
-  /* Add predefined items. */
-  RNA_enum_items_add(&item, &totitem, predefined_items);
-
-  RNA_enum_item_end(&item, &totitem);
-  *r_free = true;
-  return item;
+  return rna_pointer_inherit_refine(ptr, &RNA_FileAssetSelectIDFilter, ptr->data);
 }
 
-static void rna_FileAssetSelectParams_asset_category_set(PointerRNA *ptr, uint64_t value)
+static PointerRNA rna_FileBrowser_FileSelectEntry_asset_data_get(PointerRNA *ptr)
 {
-  FileSelectParams *params = ptr->data;
-  params->filter_id = value;
+  const FileDirEntry *entry = ptr->data;
+
+  /* Note that the owning ID of the RNA pointer (`ptr->owner_id`) has to be set carefully:
+   * Local IDs (`entry->id`) own their asset metadata themselves. Asset metadata from other blend
+   * files are owned by the file browser (`entry`). Only if this is set correctly, we can tell from
+   * the metadata RNA pointer if the metadata is stored locally and can thus be edited or not. */
+
+  if (entry->id) {
+    PointerRNA id_ptr;
+    RNA_id_pointer_create(entry->id, &id_ptr);
+    return rna_pointer_inherit_refine(&id_ptr, &RNA_AssetMetaData, entry->asset_data);
+  }
+
+  return rna_pointer_inherit_refine(ptr, &RNA_AssetMetaData, entry->asset_data);
 }
 
-static uint64_t rna_FileAssetSelectParams_asset_category_get(PointerRNA *ptr)
+static int rna_FileBrowser_FileSelectEntry_name_editable(PointerRNA *ptr, const char **r_info)
 {
-  FileSelectParams *params = ptr->data;
-  return params->filter_id;
+  const FileDirEntry *entry = ptr->data;
+
+  /* This actually always returns 0 (the name is never editable) but we want to get a disabled
+   * message returned to `r_info` in some cases. */
+
+  if (entry->asset_data) {
+    PointerRNA asset_data_ptr = rna_FileBrowser_FileSelectEntry_asset_data_get(ptr);
+    /* Get disabled hint from asset metadata polling. */
+    rna_AssetMetaData_editable(&asset_data_ptr, r_info);
+  }
+
+  return 0;
 }
 
 static void rna_FileBrowser_FileSelectEntry_name_get(PointerRNA *ptr, char *value)
 {
   const FileDirEntry *entry = ptr->data;
-  strcpy(value, entry->name);
+  BLI_strncpy_utf8(value, entry->name, strlen(entry->name) + 1);
 }
 
 static int rna_FileBrowser_FileSelectEntry_name_length(PointerRNA *ptr)
@@ -2679,16 +2803,48 @@ static int rna_FileBrowser_FileSelectEntry_name_length(PointerRNA *ptr)
   return (int)strlen(entry->name);
 }
 
+static void rna_FileBrowser_FileSelectEntry_relative_path_get(PointerRNA *ptr, char *value)
+{
+  const FileDirEntry *entry = ptr->data;
+  BLI_strncpy_utf8(value, entry->relpath, strlen(entry->relpath) + 1);
+}
+
+static int rna_FileBrowser_FileSelectEntry_relative_path_length(PointerRNA *ptr)
+{
+  const FileDirEntry *entry = ptr->data;
+  return (int)strlen(entry->relpath);
+}
+
+static const EnumPropertyItem *rna_FileBrowser_FileSelectEntry_id_type_itemf(
+    bContext *UNUSED(C), PointerRNA *ptr, PropertyRNA *UNUSED(prop), bool *UNUSED(r_free))
+{
+  const FileDirEntry *entry = ptr->data;
+  if (entry->blentype == 0) {
+    static const EnumPropertyItem none_items[] = {
+        {0, "NONE", 0, "None", ""},
+    };
+    return none_items;
+  }
+
+  return rna_enum_id_type_items;
+}
+
+static int rna_FileBrowser_FileSelectEntry_id_type_get(PointerRNA *ptr)
+{
+  const FileDirEntry *entry = ptr->data;
+  return entry->blentype;
+}
+
+static PointerRNA rna_FileBrowser_FileSelectEntry_local_id_get(PointerRNA *ptr)
+{
+  const FileDirEntry *entry = ptr->data;
+  return rna_pointer_inherit_refine(ptr, &RNA_ID, entry->id);
+}
+
 static int rna_FileBrowser_FileSelectEntry_preview_icon_id_get(PointerRNA *ptr)
 {
   const FileDirEntry *entry = ptr->data;
   return ED_file_icon(entry);
-}
-
-static PointerRNA rna_FileBrowser_FileSelectEntry_asset_data_get(PointerRNA *ptr)
-{
-  const FileDirEntry *entry = ptr->data;
-  return rna_pointer_inherit_refine(ptr, &RNA_AssetMetaData, entry->asset_data);
 }
 
 static StructRNA *rna_FileBrowser_params_typef(PointerRNA *ptr)
@@ -2703,7 +2859,7 @@ static StructRNA *rna_FileBrowser_params_typef(PointerRNA *ptr)
     return &RNA_FileAssetSelectParams;
   }
 
-  BLI_assert(!"Could not identify file select parameters");
+  BLI_assert_msg(0, "Could not identify file select parameters");
   return NULL;
 }
 
@@ -2738,7 +2894,7 @@ static void rna_FileBrowser_FSMenuEntry_path_set(PointerRNA *ptr, const char *va
 {
   FSMenuEntry *fsm = ptr->data;
 
-  /* Note: this will write to file immediately.
+  /* NOTE: this will write to file immediately.
    * Not nice (and to be fixed ultimately), but acceptable in this case for now. */
   ED_fsmenu_entry_set_path(fsm, value);
 }
@@ -2757,7 +2913,7 @@ static void rna_FileBrowser_FSMenuEntry_name_set(PointerRNA *ptr, const char *va
 {
   FSMenuEntry *fsm = ptr->data;
 
-  /* Note: this will write to file immediately.
+  /* NOTE: this will write to file immediately.
    * Not nice (and to be fixed ultimately), but acceptable in this case for now. */
   ED_fsmenu_entry_set_name(fsm, value);
 }
@@ -2962,7 +3118,7 @@ static void rna_FileBrowser_FSMenu_active_range(PointerRNA *UNUSED(ptr),
 static void rna_FileBrowser_FSMenu_active_update(struct bContext *C, PointerRNA *ptr)
 {
   ScrArea *area = rna_area_from_space(ptr);
-  ED_file_change_dir_ex(C, (bScreen *)ptr->owner_id, area);
+  ED_file_change_dir_ex(C, area);
 }
 
 static int rna_FileBrowser_FSMenuSystem_active_get(PointerRNA *ptr)
@@ -3043,12 +3199,34 @@ static void rna_SpaceSpreadsheet_geometry_component_type_update(Main *UNUSED(bma
                                                                 PointerRNA *ptr)
 {
   SpaceSpreadsheet *sspreadsheet = (SpaceSpreadsheet *)ptr->data;
-  if (sspreadsheet->geometry_component_type == GEO_COMPONENT_TYPE_POINT_CLOUD) {
-    sspreadsheet->attribute_domain = ATTR_DOMAIN_POINT;
-  }
-  if (sspreadsheet->geometry_component_type == GEO_COMPONENT_TYPE_CURVE &&
-      !ELEM(sspreadsheet->attribute_domain, ATTR_DOMAIN_POINT, ATTR_DOMAIN_CURVE)) {
-    sspreadsheet->attribute_domain = ATTR_DOMAIN_POINT;
+  switch (sspreadsheet->geometry_component_type) {
+    case GEO_COMPONENT_TYPE_MESH: {
+      if (!ELEM(sspreadsheet->attribute_domain,
+                ATTR_DOMAIN_POINT,
+                ATTR_DOMAIN_EDGE,
+                ATTR_DOMAIN_FACE,
+                ATTR_DOMAIN_CORNER)) {
+        sspreadsheet->attribute_domain = ATTR_DOMAIN_POINT;
+      }
+      break;
+    }
+    case GEO_COMPONENT_TYPE_POINT_CLOUD: {
+      sspreadsheet->attribute_domain = ATTR_DOMAIN_POINT;
+      break;
+    }
+    case GEO_COMPONENT_TYPE_INSTANCES: {
+      sspreadsheet->attribute_domain = ATTR_DOMAIN_INSTANCE;
+      break;
+    }
+    case GEO_COMPONENT_TYPE_VOLUME: {
+      break;
+    }
+    case GEO_COMPONENT_TYPE_CURVE: {
+      if (!ELEM(sspreadsheet->attribute_domain, ATTR_DOMAIN_POINT, ATTR_DOMAIN_CURVE)) {
+        sspreadsheet->attribute_domain = ATTR_DOMAIN_POINT;
+      }
+      break;
+    }
   }
 }
 
@@ -3113,59 +3291,30 @@ const EnumPropertyItem *rna_SpaceSpreadsheet_attribute_domain_itemf(bContext *UN
   return item_array;
 }
 
-static SpreadsheetContext *rna_SpaceSpreadsheet_context_path_append(SpaceSpreadsheet *sspreadsheet,
-                                                                    int type)
+static StructRNA *rna_viewer_path_elem_refine(PointerRNA *ptr)
 {
-  SpreadsheetContext *context = ED_spreadsheet_context_new(type);
-  BLI_addtail(&sspreadsheet->context_path, context);
-  ED_spreadsheet_context_path_update_tag(sspreadsheet);
-  WM_main_add_notifier(NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
-  return context;
-}
-
-static void rna_SpaceSpreadsheet_context_path_clear(SpaceSpreadsheet *sspreadsheet)
-{
-  ED_spreadsheet_context_path_clear(sspreadsheet);
-  ED_spreadsheet_context_path_update_tag(sspreadsheet);
-  WM_main_add_notifier(NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
-}
-
-static StructRNA *rna_spreadsheet_context_refine(PointerRNA *ptr)
-{
-  SpreadsheetContext *context = ptr->data;
-  switch (context->type) {
-    case SPREADSHEET_CONTEXT_OBJECT:
-      return &RNA_SpreadsheetContextObject;
-    case SPREADSHEET_CONTEXT_MODIFIER:
-      return &RNA_SpreadsheetContextModifier;
-    case SPREADSHEET_CONTEXT_NODE:
-      return &RNA_SpreadsheetContextNode;
+  ViewerPathElem *elem = ptr->data;
+  switch (elem->type) {
+    case VIEWER_PATH_ELEM_TYPE_ID:
+      return &RNA_IDViewerPathElem;
+    case VIEWER_PATH_ELEM_TYPE_MODIFIER:
+      return &RNA_ModifierViewerPathElem;
+    case VIEWER_PATH_ELEM_TYPE_NODE:
+      return &RNA_NodeViewerPathElem;
   }
   BLI_assert_unreachable();
   return NULL;
 }
 
-static void rna_spreadsheet_context_update(Main *UNUSED(bmain),
-                                           Scene *UNUSED(scene),
-                                           PointerRNA *ptr)
+static void rna_FileAssetSelectParams_catalog_id_get(PointerRNA *ptr, char *value)
 {
-  bScreen *screen = (bScreen *)ptr->owner_id;
-  LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
-    SpaceLink *sl = area->spacedata.first;
-    if (sl->spacetype == SPACE_SPREADSHEET) {
-      SpaceSpreadsheet *sspreadsheet = (SpaceSpreadsheet *)sl;
-      ED_spreadsheet_context_path_update_tag(sspreadsheet);
-    }
-  }
+  const FileAssetSelectParams *params = ptr->data;
+  BLI_uuid_format(value, params->catalog_id);
 }
 
-static void rna_spreadsheet_set_geometry_node_context(SpaceSpreadsheet *sspreadsheet,
-                                                      SpaceNode *snode,
-                                                      bNode *node)
+static int rna_FileAssetSelectParams_catalog_id_length(PointerRNA *UNUSED(ptr))
 {
-  ED_spreadsheet_set_geometry_node_context(sspreadsheet, snode, node);
-  ED_spreadsheet_context_path_update_tag(sspreadsheet);
-  WM_main_add_notifier(NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+  return UUID_STRING_LEN - 1;
 }
 
 #else
@@ -3175,6 +3324,45 @@ static const EnumPropertyItem dt_uv_items[] = {
     {SI_UVDT_DASH, "DASH", 0, "Dash", "Display dashed black-white edges"},
     {SI_UVDT_BLACK, "BLACK", 0, "Black", "Display black edges"},
     {SI_UVDT_WHITE, "WHITE", 0, "White", "Display white edges"},
+    {0, NULL, 0, NULL, NULL},
+};
+
+static struct IDFilterEnumPropertyItem rna_enum_space_file_id_filter_categories[] = {
+    /* Categories */
+    {FILTER_ID_SCE, "category_scene", ICON_SCENE_DATA, "Scenes", "Show scenes"},
+    {FILTER_ID_AC, "category_animation", ICON_ANIM_DATA, "Animations", "Show animation data"},
+    {FILTER_ID_OB | FILTER_ID_GR,
+     "category_object",
+     ICON_OUTLINER_COLLECTION,
+     "Objects & Collections",
+     "Show objects and collections"},
+    {FILTER_ID_AR | FILTER_ID_CU_LEGACY | FILTER_ID_LT | FILTER_ID_MB | FILTER_ID_ME |
+         FILTER_ID_CV | FILTER_ID_PT | FILTER_ID_VO,
+     "category_geometry",
+     ICON_GEOMETRY_NODES,
+     "Geometry",
+     "Show meshes, curves, lattice, armatures and metaballs data"},
+    {FILTER_ID_LS | FILTER_ID_MA | FILTER_ID_NT | FILTER_ID_TE,
+     "category_shading",
+     ICON_MATERIAL_DATA,
+     "Shading",
+     "Show materials, nodetrees, textures and Freestyle's linestyles"},
+    {FILTER_ID_IM | FILTER_ID_MC | FILTER_ID_MSK | FILTER_ID_SO,
+     "category_image",
+     ICON_IMAGE_DATA,
+     "Images & Sounds",
+     "Show images, movie clips, sounds and masks"},
+    {FILTER_ID_CA | FILTER_ID_LA | FILTER_ID_LP | FILTER_ID_SPK | FILTER_ID_WO,
+     "category_environment",
+     ICON_WORLD_DATA,
+     "Environment",
+     "Show worlds, lights, cameras and speakers"},
+    {FILTER_ID_BR | FILTER_ID_GD | FILTER_ID_PA | FILTER_ID_PAL | FILTER_ID_PC | FILTER_ID_TXT |
+         FILTER_ID_VF | FILTER_ID_CF | FILTER_ID_WS,
+     "category_misc",
+     ICON_GREASEPENCIL,
+     "Miscellaneous",
+     "Show other data types"},
     {0, NULL, 0, NULL, NULL},
 };
 
@@ -3209,6 +3397,14 @@ static void rna_def_space_generic_show_region_toggles(StructRNA *srna, int regio
   if (region_type_mask & (1 << RGN_TYPE_TOOLS)) {
     region_type_mask &= ~(1 << RGN_TYPE_TOOLS);
     DEF_SHOW_REGION_PROPERTY(show_region_toolbar, "Toolbar", "");
+  }
+  if (region_type_mask & (1 << RGN_TYPE_TOOL_PROPS)) {
+    region_type_mask &= ~(1 << RGN_TYPE_TOOL_PROPS);
+    DEF_SHOW_REGION_PROPERTY(show_region_tool_props, "Toolbar", "");
+  }
+  if (region_type_mask & (1 << RGN_TYPE_CHANNELS)) {
+    region_type_mask &= ~(1 << RGN_TYPE_CHANNELS);
+    DEF_SHOW_REGION_PROPERTY(show_region_channels, "Channels", "");
   }
   if (region_type_mask & (1 << RGN_TYPE_UI)) {
     region_type_mask &= ~(1 << RGN_TYPE_UI);
@@ -3283,9 +3479,9 @@ static void rna_def_space_mask_info(StructRNA *srna, int noteflag, const char *m
   RNA_def_property_ui_text(prop, "Edge Display Type", "Display type for mask splines");
   RNA_def_property_update(prop, noteflag, NULL);
 
-  prop = RNA_def_property(srna, "show_mask_smooth", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "mask_info.draw_flag", MASK_DRAWFLAG_SMOOTH);
-  RNA_def_property_ui_text(prop, "Display Smooth Splines", "");
+  prop = RNA_def_property(srna, "show_mask_spline", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "mask_info.draw_flag", MASK_DRAWFLAG_SPLINE);
+  RNA_def_property_ui_text(prop, "Show Mask Spline", "");
   RNA_def_property_update(prop, noteflag, NULL);
 
   prop = RNA_def_property(srna, "show_mask_overlay", PROP_BOOLEAN, PROP_NONE);
@@ -3298,6 +3494,13 @@ static void rna_def_space_mask_info(StructRNA *srna, int noteflag, const char *m
   RNA_def_property_enum_items(prop, overlay_mode_items);
   RNA_def_property_ui_text(prop, "Overlay Mode", "Overlay mode of rasterized mask");
   RNA_def_property_update(prop, noteflag, NULL);
+
+  prop = RNA_def_property(srna, "blend_factor", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_float_sdna(prop, NULL, "mask_info.blend_factor");
+  RNA_def_property_range(prop, 0.0f, 1.0f);
+  RNA_def_property_ui_range(prop, 0, 1., 0.1, 1);
+  RNA_def_property_ui_text(prop, "Blending Factor", "Overlay blending factor of rasterized mask");
+  RNA_def_property_update(prop, noteflag, NULL);
 }
 
 static void rna_def_space_image_uv(BlenderRNA *brna)
@@ -3305,35 +3508,23 @@ static void rna_def_space_image_uv(BlenderRNA *brna)
   StructRNA *srna;
   PropertyRNA *prop;
 
-  static const EnumPropertyItem sticky_mode_items[] = {
-      {SI_STICKY_DISABLE,
-       "DISABLED",
-       ICON_STICKY_UVS_DISABLE,
-       "Disabled",
-       "Sticky vertex selection disabled"},
-      {SI_STICKY_LOC,
-       "SHARED_LOCATION",
-       ICON_STICKY_UVS_LOC,
-       "Shared Location",
-       "Select UVs that are at the same location and share a mesh vertex"},
-      {SI_STICKY_VERTEX,
-       "SHARED_VERTEX",
-       ICON_STICKY_UVS_VERT,
-       "Shared Vertex",
-       "Select UVs that share a mesh vertex, whether or not they are at the same location"},
-      {0, NULL, 0, NULL, NULL},
-  };
-
   static const EnumPropertyItem dt_uvstretch_items[] = {
       {SI_UVDT_STRETCH_ANGLE, "ANGLE", 0, "Angle", "Angular distortion between UV and 3D angles"},
       {SI_UVDT_STRETCH_AREA, "AREA", 0, "Area", "Area distortion between UV and 3D faces"},
       {0, NULL, 0, NULL, NULL},
   };
 
-  static const EnumPropertyItem pixel_snap_mode_items[] = {
-      {SI_PIXEL_SNAP_DISABLED, "DISABLED", 0, "Disabled", "Don't snap to pixels"},
-      {SI_PIXEL_SNAP_CORNER, "CORNER", 0, "Corner", "Snap to pixel corners"},
-      {SI_PIXEL_SNAP_CENTER, "CENTER", 0, "Center", "Snap to pixel centers"},
+  static const EnumPropertyItem pixel_round_mode_items[] = {
+      {SI_PIXEL_ROUND_DISABLED, "DISABLED", 0, "Disabled", "Don't round to pixels"},
+      {SI_PIXEL_ROUND_CORNER, "CORNER", 0, "Corner", "Round to pixel corners"},
+      {SI_PIXEL_ROUND_CENTER, "CENTER", 0, "Center", "Round to pixel centers"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  static const EnumPropertyItem grid_shape_source_items[] = {
+      {SI_GRID_SHAPE_DYNAMIC, "DYNAMIC", 0, "Dynamic", "Dynamic grid"},
+      {SI_GRID_SHAPE_FIXED, "FIXED", 0, "Fixed", "Manually set grid divisions"},
+      {SI_GRID_SHAPE_PIXEL, "PIXEL", 0, "Pixel", "Grid aligns with pixels from image"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -3342,14 +3533,6 @@ static void rna_def_space_image_uv(BlenderRNA *brna)
   RNA_def_struct_nested(brna, srna, "SpaceImageEditor");
   RNA_def_struct_path_func(srna, "rna_SpaceUVEditor_path");
   RNA_def_struct_ui_text(srna, "Space UV Editor", "UV editor data for the image editor space");
-
-  /* selection */
-  prop = RNA_def_property(srna, "sticky_select_mode", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_sdna(prop, NULL, "sticky");
-  RNA_def_property_enum_items(prop, sticky_mode_items);
-  RNA_def_property_ui_text(
-      prop, "Sticky Selection Mode", "Method for extending UV vertex selection");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
 
   /* drawing */
   prop = RNA_def_property(srna, "edge_display_type", PROP_ENUM, PROP_NONE);
@@ -3371,6 +3554,7 @@ static void rna_def_space_image_uv(BlenderRNA *brna)
   RNA_def_property_enum_sdna(prop, NULL, "dt_uvstretch");
   RNA_def_property_enum_items(prop, dt_uvstretch_items);
   RNA_def_property_ui_text(prop, "Display Stretch Type", "Type of stretch to display");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_MESH);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
 
   prop = RNA_def_property(srna, "show_modified_edges", PROP_BOOLEAN, PROP_NONE);
@@ -3401,13 +3585,35 @@ static void rna_def_space_image_uv(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Display Faces", "Display faces over the image");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
 
-  prop = RNA_def_property(srna, "tile_grid_shape", PROP_INT, PROP_NONE);
+  prop = RNA_def_property(srna, "tile_grid_shape", PROP_INT, PROP_XYZ);
   RNA_def_property_int_sdna(prop, NULL, "tile_grid_shape");
   RNA_def_property_array(prop, 2);
   RNA_def_property_int_default(prop, 1);
-  RNA_def_property_range(prop, 1, 10);
+  RNA_def_property_range(prop, 1, 100);
+  RNA_def_property_int_funcs(prop, NULL, "rna_SpaceUVEditor_tile_grid_shape_set", NULL);
   RNA_def_property_ui_text(
       prop, "Tile Grid Shape", "How many tiles will be shown in the background");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
+
+  prop = RNA_def_property(srna, "show_grid_over_image", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SI_GRID_OVER_IMAGE);
+  RNA_def_property_boolean_default(prop, true);
+  RNA_def_property_ui_text(prop, "Grid Over Image", "Show the grid over the image");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
+
+  prop = RNA_def_property(srna, "grid_shape_source", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, grid_shape_source_items);
+  RNA_def_property_ui_text(prop, "Grid Shape Source", "Specify source for the grid shape");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
+
+  prop = RNA_def_property(srna, "custom_grid_subdivisions", PROP_INT, PROP_XYZ);
+  RNA_def_property_int_sdna(prop, NULL, "custom_grid_subdiv");
+  RNA_def_property_array(prop, 2);
+  RNA_def_property_int_default(prop, 10);
+  RNA_def_property_range(prop, 1, 5000);
+  RNA_def_property_int_funcs(prop, NULL, "rna_SpaceUVEditor_custom_grid_subdiv_set", NULL);
+  RNA_def_property_ui_text(
+      prop, "Dynamic Grid Size", "Number of grid units in UV space that make one UV Unit");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
 
   prop = RNA_def_property(srna, "uv_opacity", PROP_FLOAT, PROP_FACTOR);
@@ -3416,11 +3622,9 @@ static void rna_def_space_image_uv(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "UV Opacity", "Opacity of UV overlays");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
 
-  /* todo: move edge and face drawing options here from G.f */
-
-  prop = RNA_def_property(srna, "pixel_snap_mode", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_items(prop, pixel_snap_mode_items);
-  RNA_def_property_ui_text(prop, "Snap to Pixels", "Snap UVs to pixels while editing");
+  prop = RNA_def_property(srna, "pixel_round_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, pixel_round_mode_items);
+  RNA_def_property_ui_text(prop, "Round to Pixels", "Round UVs to pixels while editing");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
 
   prop = RNA_def_property(srna, "lock_bounds", PROP_BOOLEAN, PROP_NONE);
@@ -3483,6 +3687,21 @@ static void rna_def_space_outliner(BlenderRNA *brna)
       {0, NULL, 0, NULL, NULL},
   };
 
+  static const EnumPropertyItem lib_override_view_mode[] = {
+      {SO_LIB_OVERRIDE_VIEW_PROPERTIES,
+       "PROPERTIES",
+       ICON_NONE,
+       "Properties",
+       "Display all local override data-blocks with their overridden properties and buttons to "
+       "edit them"},
+      {SO_LIB_OVERRIDE_VIEW_HIERARCHIES,
+       "HIERARCHIES",
+       ICON_NONE,
+       "Hierarchies",
+       "Display library override relationships"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
   static const EnumPropertyItem filter_state_items[] = {
       {SO_FILTER_OB_ALL, "ALL", 0, "All", "Show all objects in the view layer"},
       {SO_FILTER_OB_VISIBLE, "VISIBLE", 0, "Visible", "Show visible objects"},
@@ -3500,6 +3719,13 @@ static void rna_def_space_outliner(BlenderRNA *brna)
   RNA_def_property_enum_sdna(prop, NULL, "outlinevis");
   RNA_def_property_enum_items(prop, display_mode_items);
   RNA_def_property_ui_text(prop, "Display Mode", "Type of information to display");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_OUTLINER, NULL);
+
+  prop = RNA_def_property(srna, "lib_override_view_mode", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, lib_override_view_mode);
+  RNA_def_property_ui_text(prop,
+                           "Library Override View Mode",
+                           "Choose different visualizations of library override data");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_OUTLINER, NULL);
 
   prop = RNA_def_property(srna, "filter_text", PROP_STRING, PROP_NONE);
@@ -3602,6 +3828,11 @@ static void rna_def_space_outliner(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Show Collections", "Show collections");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_OUTLINER, NULL);
 
+  prop = RNA_def_property(srna, "use_filter_view_layers", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_negative_sdna(prop, NULL, "filter", SO_FILTER_NO_VIEW_LAYERS);
+  RNA_def_property_ui_text(prop, "Show All View Layers", "Show all the view layers");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_OUTLINER, NULL);
+
   /* Filters object state. */
   prop = RNA_def_property(srna, "filter_state", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "filter_state");
@@ -3657,13 +3888,6 @@ static void rna_def_space_outliner(BlenderRNA *brna)
   RNA_def_property_enum_items(prop, rna_enum_id_type_items);
   RNA_def_property_ui_text(prop, "Filter by Type", "Data-block type to show");
   RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_ID);
-
-  prop = RNA_def_property(srna, "use_filter_lib_override", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_negative_sdna(prop, NULL, "filter", SO_FILTER_NO_LIB_OVERRIDE);
-  RNA_def_property_ui_text(prop,
-                           "Show Library Overrides",
-                           "For libraries with overrides created, show the overridden values");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_OUTLINER, NULL);
 
   prop = RNA_def_property(srna, "use_filter_lib_override_system", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "filter", SO_FILTER_SHOW_SYSTEM_OVERRIDES);
@@ -3770,6 +3994,7 @@ static void rna_def_space_view3d_shading(BlenderRNA *brna)
   prop = RNA_def_property(srna, "cavity_type", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, cavity_type_items);
   RNA_def_property_ui_text(prop, "Cavity Type", "Way to display the cavity shading");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_EDITOR_VIEW3D);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D | NS_VIEW3D_SHADING, NULL);
 
   prop = RNA_def_property(srna, "curvature_ridge_factor", PROP_FLOAT, PROP_FACTOR);
@@ -3879,6 +4104,7 @@ static void rna_def_space_view3d_shading(BlenderRNA *brna)
   prop = RNA_def_property(srna, "background_type", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, background_type_items);
   RNA_def_property_ui_text(prop, "Background", "Way to display the background");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_EDITOR_VIEW3D);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D | NS_VIEW3D_SHADING, NULL);
 
   prop = RNA_def_property(srna, "background_color", PROP_FLOAT, PROP_COLOR);
@@ -3990,6 +4216,14 @@ static void rna_def_space_view3d_shading(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Shader AOV Name", "Name of the active Shader AOV");
   RNA_def_property_flag(prop, PROP_HIDDEN);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
+
+  prop = RNA_def_property(srna, "use_compositor", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", V3D_SHADING_COMPOSITOR);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_boolean_default(prop, false);
+  RNA_def_property_ui_text(
+      prop, "Compositor", "Preview the compositor output inside the viewport");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D | NS_VIEW3D_SHADING, NULL);
 }
 
 static void rna_def_space_view3d_overlay(BlenderRNA *brna)
@@ -4149,6 +4383,15 @@ static void rna_def_space_view3d_overlay(BlenderRNA *brna)
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, "rna_GPencil_update");
 
+  prop = RNA_def_property(srna, "bone_wire_alpha", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_float_sdna(prop, NULL, "overlay.bone_wire_alpha");
+  RNA_def_property_ui_text(
+      prop, "Bone Wireframe Opacity", "Maximum opacity of bones in wireframe display mode");
+  RNA_def_property_range(prop, 0.0f, FLT_MAX);
+  RNA_def_property_ui_range(prop, 0.0f, 1.0f, 1, 2);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, "rna_GPencil_update");
+
   prop = RNA_def_property(srna, "show_motion_paths", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_negative_sdna(
       prop, NULL, "overlay.flag", V3D_OVERLAY_HIDE_MOTION_PATHS);
@@ -4190,6 +4433,20 @@ static void rna_def_space_view3d_overlay(BlenderRNA *brna)
                            "Wireframe Opacity",
                            "Opacity of the displayed edges "
                            "(1.0 for opaque)");
+  RNA_def_property_range(prop, 0.0f, 1.0f);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
+
+  prop = RNA_def_property(srna, "show_viewer_attribute", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", V3D_OVERLAY_VIEWER_ATTRIBUTE);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_ui_text(prop, "Viewer Node", "Show attribute overlay for active viewer node");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
+
+  prop = RNA_def_property(srna, "viewer_attribute_opacity", PROP_FLOAT, PROP_FACTOR);
+  RNA_def_property_float_sdna(prop, NULL, "overlay.viewer_attribute_opacity");
+  RNA_def_property_ui_text(
+      prop, "Viewer Attribute Opacity", "Opacity of the attribute that is currently visualized");
   RNA_def_property_range(prop, 0.0f, 1.0f);
   RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
@@ -4336,7 +4593,7 @@ static void rna_def_space_view3d_overlay(BlenderRNA *brna)
   RNA_def_property_enum_items(prop, rna_enum_curve_display_handle_items);
   RNA_def_property_ui_text(
       prop, "Display Handles", "Limit the display of curve handles in edit mode");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, "rna_GPencil_update");
 
   prop = RNA_def_property(srna, "show_curve_normals", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "overlay.edit_flag", V3D_OVERLAY_EDIT_CU_NORMALS);
@@ -4349,6 +4606,21 @@ static void rna_def_space_view3d_overlay(BlenderRNA *brna)
   RNA_def_property_range(prop, 0.00001, 100000.0);
   RNA_def_property_ui_range(prop, 0.01, 2.0, 1, 2);
   RNA_def_property_float_default(prop, 0.02);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
+
+  prop = RNA_def_property(srna, "normals_constant_screen_size", PROP_FLOAT, PROP_PIXEL);
+  RNA_def_property_float_sdna(prop, NULL, "overlay.normals_constant_screen_size");
+  RNA_def_property_ui_text(prop, "Normal Screen Size", "Screen size for normals in the 3D view");
+  RNA_def_property_range(prop, 0.0, 100000.0);
+  RNA_def_property_ui_range(prop, 1.0, 100.0, 50, 0);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
+
+  prop = RNA_def_property(srna, "use_normals_constant_screen_size", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(
+      prop, NULL, "overlay.edit_flag", V3D_OVERLAY_EDIT_CONSTANT_SCREEN_SIZE_NORMALS);
+  RNA_def_property_ui_text(prop,
+                           "Constant Screen Size Normals",
+                           "Keep size of normals constant in relation to 3D view");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
 
   prop = RNA_def_property(srna, "backwire_opacity", PROP_FLOAT, PROP_FACTOR);
@@ -4492,9 +4764,15 @@ static void rna_def_space_view3d_overlay(BlenderRNA *brna)
   prop = RNA_def_property(srna, "gpencil_vertex_paint_opacity", PROP_FLOAT, PROP_FACTOR);
   RNA_def_property_float_sdna(prop, NULL, "overlay.gpencil_vertex_paint_opacity");
   RNA_def_property_range(prop, 0.0f, 1.0f);
-  RNA_def_property_float_default(prop, 1.0f);
   RNA_def_property_ui_text(prop, "Opacity", "Vertex Paint mix factor");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, "rna_GPencil_update");
+
+  /* Developer Debug overlay */
+
+  prop = RNA_def_property(srna, "use_debug_freeze_view_culling", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "debug_flag", V3D_DEBUG_FREEZE_CULLING);
+  RNA_def_property_ui_text(prop, "Freeze Culling", "Freeze view culling bounds");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, NULL);
 }
 
 static void rna_def_space_view3d(BlenderRNA *brna)
@@ -4814,64 +5092,21 @@ static void rna_def_space_view3d(BlenderRNA *brna)
   RNA_def_property_update(
       prop, NC_SPACE | ND_SPACE_VIEW3D, "rna_SpaceView3D_mirror_xr_session_update");
 
-  {
-    struct {
-      const char *name;
-      int type_mask;
-      const char *identifier[2];
-    } info[] = {
-        {"Mesh", (1 << OB_MESH), {"show_object_viewport_mesh", "show_object_select_mesh"}},
-        {"Curve", (1 << OB_CURVE), {"show_object_viewport_curve", "show_object_select_curve"}},
-        {"Surface", (1 << OB_SURF), {"show_object_viewport_surf", "show_object_select_surf"}},
-        {"Meta", (1 << OB_MBALL), {"show_object_viewport_meta", "show_object_select_meta"}},
-        {"Font", (1 << OB_FONT), {"show_object_viewport_font", "show_object_select_font"}},
-        {"Hair", (1 << OB_HAIR), {"show_object_viewport_hair", "show_object_select_hair"}},
-        {"Point Cloud",
-         (1 << OB_POINTCLOUD),
-         {"show_object_viewport_pointcloud", "show_object_select_pointcloud"}},
-        {"Volume", (1 << OB_VOLUME), {"show_object_viewport_volume", "show_object_select_volume"}},
-        {"Armature",
-         (1 << OB_ARMATURE),
-         {"show_object_viewport_armature", "show_object_select_armature"}},
-        {"Lattice",
-         (1 << OB_LATTICE),
-         {"show_object_viewport_lattice", "show_object_select_lattice"}},
-        {"Empty", (1 << OB_EMPTY), {"show_object_viewport_empty", "show_object_select_empty"}},
-        {"Grease Pencil",
-         (1 << OB_GPENCIL),
-         {"show_object_viewport_grease_pencil", "show_object_select_grease_pencil"}},
-        {"Camera", (1 << OB_CAMERA), {"show_object_viewport_camera", "show_object_select_camera"}},
-        {"Light", (1 << OB_LAMP), {"show_object_viewport_light", "show_object_select_light"}},
-        {"Speaker",
-         (1 << OB_SPEAKER),
-         {"show_object_viewport_speaker", "show_object_select_speaker"}},
-        {"Light Probe",
-         (1 << OB_LIGHTPROBE),
-         {"show_object_viewport_light_probe", "show_object_select_light_probe"}},
-    };
+  rna_def_object_type_visibility_flags_common(srna,
+                                              NC_SPACE | ND_SPACE_VIEW3D | NS_VIEW3D_SHADING,
+                                              "rna_SpaceView3D_object_type_visibility_update");
 
-    const char *view_mask_member[2] = {
-        "object_type_exclude_viewport",
-        "object_type_exclude_select",
-    };
-    for (int mask_index = 0; mask_index < 2; mask_index++) {
-      for (int type_index = 0; type_index < ARRAY_SIZE(info); type_index++) {
-        prop = RNA_def_property(
-            srna, info[type_index].identifier[mask_index], PROP_BOOLEAN, PROP_NONE);
-        RNA_def_property_boolean_negative_sdna(
-            prop, NULL, view_mask_member[mask_index], info[type_index].type_mask);
-        RNA_def_property_ui_text(prop, info[type_index].name, "");
-        RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D | NS_VIEW3D_SHADING, NULL);
-      }
-    }
+  /* Helper for drawing the icon. */
+  prop = RNA_def_property(srna, "icon_from_show_object_viewport", PROP_INT, PROP_NONE);
+  RNA_def_property_int_funcs(
+      prop, "rna_SpaceView3D_icon_from_show_object_viewport_get", NULL, NULL);
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(prop, "Visibility Icon", "");
 
-    /* Helper for drawing the icon. */
-    prop = RNA_def_property(srna, "icon_from_show_object_viewport", PROP_INT, PROP_NONE);
-    RNA_def_property_int_funcs(
-        prop, "rna_SpaceView3D_icon_from_show_object_viewport_get", NULL, NULL);
-    RNA_def_property_clear_flag(prop, PROP_EDITABLE);
-    RNA_def_property_ui_text(prop, "Visibility Icon", "");
-  }
+  prop = RNA_def_property(srna, "show_viewer", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag2", V3D_SHOW_VIEWER);
+  RNA_def_property_ui_text(prop, "Show Viewer", "Display non-final geometry from viewer nodes");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D | NS_VIEW3D_SHADING, NULL);
 
   /* Nested Structs */
   prop = RNA_def_property(srna, "shading", PROP_POINTER, PROP_NONE);
@@ -4899,18 +5134,19 @@ static void rna_def_space_view3d(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "lock_rotation", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "viewlock", RV3D_LOCK_ROTATION);
-  RNA_def_property_ui_text(prop, "Lock", "Lock view rotation in side views");
+  RNA_def_property_ui_text(
+      prop, "Lock Rotation", "Lock view rotation of side views to Top/Front/Right");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, "rna_RegionView3D_quadview_update");
 
   prop = RNA_def_property(srna, "show_sync_view", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "viewlock", RV3D_BOXVIEW);
-  RNA_def_property_ui_text(prop, "Box", "Sync view position between side views");
+  RNA_def_property_ui_text(prop, "Sync Zoom/Pan", "Sync view position between side views");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_VIEW3D, "rna_RegionView3D_quadview_update");
 
   prop = RNA_def_property(srna, "use_box_clip", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "viewlock", RV3D_BOXCLIP);
   RNA_def_property_ui_text(
-      prop, "Clip", "Clip objects based on what's visible in other side views");
+      prop, "Clip Contents", "Clip view contents based on what is visible in other side views");
   RNA_def_property_update(
       prop, NC_SPACE | ND_SPACE_VIEW3D, "rna_RegionView3D_quadview_clip_update");
 
@@ -4946,10 +5182,18 @@ static void rna_def_space_view3d(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Is Perspective", "");
   RNA_def_property_flag(prop, PROP_EDITABLE);
 
+  /* WARNING: Using "orthographic" in this name isn't correct and could be changed. */
   prop = RNA_def_property(srna, "is_orthographic_side_view", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "view", 0);
-  RNA_def_property_boolean_funcs(prop, "rna_RegionView3D_is_orthographic_side_view_get", NULL);
-  RNA_def_property_ui_text(prop, "Is Axis Aligned", "Is current view an orthographic side view");
+  RNA_def_property_boolean_funcs(prop,
+                                 "rna_RegionView3D_is_orthographic_side_view_get",
+                                 "rna_RegionView3D_is_orthographic_side_view_set");
+  RNA_def_property_ui_text(
+      prop,
+      "Is Axis Aligned",
+      "Is current view aligned to an axis "
+      "(does not check the view is orthographic use \"is_perspective\" for that). "
+      "Assignment sets the \"view_rotation\" to the closest axis aligned view");
 
   /* This isn't directly accessible from the UI, only an operator. */
   prop = RNA_def_property(srna, "use_clip_planes", PROP_BOOLEAN, PROP_NONE);
@@ -4963,7 +5207,7 @@ static void rna_def_space_view3d(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "view_location", PROP_FLOAT, PROP_TRANSLATION);
 #  if 0
-  RNA_def_property_float_sdna(prop, NULL, "ofs"); /* cant use because its negated */
+  RNA_def_property_float_sdna(prop, NULL, "ofs"); /* can't use because it's negated */
 #  else
   RNA_def_property_array(prop, 3);
   RNA_def_property_float_funcs(
@@ -4974,7 +5218,7 @@ static void rna_def_space_view3d(BlenderRNA *brna)
   RNA_def_property_update(prop, NC_WINDOW, NULL);
 
   prop = RNA_def_property(
-      srna, "view_rotation", PROP_FLOAT, PROP_QUATERNION); /* cant use because its inverted */
+      srna, "view_rotation", PROP_FLOAT, PROP_QUATERNION); /* can't use because it's inverted */
 #  if 0
   RNA_def_property_float_sdna(prop, NULL, "viewquat");
 #  else
@@ -5040,6 +5284,7 @@ static void rna_def_space_properties(BlenderRNA *brna)
   RNA_def_property_enum_funcs(
       prop, NULL, "rna_SpaceProperties_context_set", "rna_SpaceProperties_context_itemf");
   RNA_def_property_ui_text(prop, "", "");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_ID);
   RNA_def_property_update(
       prop, NC_SPACE | ND_SPACE_PROPERTIES, "rna_SpaceProperties_context_update");
 
@@ -5047,7 +5292,7 @@ static void rna_def_space_properties(BlenderRNA *brna)
   prop = RNA_def_property(srna, "pin_id", PROP_POINTER, PROP_NONE);
   RNA_def_property_pointer_sdna(prop, NULL, "pinid");
   RNA_def_property_struct_type(prop, "ID");
-  /* note: custom set function is ONLY to avoid rna setting a user for this. */
+  /* NOTE: custom set function is ONLY to avoid rna setting a user for this. */
   RNA_def_property_pointer_funcs(
       prop, NULL, "rna_SpaceProperties_pin_id_set", "rna_SpaceProperties_pin_id_typef", NULL);
   RNA_def_property_flag(prop, PROP_EDITABLE | PROP_NEVER_UNLINK);
@@ -5106,6 +5351,12 @@ static void rna_def_space_image_overlay(BlenderRNA *brna)
   prop = RNA_def_property(srna, "show_overlays", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", SI_OVERLAY_SHOW_OVERLAYS);
   RNA_def_property_ui_text(prop, "Show Overlays", "Display overlays like UV Maps and Metadata");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
+
+  prop = RNA_def_property(srna, "show_grid_background", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", SI_OVERLAY_SHOW_GRID_BACKGROUND);
+  RNA_def_property_ui_text(prop, "Display Background", "Show the grid background and borders");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
 }
 
 static void rna_def_space_image(BlenderRNA *brna)
@@ -5271,6 +5522,17 @@ static void rna_def_space_image(BlenderRNA *brna)
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_ui_text(prop, "Show Mask Editor", "Show Mask editing related properties");
 
+  /* Gizmo Toggles. */
+  prop = RNA_def_property(srna, "show_gizmo", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_negative_sdna(prop, NULL, "gizmo_flag", SI_GIZMO_HIDE);
+  RNA_def_property_ui_text(prop, "Show Gizmo", "Show gizmos of all types");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
+
+  prop = RNA_def_property(srna, "show_gizmo_navigate", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_negative_sdna(prop, NULL, "gizmo_flag", SI_GIZMO_HIDE_NAVIGATE);
+  RNA_def_property_ui_text(prop, "Navigate Gizmo", "Viewport navigation gizmo");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_IMAGE, NULL);
+
   /* Overlays */
   prop = RNA_def_property(srna, "overlay", PROP_POINTER, PROP_NONE);
   RNA_def_property_flag(prop, PROP_NEVER_NULL);
@@ -5284,6 +5546,129 @@ static void rna_def_space_image(BlenderRNA *brna)
 
   /* mask */
   rna_def_space_mask_info(srna, NC_SPACE | ND_SPACE_IMAGE, "rna_SpaceImageEditor_mask_set");
+}
+
+static void rna_def_space_sequencer_preview_overlay(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, "SequencerPreviewOverlay", NULL);
+  RNA_def_struct_sdna(srna, "SequencerPreviewOverlay");
+  RNA_def_struct_nested(brna, srna, "SpaceSequenceEditor");
+  RNA_def_struct_path_func(srna, "rna_SpaceSequencerPreviewOverlay_path");
+  RNA_def_struct_ui_text(srna, "Preview Overlay Settings", "");
+
+  prop = RNA_def_property(srna, "show_safe_areas", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_PREVIEW_SHOW_SAFE_MARGINS);
+  RNA_def_property_ui_text(
+      prop, "Safe Areas", "Show TV title safe and action safe areas in preview");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_safe_center", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_PREVIEW_SHOW_SAFE_CENTER);
+  RNA_def_property_ui_text(
+      prop, "Center-Cut Safe Areas", "Show safe areas to fit content in a different aspect ratio");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_metadata", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_PREVIEW_SHOW_METADATA);
+  RNA_def_property_ui_text(prop, "Show Metadata", "Show metadata of first visible strip");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_annotation", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_PREVIEW_SHOW_GPENCIL);
+  RNA_def_property_ui_text(prop, "Show Annotation", "Show annotations for this view");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_image_outline", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_PREVIEW_SHOW_OUTLINE_SELECTED);
+  RNA_def_property_ui_text(prop, "Image Outline", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_cursor", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_PREVIEW_SHOW_2D_CURSOR);
+  RNA_def_property_ui_text(prop, "2D Cursor", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+}
+
+static void rna_def_space_sequencer_timeline_overlay(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, "SequencerTimelineOverlay", NULL);
+  RNA_def_struct_sdna(srna, "SequencerTimelineOverlay");
+  RNA_def_struct_nested(brna, srna, "SpaceSequenceEditor");
+  RNA_def_struct_path_func(srna, "rna_SpaceSequencerTimelineOverlay_path");
+  RNA_def_struct_ui_text(srna, "Timeline Overlay Settings", "");
+
+  static const EnumPropertyItem waveform_type_display_items[] = {
+      {SEQ_TIMELINE_NO_WAVEFORMS,
+       "NO_WAVEFORMS",
+       0,
+       "Waveforms Off",
+       "Don't display waveforms for any sound strips"},
+      {SEQ_TIMELINE_ALL_WAVEFORMS,
+       "ALL_WAVEFORMS",
+       0,
+       "Waveforms On",
+       "Display waveforms for all sound strips"},
+      {0,
+       "DEFAULT_WAVEFORMS",
+       0,
+       "Use Strip Option",
+       "Display waveforms depending on strip setting"},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  prop = RNA_def_property(srna, "waveform_display_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_bitflag_sdna(prop, NULL, "flag");
+  RNA_def_property_enum_items(prop, waveform_type_display_items);
+  RNA_def_property_ui_text(prop, "Waveform Display", "How Waveforms are displayed");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_fcurves", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_TIMELINE_SHOW_FCURVES);
+  RNA_def_property_ui_text(prop, "Show F-Curves", "Display strip opacity/volume curve");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_strip_name", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_TIMELINE_SHOW_STRIP_NAME);
+  RNA_def_property_ui_text(prop, "Show Name", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_strip_source", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_TIMELINE_SHOW_STRIP_SOURCE);
+  RNA_def_property_ui_text(
+      prop, "Show Source", "Display path to source file, or name of source datablock");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_strip_duration", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_TIMELINE_SHOW_STRIP_DURATION);
+  RNA_def_property_ui_text(prop, "Show Duration", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_grid", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_TIMELINE_SHOW_GRID);
+  RNA_def_property_ui_text(prop, "Show Grid", "Show vertical grid lines");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_strip_offset", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_TIMELINE_SHOW_STRIP_OFFSETS);
+  RNA_def_property_ui_text(prop, "Show Offsets", "Display strip in/out offsets");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_thumbnails", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_TIMELINE_SHOW_THUMBNAILS);
+  RNA_def_property_ui_text(prop, "Show Thumbnails", "Show strip thumbnails");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_strip_tag_color", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_TIMELINE_SHOW_STRIP_COLOR_TAG);
+  RNA_def_property_ui_text(
+      prop, "Show Color Tags", "Display the strip color tags in the sequencer");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 }
 
 static void rna_def_space_sequencer(BlenderRNA *brna)
@@ -5309,10 +5694,10 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
       {0, NULL, 0, NULL, NULL},
   };
 
-  static const EnumPropertyItem overlay_type_items[] = {
-      {SEQ_DRAW_OVERLAY_RECT, "RECTANGLE", 0, "Rectangle", "Show rectangle area overlay"},
-      {SEQ_DRAW_OVERLAY_REFERENCE, "REFERENCE", 0, "Reference", "Show reference frame only"},
-      {SEQ_DRAW_OVERLAY_CURRENT, "CURRENT", 0, "Current", "Show current frame only"},
+  static const EnumPropertyItem overlay_frame_type_items[] = {
+      {SEQ_OVERLAY_FRAME_TYPE_RECT, "RECTANGLE", 0, "Rectangle", "Show rectangle area overlay"},
+      {SEQ_OVERLAY_FRAME_TYPE_REFERENCE, "REFERENCE", 0, "Reference", "Show reference frame only"},
+      {SEQ_OVERLAY_FRAME_TYPE_CURRENT, "CURRENT", 0, "Current", "Show current frame only"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -5326,32 +5711,14 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
       {0, NULL, 0, NULL, NULL},
   };
 
-  static const EnumPropertyItem waveform_type_display_items[] = {
-      {SEQ_NO_WAVEFORMS,
-       "NO_WAVEFORMS",
-       0,
-       "Waveforms Off",
-       "Don't display waveforms for any sound strips"},
-      {SEQ_ALL_WAVEFORMS,
-       "ALL_WAVEFORMS",
-       0,
-       "Waveforms On",
-       "Display waveforms for all sound strips"},
-      {0,
-       "DEFAULT_WAVEFORMS",
-       0,
-       "Use Strip Option",
-       "Display waveforms depending on strip setting"},
-      {0, NULL, 0, NULL, NULL},
-  };
-
   srna = RNA_def_struct(brna, "SpaceSequenceEditor", "Space");
   RNA_def_struct_sdna(srna, "SpaceSeq");
   RNA_def_struct_ui_text(srna, "Space Sequence Editor", "Sequence editor space data");
 
   rna_def_space_generic_show_region_toggles(srna,
                                             (1 << RGN_TYPE_TOOL_HEADER) | (1 << RGN_TYPE_UI) |
-                                                (1 << RGN_TYPE_TOOLS) | (1 << RGN_TYPE_HUD));
+                                                (1 << RGN_TYPE_TOOLS) | (1 << RGN_TYPE_HUD) |
+                                                (1 << RGN_TYPE_CHANNELS));
 
   /* view type, fairly important */
   prop = RNA_def_property(srna, "view_type", PROP_ENUM, PROP_NONE);
@@ -5385,23 +5752,6 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Separate Colors", "Separate color channels in preview");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 
-  prop = RNA_def_property(srna, "show_safe_areas", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_SAFE_MARGINS);
-  RNA_def_property_ui_text(
-      prop, "Safe Areas", "Show TV title safe and action safe areas in preview");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
-  prop = RNA_def_property(srna, "show_safe_center", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_SAFE_CENTER);
-  RNA_def_property_ui_text(
-      prop, "Center-Cut Safe Areas", "Show safe areas to fit content in a different aspect ratio");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
-  prop = RNA_def_property(srna, "show_metadata", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_METADATA);
-  RNA_def_property_ui_text(prop, "Show Metadata", "Show metadata of first visible strip");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
   prop = RNA_def_property(srna, "show_seconds", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_negative_sdna(prop, NULL, "flag", SEQ_DRAWFRAMES);
   RNA_def_property_ui_text(prop, "Show Seconds", "Show timing in seconds not frames");
@@ -5413,11 +5763,6 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
       prop,
       "Show Markers",
       "If any exists, show markers in a separate row at the bottom of the editor");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
-  prop = RNA_def_property(srna, "show_annotation", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_GPENCIL);
-  RNA_def_property_ui_text(prop, "Show Annotation", "Show annotations for this view");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 
   prop = RNA_def_property(srna, "display_channel", PROP_INT, PROP_NONE);
@@ -5434,12 +5779,6 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
   RNA_def_property_enum_items(prop, preview_channels_items);
   RNA_def_property_ui_text(prop, "Display Channels", "Channels of the preview to display");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, "rna_SequenceEditor_update_cache");
-
-  prop = RNA_def_property(srna, "waveform_display_type", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_bitflag_sdna(prop, NULL, "flag");
-  RNA_def_property_enum_items(prop, waveform_type_display_items);
-  RNA_def_property_ui_text(prop, "Waveform Display", "How Waveforms are displayed");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 
   prop = RNA_def_property(srna, "use_zoom_to_fit", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_ZOOM_TO_FIT);
@@ -5467,6 +5806,14 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
   RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_USE_PROXIES);
   RNA_def_property_ui_text(
       prop, "Use Proxies", "Use optimized files for faster scrubbing when available");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, "rna_SequenceEditor_update_cache");
+
+  prop = RNA_def_property(srna, "use_clamp_view", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_CLAMP_VIEW);
+  RNA_def_property_boolean_funcs(
+      prop, "rna_SequenceEditor_clamp_view_get", "rna_SequenceEditor_clamp_view_set");
+  RNA_def_property_ui_text(
+      prop, "Limit View to Contents", "Limit timeline height to maximum used channel slot");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 
   /* grease pencil */
@@ -5479,9 +5826,9 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Grease Pencil", "Grease Pencil data for this Preview region");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 
-  prop = RNA_def_property(srna, "overlay_type", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_sdna(prop, NULL, "overlay_type");
-  RNA_def_property_enum_items(prop, overlay_type_items);
+  prop = RNA_def_property(srna, "overlay_frame_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "overlay_frame_type");
+  RNA_def_property_enum_items(prop, overlay_frame_type_items);
   RNA_def_property_ui_text(prop, "Overlay Type", "Overlay display method");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 
@@ -5490,40 +5837,58 @@ static void rna_def_space_sequencer(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Use Backdrop", "Display result under strips");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 
-  prop = RNA_def_property(srna, "show_strip_offset", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "draw_flag", SEQ_DRAW_OFFSET_EXT);
-  RNA_def_property_ui_text(prop, "Show Offsets", "Display strip in/out offsets");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
-  prop = RNA_def_property(srna, "show_fcurves", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_FCURVES);
-  RNA_def_property_ui_text(prop, "Show F-Curves", "Display strip opacity/volume curve");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
-  prop = RNA_def_property(srna, "show_strip_overlay", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_STRIP_OVERLAY);
-  RNA_def_property_ui_text(prop, "Show Overlay", "");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
-  prop = RNA_def_property(srna, "show_strip_name", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_STRIP_NAME);
-  RNA_def_property_ui_text(prop, "Show Name", "");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
-  prop = RNA_def_property(srna, "show_strip_source", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_STRIP_SOURCE);
-  RNA_def_property_ui_text(
-      prop, "Show Source", "Display path to source file, or name of source datablock");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
-  prop = RNA_def_property(srna, "show_strip_duration", PROP_BOOLEAN, PROP_NONE);
-  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_STRIP_DURATION);
-  RNA_def_property_ui_text(prop, "Show Duration", "");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
-
   prop = RNA_def_property(srna, "show_transform_preview", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "draw_flag", SEQ_DRAW_TRANSFORM_PREVIEW);
   RNA_def_property_ui_text(prop, "Transform Preview", "Show preview of the transformed frames");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  /* Gizmo toggles. */
+  prop = RNA_def_property(srna, "show_gizmo", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_negative_sdna(prop, NULL, "gizmo_flag", SEQ_GIZMO_HIDE);
+  RNA_def_property_ui_text(prop, "Show Gizmo", "Show gizmos of all types");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_gizmo_navigate", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_negative_sdna(prop, NULL, "gizmo_flag", SEQ_GIZMO_HIDE_NAVIGATE);
+  RNA_def_property_ui_text(prop, "Navigate Gizmo", "Viewport navigation gizmo");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_gizmo_context", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_negative_sdna(prop, NULL, "gizmo_flag", SEQ_GIZMO_HIDE_CONTEXT);
+  RNA_def_property_ui_text(prop, "Context Gizmo", "Context sensitive gizmos for the active item");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "show_gizmo_tool", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_negative_sdna(prop, NULL, "gizmo_flag", SEQ_GIZMO_HIDE_TOOL);
+  RNA_def_property_ui_text(prop, "Tool Gizmo", "Active tool gizmo");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  /* Overlay settings. */
+  prop = RNA_def_property(srna, "show_overlays", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SEQ_SHOW_OVERLAY);
+  RNA_def_property_ui_text(prop, "Show Overlay", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
+
+  prop = RNA_def_property(srna, "preview_overlay", PROP_POINTER, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_NEVER_NULL);
+  RNA_def_property_struct_type(prop, "SequencerPreviewOverlay");
+  RNA_def_property_pointer_sdna(prop, NULL, "preview_overlay");
+  RNA_def_property_ui_text(prop, "Preview Overlay Settings", "Settings for display of overlays");
+
+  prop = RNA_def_property(srna, "timeline_overlay", PROP_POINTER, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_NEVER_NULL);
+  RNA_def_property_struct_type(prop, "SequencerTimelineOverlay");
+  RNA_def_property_pointer_sdna(prop, NULL, "timeline_overlay");
+  RNA_def_property_ui_text(prop, "Timeline Overlay Settings", "Settings for display of overlays");
+
+  rna_def_space_sequencer_preview_overlay(brna);
+  rna_def_space_sequencer_timeline_overlay(brna);
+
+  /* transform */
+  prop = RNA_def_property(srna, "cursor_location", PROP_FLOAT, PROP_XYZ);
+  RNA_def_property_float_sdna(prop, NULL, "cursor");
+  RNA_def_property_array(prop, 2);
+  RNA_def_property_ui_text(prop, "2D Cursor Location", "2D cursor location for this view");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SEQUENCER, NULL);
 }
 
@@ -5589,7 +5954,7 @@ static void rna_def_space_text(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "font_size", PROP_INT, PROP_NONE);
   RNA_def_property_int_sdna(prop, NULL, "lheight");
-  RNA_def_property_range(prop, 8, 32);
+  RNA_def_property_range(prop, 1, 256); /* Large range since Hi-DPI scales down size. */
   RNA_def_property_ui_text(prop, "Font Size", "Font size to use for displaying the text");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_TEXT, NULL);
 
@@ -5670,7 +6035,7 @@ static void rna_def_space_dopesheet(BlenderRNA *brna)
   RNA_def_struct_sdna(srna, "SpaceAction");
   RNA_def_struct_ui_text(srna, "Space Dope Sheet Editor", "Dope Sheet space data");
 
-  rna_def_space_generic_show_region_toggles(srna, (1 << RGN_TYPE_UI));
+  rna_def_space_generic_show_region_toggles(srna, (1 << RGN_TYPE_UI) | (1 << RGN_TYPE_HUD));
 
   /* data */
   prop = RNA_def_property(srna, "action", PROP_POINTER, PROP_NONE);
@@ -5983,7 +6348,7 @@ static void rna_def_space_nla(BlenderRNA *brna)
   RNA_def_struct_sdna(srna, "SpaceNla");
   RNA_def_struct_ui_text(srna, "Space Nla Editor", "NLA editor space data");
 
-  rna_def_space_generic_show_region_toggles(srna, (1 << RGN_TYPE_UI));
+  rna_def_space_generic_show_region_toggles(srna, (1 << RGN_TYPE_UI) | (1 << RGN_TYPE_HUD));
 
   /* display */
   prop = RNA_def_property(srna, "show_seconds", PROP_BOOLEAN, PROP_NONE);
@@ -6083,7 +6448,7 @@ static void rna_def_space_console(BlenderRNA *brna)
   /* display */
   prop = RNA_def_property(srna, "font_size", PROP_INT, PROP_NONE); /* copied from text editor */
   RNA_def_property_int_sdna(prop, NULL, "lheight");
-  RNA_def_property_range(prop, 8, 32);
+  RNA_def_property_range(prop, 1, 256); /* Large range since Hi-DPI scales down size. */
   RNA_def_property_ui_text(prop, "Font Size", "Font size to use for displaying the text");
   RNA_def_property_update(prop, 0, "rna_SpaceConsole_rect_update");
 
@@ -6117,142 +6482,6 @@ static void rna_def_space_console(BlenderRNA *brna)
 /* Filter for datablock types in link/append. */
 static void rna_def_fileselect_idfilter(BlenderRNA *brna)
 {
-  struct IDFilterBoolean {
-    /* 64 bit, so we can't use bitflag enum. */
-    const uint64_t flag;
-    const char *identifier;
-    const int icon;
-    const char *name;
-    const char *description;
-  };
-
-  static const struct IDFilterBoolean booleans[] = {
-      /* Datablocks */
-      {FILTER_ID_AC, "filter_action", ICON_ANIM_DATA, "Actions", "Show Action data-blocks"},
-      {FILTER_ID_AR,
-       "filter_armature",
-       ICON_ARMATURE_DATA,
-       "Armatures",
-       "Show Armature data-blocks"},
-      {FILTER_ID_BR, "filter_brush", ICON_BRUSH_DATA, "Brushes", "Show Brushes data-blocks"},
-      {FILTER_ID_CA, "filter_camera", ICON_CAMERA_DATA, "Cameras", "Show Camera data-blocks"},
-      {FILTER_ID_CF, "filter_cachefile", ICON_FILE, "Cache Files", "Show Cache File data-blocks"},
-      {FILTER_ID_CU, "filter_curve", ICON_CURVE_DATA, "Curves", "Show Curve data-blocks"},
-      {FILTER_ID_GD,
-       "filter_grease_pencil",
-       ICON_GREASEPENCIL,
-       "Grease Pencil",
-       "Show Grease pencil data-blocks"},
-      {FILTER_ID_GR,
-       "filter_group",
-       ICON_OUTLINER_COLLECTION,
-       "Collections",
-       "Show Collection data-blocks"},
-      {FILTER_ID_HA, "filter_hair", ICON_HAIR_DATA, "Hairs", "Show/hide Hair data-blocks"},
-      {FILTER_ID_IM, "filter_image", ICON_IMAGE_DATA, "Images", "Show Image data-blocks"},
-      {FILTER_ID_LA, "filter_light", ICON_LIGHT_DATA, "Lights", "Show Light data-blocks"},
-      {FILTER_ID_LP,
-       "filter_light_probe",
-       ICON_OUTLINER_DATA_LIGHTPROBE,
-       "Light Probes",
-       "Show Light Probe data-blocks"},
-      {FILTER_ID_LS,
-       "filter_linestyle",
-       ICON_LINE_DATA,
-       "Freestyle Linestyles",
-       "Show Freestyle's Line Style data-blocks"},
-      {FILTER_ID_LT, "filter_lattice", ICON_LATTICE_DATA, "Lattices", "Show Lattice data-blocks"},
-      {FILTER_ID_MA,
-       "filter_material",
-       ICON_MATERIAL_DATA,
-       "Materials",
-       "Show Material data-blocks"},
-      {FILTER_ID_MB, "filter_metaball", ICON_META_DATA, "Metaballs", "Show Metaball data-blocks"},
-      {FILTER_ID_MC,
-       "filter_movie_clip",
-       ICON_TRACKER_DATA,
-       "Movie Clips",
-       "Show Movie Clip data-blocks"},
-      {FILTER_ID_ME, "filter_mesh", ICON_MESH_DATA, "Meshes", "Show Mesh data-blocks"},
-      {FILTER_ID_MSK, "filter_mask", ICON_MOD_MASK, "Masks", "Show Mask data-blocks"},
-      {FILTER_ID_NT,
-       "filter_node_tree",
-       ICON_NODETREE,
-       "Node Trees",
-       "Show Node Tree data-blocks"},
-      {FILTER_ID_OB, "filter_object", ICON_OBJECT_DATA, "Objects", "Show Object data-blocks"},
-      {FILTER_ID_PA,
-       "filter_particle_settings",
-       ICON_PARTICLE_DATA,
-       "Particles Settings",
-       "Show Particle Settings data-blocks"},
-      {FILTER_ID_PAL, "filter_palette", ICON_COLOR, "Palettes", "Show Palette data-blocks"},
-      {FILTER_ID_PC,
-       "filter_paint_curve",
-       ICON_CURVE_BEZCURVE,
-       "Paint Curves",
-       "Show Paint Curve data-blocks"},
-      {FILTER_ID_PT,
-       "filter_pointcloud",
-       ICON_POINTCLOUD_DATA,
-       "Point Clouds",
-       "Show/hide Point Cloud data-blocks"},
-      {FILTER_ID_SCE, "filter_scene", ICON_SCENE_DATA, "Scenes", "Show Scene data-blocks"},
-      {FILTER_ID_SIM,
-       "filter_simulation",
-       ICON_PHYSICS,
-       "Simulations",
-       "Show Simulation data-blocks"}, /* TODO: Use correct icon. */
-      {FILTER_ID_SPK, "filter_speaker", ICON_SPEAKER, "Speakers", "Show Speaker data-blocks"},
-      {FILTER_ID_SO, "filter_sound", ICON_SOUND, "Sounds", "Show Sound data-blocks"},
-      {FILTER_ID_TE, "filter_texture", ICON_TEXTURE_DATA, "Textures", "Show Texture data-blocks"},
-      {FILTER_ID_TXT, "filter_text", ICON_TEXT, "Texts", "Show Text data-blocks"},
-      {FILTER_ID_VF, "filter_font", ICON_FONT_DATA, "Fonts", "Show Font data-blocks"},
-      {FILTER_ID_VO, "filter_volume", ICON_VOLUME_DATA, "Volumes", "Show/hide Volume data-blocks"},
-      {FILTER_ID_WO, "filter_world", ICON_WORLD_DATA, "Worlds", "Show World data-blocks"},
-      {FILTER_ID_WS,
-       "filter_work_space",
-       ICON_WORKSPACE,
-       "Workspaces",
-       "Show workspace data-blocks"},
-
-      /* Categories */
-      {FILTER_ID_SCE, "category_scene", ICON_SCENE_DATA, "Scenes", "Show scenes"},
-      {FILTER_ID_AC, "category_animation", ICON_ANIM_DATA, "Animations", "Show animation data"},
-      {FILTER_ID_OB | FILTER_ID_GR,
-       "category_object",
-       ICON_OUTLINER_COLLECTION,
-       "Objects & Collections",
-       "Show objects and collections"},
-      {FILTER_ID_AR | FILTER_ID_CU | FILTER_ID_LT | FILTER_ID_MB | FILTER_ID_ME | FILTER_ID_HA |
-           FILTER_ID_PT | FILTER_ID_VO,
-       "category_geometry",
-       ICON_NODETREE,
-       "Geometry",
-       "Show meshes, curves, lattice, armatures and metaballs data"},
-      {FILTER_ID_LS | FILTER_ID_MA | FILTER_ID_NT | FILTER_ID_TE,
-       "category_shading",
-       ICON_MATERIAL_DATA,
-       "Shading",
-       "Show materials, nodetrees, textures and Freestyle's linestyles"},
-      {FILTER_ID_IM | FILTER_ID_MC | FILTER_ID_MSK | FILTER_ID_SO,
-       "category_image",
-       ICON_IMAGE_DATA,
-       "Images & Sounds",
-       "Show images, movie clips, sounds and masks"},
-      {FILTER_ID_CA | FILTER_ID_LA | FILTER_ID_LP | FILTER_ID_SPK | FILTER_ID_WO,
-       "category_environment",
-       ICON_WORLD_DATA,
-       "Environment",
-       "Show worlds, lights, cameras and speakers"},
-      {FILTER_ID_BR | FILTER_ID_GD | FILTER_ID_PA | FILTER_ID_PAL | FILTER_ID_PC | FILTER_ID_TXT |
-           FILTER_ID_VF | FILTER_ID_CF | FILTER_ID_WS,
-       "category_misc",
-       ICON_GREASEPENCIL,
-       "Miscellaneous",
-       "Show other data types"},
-
-      {0, NULL, 0, NULL, NULL}};
 
   StructRNA *srna = RNA_def_struct(brna, "FileSelectIDFilter", NULL);
   RNA_def_struct_sdna(srna, "FileSelectParams");
@@ -6260,11 +6489,56 @@ static void rna_def_fileselect_idfilter(BlenderRNA *brna)
   RNA_def_struct_ui_text(
       srna, "File Select ID Filter", "Which ID types to show/hide, when browsing a library");
 
-  for (int i = 0; booleans[i].identifier; i++) {
-    PropertyRNA *prop = RNA_def_property(srna, booleans[i].identifier, PROP_BOOLEAN, PROP_NONE);
-    RNA_def_property_boolean_sdna(prop, NULL, "filter_id", booleans[i].flag);
-    RNA_def_property_ui_text(prop, booleans[i].name, booleans[i].description);
-    RNA_def_property_ui_icon(prop, booleans[i].icon, 0);
+  const struct IDFilterEnumPropertyItem *individual_ids_and_categories[] = {
+      rna_enum_id_type_filter_items,
+      rna_enum_space_file_id_filter_categories,
+      NULL,
+  };
+  for (uint i = 0; individual_ids_and_categories[i]; i++) {
+    for (int j = 0; individual_ids_and_categories[i][j].identifier; j++) {
+      PropertyRNA *prop = RNA_def_property(
+          srna, individual_ids_and_categories[i][j].identifier, PROP_BOOLEAN, PROP_NONE);
+      RNA_def_property_boolean_sdna(
+          prop, NULL, "filter_id", individual_ids_and_categories[i][j].flag);
+      RNA_def_property_ui_text(prop,
+                               individual_ids_and_categories[i][j].name,
+                               individual_ids_and_categories[i][j].description);
+      RNA_def_property_ui_icon(prop, individual_ids_and_categories[i][j].icon, 0);
+      RNA_def_property_update(prop, NC_SPACE | ND_SPACE_FILE_PARAMS, NULL);
+    }
+  }
+}
+
+/* Filter for datablock types in the Asset Browser. */
+static void rna_def_fileselect_asset_idfilter(BlenderRNA *brna)
+{
+  StructRNA *srna = RNA_def_struct(brna, "FileAssetSelectIDFilter", NULL);
+  RNA_def_struct_sdna(srna, "FileSelectParams");
+  RNA_def_struct_nested(brna, srna, "FileSelectParams");
+  RNA_def_struct_ui_text(srna,
+                         "File Select Asset Filter",
+                         "Which asset types to show/hide, when browsing an asset library");
+
+  static char experimental_prop_names[INDEX_ID_MAX][MAX_NAME];
+
+  for (uint i = 0; rna_enum_id_type_filter_items[i].identifier; i++) {
+    const struct IDFilterEnumPropertyItem *item = &rna_enum_id_type_filter_items[i];
+    const bool is_experimental = (ED_ASSET_TYPE_IDS_NON_EXPERIMENTAL_FLAGS & item->flag) == 0;
+
+    const char *identifier = rna_enum_id_type_filter_items[i].identifier;
+    if (is_experimental) {
+      /* Create name for experimental property and store in static buffer. */
+      snprintf(experimental_prop_names[i],
+               ARRAY_SIZE(experimental_prop_names[i]),
+               "experimental_%s",
+               identifier);
+      identifier = experimental_prop_names[i];
+    }
+
+    PropertyRNA *prop = RNA_def_property(srna, identifier, PROP_BOOLEAN, PROP_NONE);
+    RNA_def_property_boolean_sdna(prop, NULL, "filter_id", item->flag);
+    RNA_def_property_ui_text(prop, item->name, item->description);
+    RNA_def_property_ui_icon(prop, item->icon, 0);
     RNA_def_property_update(prop, NC_SPACE | ND_SPACE_FILE_PARAMS, NULL);
   }
 }
@@ -6276,14 +6550,49 @@ static void rna_def_fileselect_entry(BlenderRNA *brna)
   RNA_def_struct_sdna(srna, "FileDirEntry");
   RNA_def_struct_ui_text(srna, "File Select Entry", "A file viewable in the File Browser");
 
-  prop = RNA_def_property(srna, "name", PROP_STRING, PROP_NONE);
+  prop = RNA_def_property(srna, "name", PROP_STRING, PROP_FILENAME);
+  RNA_def_property_editable_func(prop, "rna_FileBrowser_FileSelectEntry_name_editable");
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_property_string_funcs(prop,
                                 "rna_FileBrowser_FileSelectEntry_name_get",
                                 "rna_FileBrowser_FileSelectEntry_name_length",
                                 NULL);
   RNA_def_property_ui_text(prop, "Name", "");
-  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
   RNA_def_struct_name_property(srna, prop);
+
+  prop = RNA_def_property(srna, "relative_path", PROP_STRING, PROP_FILEPATH);
+  RNA_def_property_string_funcs(prop,
+                                "rna_FileBrowser_FileSelectEntry_relative_path_get",
+                                "rna_FileBrowser_FileSelectEntry_relative_path_length",
+                                NULL);
+  RNA_def_property_ui_text(prop,
+                           "Relative Path",
+                           "Path relative to the directory currently displayed in the File "
+                           "Browser (includes the file name)");
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+
+  prop = RNA_def_property(srna, "id_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rna_enum_id_type_items);
+  RNA_def_property_enum_funcs(prop,
+                              "rna_FileBrowser_FileSelectEntry_id_type_get",
+                              NULL,
+                              "rna_FileBrowser_FileSelectEntry_id_type_itemf");
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(
+      prop,
+      "Data-block Type",
+      "The type of the data-block, if the file represents one ('NONE' otherwise)");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_ID);
+
+  prop = RNA_def_property(srna, "local_id", PROP_POINTER, PROP_NONE);
+  RNA_def_property_struct_type(prop, "ID");
+  RNA_def_property_pointer_funcs(
+      prop, "rna_FileBrowser_FileSelectEntry_local_id_get", NULL, NULL, NULL);
+  RNA_def_property_ui_text(prop,
+                           "",
+                           "The local data-block this file represents; only valid if that is a "
+                           "data-block in this file");
+  RNA_def_property_flag(prop, PROP_HIDDEN);
 
   prop = RNA_def_int(
       srna,
@@ -6330,7 +6639,7 @@ static void rna_def_fileselect_params(BlenderRNA *brna)
   static const EnumPropertyItem display_size_items[] = {
       {64, "TINY", 0, "Tiny", ""},
       {96, "SMALL", 0, "Small", ""},
-      {128, "NORMAL", 0, "Regular", ""},
+      {128, "NORMAL", 0, "Medium", ""},
       {192, "LARGE", 0, "Large", ""},
       {0, NULL, 0, NULL, NULL},
   };
@@ -6344,7 +6653,7 @@ static void rna_def_fileselect_params(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Title", "Title for the file browser");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
 
-  /* Use BYTESTRING rather than DIRPATH as subtype so UI code doesn't add OT_directory_browse
+  /* Use BYTESTRING rather than DIRPATH as sub-type so UI code doesn't add OT_directory_browse
    * button when displaying this prop in the file browser (it would just open a file browser). That
    * should be the only effective difference between the two. */
   prop = RNA_def_property(srna, "directory", PROP_STRING, PROP_BYTESTRING);
@@ -6521,44 +6830,21 @@ static void rna_def_fileselect_asset_params(BlenderRNA *brna)
   StructRNA *srna;
   PropertyRNA *prop;
 
-  /* XXX copied from rna_def_fileselect_idfilter. */
-  static const EnumPropertyItem asset_category_items[] = {
-      {FILTER_ID_SCE, "SCENES", ICON_SCENE_DATA, "Scenes", "Show scenes"},
-      {FILTER_ID_AC, "ANIMATIONS", ICON_ANIM_DATA, "Animations", "Show animation data"},
-      {FILTER_ID_OB | FILTER_ID_GR,
-       "OBJECTS_AND_COLLECTIONS",
-       ICON_GROUP,
-       "Objects & Collections",
-       "Show objects and collections"},
-      {FILTER_ID_AR | FILTER_ID_CU | FILTER_ID_LT | FILTER_ID_MB | FILTER_ID_ME
-       /* XXX avoid warning */
-       // | FILTER_ID_HA | FILTER_ID_PT | FILTER_ID_VO
-       ,
-       "GEOMETRY",
-       ICON_MESH_DATA,
-       "Geometry",
-       "Show meshes, curves, lattice, armatures and metaballs data"},
-      {FILTER_ID_LS | FILTER_ID_MA | FILTER_ID_NT | FILTER_ID_TE,
-       "SHADING",
-       ICON_MATERIAL_DATA,
-       "Shading",
-       "Show materials, nodetrees, textures and Freestyle's linestyles"},
-      {FILTER_ID_IM | FILTER_ID_MC | FILTER_ID_MSK | FILTER_ID_SO,
-       "IMAGES_AND_SOUNDS",
-       ICON_IMAGE_DATA,
-       "Images & Sounds",
-       "Show images, movie clips, sounds and masks"},
-      {FILTER_ID_CA | FILTER_ID_LA | FILTER_ID_LP | FILTER_ID_SPK | FILTER_ID_WO,
-       "ENVIRONMENTS",
-       ICON_WORLD_DATA,
-       "Environment",
-       "Show worlds, lights, cameras and speakers"},
-      {FILTER_ID_BR | FILTER_ID_GD | FILTER_ID_PA | FILTER_ID_PAL | FILTER_ID_PC | FILTER_ID_TXT |
-           FILTER_ID_VF | FILTER_ID_CF | FILTER_ID_WS,
-       "MISC",
-       ICON_GREASEPENCIL,
-       "Miscellaneous",
-       "Show other data types"},
+  static const EnumPropertyItem asset_import_type_items[] = {
+      {FILE_ASSET_IMPORT_LINK, "LINK", 0, "Link", "Import the assets as linked data-block"},
+      {FILE_ASSET_IMPORT_APPEND,
+       "APPEND",
+       0,
+       "Append",
+       "Import the assets as copied data-block, with no link to the original asset data-block"},
+      {FILE_ASSET_IMPORT_APPEND_REUSE,
+       "APPEND_REUSE",
+       0,
+       "Append (Reuse Data)",
+       "Import the assets as copied data-block while avoiding multiple copies of nested, "
+       "typically heavy data. For example the textures of a material asset, or the mesh of an "
+       "object asset, don't have to be copied every time this asset is imported. The instances of "
+       "the asset share the data instead"},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -6566,22 +6852,34 @@ static void rna_def_fileselect_asset_params(BlenderRNA *brna)
   RNA_def_struct_ui_text(
       srna, "Asset Select Parameters", "Settings for the file selection in Asset Browser mode");
 
-  prop = RNA_def_property(srna, "asset_library", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_items(prop, DummyRNA_NULL_items);
-  RNA_def_property_enum_funcs(prop,
-                              "rna_FileAssetSelectParams_asset_library_get",
-                              "rna_FileAssetSelectParams_asset_library_set",
-                              "rna_FileAssetSelectParams_asset_library_itemf");
+  prop = rna_def_asset_library_reference_common(srna,
+                                                "rna_FileAssetSelectParams_asset_library_get",
+                                                "rna_FileAssetSelectParams_asset_library_set");
   RNA_def_property_ui_text(prop, "Asset Library", "");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_FILE_PARAMS, NULL);
 
-  prop = RNA_def_property(srna, "asset_category", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_items(prop, asset_category_items);
-  RNA_def_property_enum_funcs(prop,
-                              "rna_FileAssetSelectParams_asset_category_get",
-                              "rna_FileAssetSelectParams_asset_category_set",
-                              NULL);
-  RNA_def_property_ui_text(prop, "Asset Category", "Determine which kind of assets to display");
+  prop = RNA_def_property(srna, "catalog_id", PROP_STRING, PROP_NONE);
+  RNA_def_property_string_funcs(prop,
+                                "rna_FileAssetSelectParams_catalog_id_get",
+                                "rna_FileAssetSelectParams_catalog_id_length",
+                                NULL);
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(prop, "Catalog UUID", "The UUID of the catalog shown in the browser");
+
+  prop = RNA_def_property(srna, "filter_asset_id", PROP_POINTER, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_NEVER_NULL);
+  RNA_def_property_struct_type(prop, "FileAssetSelectIDFilter");
+  RNA_def_property_pointer_funcs(
+      prop, "rna_FileAssetSelectParams_filter_id_get", NULL, NULL, NULL);
+  RNA_def_property_ui_text(prop,
+                           "Filter Asset Types",
+                           "Which asset types to show/hide, when browsing an asset library");
+
+  prop = RNA_def_property(srna, "import_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, asset_import_type_items);
+  RNA_def_property_ui_text(prop, "Import Type", "Determine how the asset will be imported");
+  /* Asset drag info saved by buttons stores the import type, so the space must redraw when import
+   * type changes. */
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_FILE_LIST, NULL);
 }
 
@@ -6636,7 +6934,8 @@ static void rna_def_space_filebrowser(BlenderRNA *brna)
   RNA_def_struct_sdna(srna, "SpaceFile");
   RNA_def_struct_ui_text(srna, "Space File Browser", "File browser space data");
 
-  rna_def_space_generic_show_region_toggles(srna, (1 << RGN_TYPE_TOOLS) | (1 << RGN_TYPE_UI));
+  rna_def_space_generic_show_region_toggles(
+      srna, (1 << RGN_TYPE_TOOLS) | (1 << RGN_TYPE_UI) | (1 << RGN_TYPE_TOOL_PROPS));
 
   prop = RNA_def_property(srna, "browse_mode", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_items(prop, rna_enum_space_file_browse_mode_items);
@@ -6916,6 +7215,51 @@ static void rna_def_space_node_path_api(BlenderRNA *brna, PropertyRNA *cprop)
   RNA_def_function_flag(func, FUNC_USE_CONTEXT);
 }
 
+static void rna_def_space_node_overlay(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, "SpaceNodeOverlay", NULL);
+  RNA_def_struct_sdna(srna, "SpaceNode");
+  RNA_def_struct_nested(brna, srna, "SpaceNodeEditor");
+  RNA_def_struct_path_func(srna, "rna_SpaceNodeOverlay_path");
+  RNA_def_struct_ui_text(
+      srna, "Overlay Settings", "Settings for display of overlays in the Node Editor");
+
+  prop = RNA_def_property(srna, "show_overlays", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", SN_OVERLAY_SHOW_OVERLAYS);
+  RNA_def_property_boolean_default(prop, true);
+  RNA_def_property_ui_text(prop, "Show Overlays", "Display overlays like colored or dashed wires");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_NODE, NULL);
+
+  prop = RNA_def_property(srna, "show_wire_color", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", SN_OVERLAY_SHOW_WIRE_COLORS);
+  RNA_def_property_boolean_default(prop, true);
+  RNA_def_property_ui_text(
+      prop, "Show Wire Colors", "Color node links based on their connected sockets");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_NODE, NULL);
+
+  prop = RNA_def_property(srna, "show_timing", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", SN_OVERLAY_SHOW_TIMINGS);
+  RNA_def_property_boolean_default(prop, false);
+  RNA_def_property_ui_text(prop, "Show Timing", "Display each node's last execution time");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_NODE, NULL);
+
+  prop = RNA_def_property(srna, "show_context_path", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", SN_OVERLAY_SHOW_PATH);
+  RNA_def_property_boolean_default(prop, true);
+  RNA_def_property_ui_text(prop, "Show Tree Path", "Display breadcrumbs for the editor's context");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_NODE, NULL);
+
+  prop = RNA_def_property(srna, "show_named_attributes", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "overlay.flag", SN_OVERLAY_SHOW_NAMED_ATTRIBUTES);
+  RNA_def_property_boolean_default(prop, true);
+  RNA_def_property_ui_text(
+      prop, "Show Named Attributes", "Show when nodes are using named attributes");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_NODE, NULL);
+}
+
 static void rna_def_space_node(BlenderRNA *brna)
 {
   StructRNA *srna;
@@ -6991,12 +7335,14 @@ static void rna_def_space_node(BlenderRNA *brna)
   RNA_def_property_enum_sdna(prop, NULL, "texfrom");
   RNA_def_property_enum_items(prop, texture_id_type_items);
   RNA_def_property_ui_text(prop, "Texture Type", "Type of data to take texture from");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_ID);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_NODE, NULL);
 
   prop = RNA_def_property(srna, "shader_type", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "shaderfrom");
   RNA_def_property_enum_items(prop, shader_type_items);
   RNA_def_property_ui_text(prop, "Shader Type", "Type of data to take shader from");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_ID);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_NODE, NULL);
 
   prop = RNA_def_property(srna, "id", PROP_POINTER, PROP_NONE);
@@ -7099,6 +7445,15 @@ static void rna_def_space_node(BlenderRNA *brna)
       prop, "Auto-offset Direction", "Direction to offset nodes on insertion");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_NODE_VIEW, NULL);
 
+  /* Overlays */
+  prop = RNA_def_property(srna, "overlay", PROP_POINTER, PROP_NONE);
+  RNA_def_property_flag(prop, PROP_NEVER_NULL);
+  RNA_def_property_struct_type(prop, "SpaceNodeOverlay");
+  RNA_def_property_pointer_funcs(prop, "rna_SpaceNode_overlay_get", NULL, NULL, NULL);
+  RNA_def_property_ui_text(
+      prop, "Overlay Settings", "Settings for display of overlays in the Node Editor");
+
+  rna_def_space_node_overlay(brna);
   RNA_api_space_node(srna);
 }
 
@@ -7183,6 +7538,7 @@ static void rna_def_space_clip(BlenderRNA *brna)
   RNA_def_property_enum_sdna(prop, NULL, "mode");
   RNA_def_property_enum_items(prop, rna_enum_clip_editor_mode_items);
   RNA_def_property_ui_text(prop, "Mode", "Editing context being displayed");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_MOVIECLIP);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_CLIP, "rna_SpaceClipEditor_clip_mode_update");
 
   /* view */
@@ -7387,6 +7743,13 @@ static void rna_def_space_clip(BlenderRNA *brna)
   RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_MOVIECLIP);
   RNA_def_property_update(prop, NC_MOVIECLIP | ND_DISPLAY, NULL);
 
+  /* transform */
+  prop = RNA_def_property(srna, "cursor_location", PROP_FLOAT, PROP_XYZ);
+  RNA_def_property_float_sdna(prop, NULL, "cursor");
+  RNA_def_property_array(prop, 2);
+  RNA_def_property_ui_text(prop, "2D Cursor Location", "2D cursor location for this view");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_CLIP, NULL);
+
   /* pivot point */
   prop = RNA_def_property(srna, "pivot_point", PROP_ENUM, PROP_NONE);
   RNA_def_property_enum_sdna(prop, NULL, "around");
@@ -7395,117 +7758,214 @@ static void rna_def_space_clip(BlenderRNA *brna)
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_CLIP, NULL);
 }
 
-static const EnumPropertyItem spreadsheet_context_type_items[] = {
-    {SPREADSHEET_CONTEXT_OBJECT, "OBJECT", ICON_NONE, "Object", ""},
-    {SPREADSHEET_CONTEXT_MODIFIER, "MODIFIER", ICON_NONE, "Modifier", ""},
-    {SPREADSHEET_CONTEXT_NODE, "NODE", ICON_NONE, "Node", ""},
+static void rna_def_spreadsheet_column_id(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  srna = RNA_def_struct(brna, "SpreadsheetColumnID", NULL);
+  RNA_def_struct_sdna(srna, "SpreadsheetColumnID");
+  RNA_def_struct_ui_text(
+      srna, "Spreadsheet Column ID", "Data used to identify a spreadsheet column");
+
+  prop = RNA_def_property(srna, "name", PROP_STRING, PROP_NONE);
+  RNA_def_property_ui_text(prop, "Column Name", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+}
+
+static void rna_def_spreadsheet_column(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem data_type_items[] = {
+      {SPREADSHEET_VALUE_TYPE_INT32, "INT32", ICON_NONE, "Integer", ""},
+      {SPREADSHEET_VALUE_TYPE_FLOAT, "FLOAT", ICON_NONE, "Float", ""},
+      {SPREADSHEET_VALUE_TYPE_BOOL, "BOOLEAN", ICON_NONE, "Boolean", ""},
+      {SPREADSHEET_VALUE_TYPE_INSTANCES, "INSTANCES", ICON_NONE, "Instances", ""},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  srna = RNA_def_struct(brna, "SpreadsheetColumn", NULL);
+  RNA_def_struct_sdna(srna, "SpreadsheetColumn");
+  RNA_def_struct_ui_text(
+      srna, "Spreadsheet Column", "Persistent data associated with a spreadsheet column");
+
+  prop = RNA_def_property(srna, "data_type", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_sdna(prop, NULL, "data_type");
+  RNA_def_property_enum_items(prop, data_type_items);
+  RNA_def_property_ui_text(
+      prop, "Data Type", "The data type of the corresponding column visible in the spreadsheet");
+  RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  rna_def_spreadsheet_column_id(brna);
+
+  prop = RNA_def_property(srna, "id", PROP_POINTER, PROP_NONE);
+  RNA_def_property_struct_type(prop, "SpreadsheetColumnID");
+  RNA_def_property_ui_text(
+      prop, "ID", "Data used to identify the corresponding data from the data source");
+}
+
+static void rna_def_spreadsheet_row_filter(BlenderRNA *brna)
+{
+  StructRNA *srna;
+  PropertyRNA *prop;
+
+  static const EnumPropertyItem rule_operation_items[] = {
+      {SPREADSHEET_ROW_FILTER_EQUAL, "EQUAL", ICON_NONE, "Equal To", ""},
+      {SPREADSHEET_ROW_FILTER_GREATER, "GREATER", ICON_NONE, "Greater Than", ""},
+      {SPREADSHEET_ROW_FILTER_LESS, "LESS", ICON_NONE, "Less Than", ""},
+      {0, NULL, 0, NULL, NULL},
+  };
+
+  srna = RNA_def_struct(brna, "SpreadsheetRowFilter", NULL);
+  RNA_def_struct_sdna(srna, "SpreadsheetRowFilter");
+  RNA_def_struct_ui_text(srna, "Spreadsheet Row Filter", "");
+
+  prop = RNA_def_property(srna, "enabled", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SPREADSHEET_ROW_FILTER_ENABLED);
+  RNA_def_property_ui_text(prop, "Enabled", "");
+  RNA_def_property_ui_icon(prop, ICON_CHECKBOX_DEHLT, 1);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "show_expanded", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SPREADSHEET_ROW_FILTER_UI_EXPAND);
+  RNA_def_property_ui_text(prop, "Show Expanded", "");
+  RNA_def_property_ui_icon(prop, ICON_DISCLOSURE_TRI_RIGHT, 1);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "column_name", PROP_STRING, PROP_NONE);
+  RNA_def_property_ui_text(prop, "Column Name", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "operation", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, rule_operation_items);
+  RNA_def_property_ui_text(prop, "Operation", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "value_float", PROP_FLOAT, PROP_NONE);
+  RNA_def_property_ui_text(prop, "Float Value", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "value_float2", PROP_FLOAT, PROP_NONE);
+  RNA_def_property_array(prop, 2);
+  RNA_def_property_ui_text(prop, "2D Vector Value", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "value_float3", PROP_FLOAT, PROP_NONE);
+  RNA_def_property_array(prop, 3);
+  RNA_def_property_ui_text(prop, "Vector Value", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "value_color", PROP_FLOAT, PROP_NONE);
+  RNA_def_property_array(prop, 4);
+  RNA_def_property_ui_text(prop, "Color Value", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "value_string", PROP_STRING, PROP_NONE);
+  RNA_def_property_ui_text(prop, "Text Value", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "threshold", PROP_FLOAT, PROP_NONE);
+  RNA_def_property_ui_text(prop, "Threshold", "How close float values need to be to be equal");
+  RNA_def_property_range(prop, 0.0, FLT_MAX);
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "value_int", PROP_INT, PROP_NONE);
+  RNA_def_property_int_sdna(prop, NULL, "value_int");
+  RNA_def_property_ui_text(prop, "Integer Value", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "value_int8", PROP_INT, PROP_NONE);
+  RNA_def_property_int_sdna(prop, NULL, "value_int");
+  RNA_def_property_range(prop, -128, 127);
+  RNA_def_property_ui_text(prop, "8-Bit Integer Value", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "value_boolean", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "flag", SPREADSHEET_ROW_FILTER_BOOL_VALUE);
+  RNA_def_property_ui_text(prop, "Boolean Value", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+}
+
+static const EnumPropertyItem viewer_path_elem_type_items[] = {
+    {VIEWER_PATH_ELEM_TYPE_ID, "ID", ICON_NONE, "ID", ""},
+    {VIEWER_PATH_ELEM_TYPE_MODIFIER, "MODIFIER", ICON_NONE, "Modifier", ""},
+    {VIEWER_PATH_ELEM_TYPE_NODE, "NODE", ICON_NONE, "Node", ""},
     {0, NULL, 0, NULL, NULL},
 };
 
-static void rna_def_space_spreadsheet_context(BlenderRNA *brna)
+static void rna_def_viewer_path_elem(BlenderRNA *brna)
 {
   StructRNA *srna;
   PropertyRNA *prop;
 
-  srna = RNA_def_struct(brna, "SpreadsheetContext", NULL);
-  RNA_def_struct_ui_text(srna, "Spreadsheet Context", "Element of spreadsheet context path");
-  RNA_def_struct_refine_func(srna, "rna_spreadsheet_context_refine");
+  srna = RNA_def_struct(brna, "ViewerPathElem", NULL);
+  RNA_def_struct_ui_text(srna, "Viewer Path Element", "Element of a viewer path");
+  RNA_def_struct_refine_func(srna, "rna_viewer_path_elem_refine");
 
   prop = RNA_def_property(srna, "type", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_items(prop, spreadsheet_context_type_items);
-  RNA_def_property_ui_text(prop, "Type", "Type of the context");
+  RNA_def_property_enum_items(prop, viewer_path_elem_type_items);
+  RNA_def_property_ui_text(prop, "Type", "Type of the path element");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
 }
 
-static void rna_def_space_spreadsheet_context_object(BlenderRNA *brna)
+static void rna_def_id_viewer_path_elem(BlenderRNA *brna)
 {
   StructRNA *srna;
   PropertyRNA *prop;
 
-  srna = RNA_def_struct(brna, "SpreadsheetContextObject", "SpreadsheetContext");
+  srna = RNA_def_struct(brna, "IDViewerPathElem", "ViewerPathElem");
 
-  prop = RNA_def_property(srna, "object", PROP_POINTER, PROP_NONE);
-  RNA_def_property_struct_type(prop, "Object");
-  RNA_def_property_flag(prop, PROP_EDITABLE);
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, "rna_spreadsheet_context_update");
+  prop = RNA_def_property(srna, "id", PROP_POINTER, PROP_NONE);
+  RNA_def_property_ui_text(prop, "ID", "");
 }
 
-static void rna_def_space_spreadsheet_context_modifier(BlenderRNA *brna)
+static void rna_def_modifier_viewer_path_elem(BlenderRNA *brna)
 {
   StructRNA *srna;
   PropertyRNA *prop;
 
-  srna = RNA_def_struct(brna, "SpreadsheetContextModifier", "SpreadsheetContext");
+  srna = RNA_def_struct(brna, "ModifierViewerPathElem", "ViewerPathElem");
 
   prop = RNA_def_property(srna, "modifier_name", PROP_STRING, PROP_NONE);
   RNA_def_property_ui_text(prop, "Modifier Name", "");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, "rna_spreadsheet_context_update");
 }
 
-static void rna_def_space_spreadsheet_context_node(BlenderRNA *brna)
+static void rna_def_node_viewer_path_elem(BlenderRNA *brna)
 {
   StructRNA *srna;
   PropertyRNA *prop;
 
-  srna = RNA_def_struct(brna, "SpreadsheetContextNode", "SpreadsheetContext");
+  srna = RNA_def_struct(brna, "NodeViewerPathElem", "ViewerPathElem");
 
   prop = RNA_def_property(srna, "node_name", PROP_STRING, PROP_NONE);
   RNA_def_property_ui_text(prop, "Node Name", "");
-  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, "rna_spreadsheet_context_update");
 }
 
-static void rna_def_space_spreadsheet_context_path(BlenderRNA *brna, PropertyRNA *cprop)
+static void rna_def_viewer_path(BlenderRNA *brna)
 {
   StructRNA *srna;
-  PropertyRNA *parm;
-  FunctionRNA *func;
+  PropertyRNA *prop;
 
-  RNA_def_property_srna(cprop, "SpreadsheetContextPath");
-  srna = RNA_def_struct(brna, "SpreadsheetContextPath", NULL);
-  RNA_def_struct_sdna(srna, "SpaceSpreadsheet");
+  rna_def_viewer_path_elem(brna);
+  rna_def_id_viewer_path_elem(brna);
+  rna_def_modifier_viewer_path_elem(brna);
+  rna_def_node_viewer_path_elem(brna);
 
-  func = RNA_def_function(srna, "append", "rna_SpaceSpreadsheet_context_path_append");
-  RNA_def_function_ui_description(func, "Append a context path element");
-  parm = RNA_def_property(func, "type", PROP_ENUM, PROP_NONE);
-  RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
-  RNA_def_property_enum_items(parm, spreadsheet_context_type_items);
-  parm = RNA_def_pointer(
-      func, "context", "SpreadsheetContext", "", "Newly created context path element");
-  RNA_def_function_return(func, parm);
+  srna = RNA_def_struct(brna, "ViewerPath", NULL);
+  RNA_def_struct_ui_text(srna, "Viewer Path", "Path to data that is viewed");
 
-  func = RNA_def_function(srna, "clear", "rna_SpaceSpreadsheet_context_path_clear");
-  RNA_def_function_ui_description(func, "Clear entire context path");
+  prop = RNA_def_property(srna, "path", PROP_COLLECTION, PROP_NONE);
+  RNA_def_property_struct_type(prop, "ViewerPathElem");
+  RNA_def_property_ui_text(prop, "Viewer Path", NULL);
 }
 
 static void rna_def_space_spreadsheet(BlenderRNA *brna)
 {
-  PropertyRNA *prop, *parm;
+  PropertyRNA *prop;
   StructRNA *srna;
-  FunctionRNA *func;
-
-  static const EnumPropertyItem geometry_component_type_items[] = {
-      {GEO_COMPONENT_TYPE_MESH,
-       "MESH",
-       ICON_MESH_DATA,
-       "Mesh",
-       "Mesh component containing point, corner, edge and face data"},
-      {GEO_COMPONENT_TYPE_POINT_CLOUD,
-       "POINTCLOUD",
-       ICON_POINTCLOUD_DATA,
-       "Point Cloud",
-       "Point cloud component containing only point data"},
-      {GEO_COMPONENT_TYPE_CURVE,
-       "CURVE",
-       ICON_CURVE_DATA,
-       "Curve",
-       "Curve component containing spline and control point data"},
-      {GEO_COMPONENT_TYPE_INSTANCES,
-       "INSTANCES",
-       ICON_EMPTY_AXIS,
-       "Instances",
-       "Instances of objects or collections"},
-      {0, NULL, 0, NULL, NULL},
-  };
 
   static const EnumPropertyItem object_eval_state_items[] = {
       {SPREADSHEET_OBJECT_EVAL_STATE_EVALUATED,
@@ -7518,42 +7978,48 @@ static void rna_def_space_spreadsheet(BlenderRNA *brna)
        ICON_NONE,
        "Original",
        "Use data from original object without any modifiers applied"},
+      {SPREADSHEET_OBJECT_EVAL_STATE_VIEWER_NODE,
+       "VIEWER_NODE",
+       ICON_NONE,
+       "Viewer Node",
+       "Use intermediate data from viewer node"},
       {0, NULL, 0, NULL, NULL},
   };
-
-  rna_def_space_spreadsheet_context(brna);
-  rna_def_space_spreadsheet_context_object(brna);
-  rna_def_space_spreadsheet_context_modifier(brna);
-  rna_def_space_spreadsheet_context_node(brna);
 
   srna = RNA_def_struct(brna, "SpaceSpreadsheet", "Space");
   RNA_def_struct_ui_text(srna, "Space Spreadsheet", "Spreadsheet space data");
 
-  rna_def_space_generic_show_region_toggles(srna, (1 << RGN_TYPE_FOOTER));
+  rna_def_space_generic_show_region_toggles(
+      srna, (1 << RGN_TYPE_UI) | (1 << RGN_TYPE_CHANNELS) | (1 << RGN_TYPE_FOOTER));
 
   prop = RNA_def_property(srna, "is_pinned", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", SPREADSHEET_FLAG_PINNED);
   RNA_def_property_ui_text(prop, "Is Pinned", "Context path is pinned");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
 
-  prop = RNA_def_property(srna, "display_context_path_collapsed", PROP_BOOLEAN, PROP_NONE);
+  prop = RNA_def_property(srna, "use_filter", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, NULL, "filter_flag", SPREADSHEET_FILTER_ENABLE);
+  RNA_def_property_ui_text(prop, "Use Filter", "");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  prop = RNA_def_property(srna, "display_viewer_path_collapsed", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", SPREADSHEET_FLAG_CONTEXT_PATH_COLLAPSED);
   RNA_def_property_ui_text(prop, "Display Context Path Collapsed", "");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
 
-  prop = RNA_def_property(srna, "context_path", PROP_COLLECTION, PROP_NONE);
-  RNA_def_property_struct_type(prop, "SpreadsheetContext");
-  RNA_def_property_ui_text(prop, "Context Path", "Context path to the data being displayed");
-  rna_def_space_spreadsheet_context_path(brna, prop);
+  prop = RNA_def_property(srna, "viewer_path", PROP_POINTER, PROP_NONE);
+  RNA_def_property_ui_text(
+      prop, "Viewer Path", "Path to the data that is displayed in the spreadsheet");
 
   prop = RNA_def_property(srna, "show_only_selected", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "filter_flag", SPREADSHEET_FILTER_SELECTED_ONLY);
   RNA_def_property_ui_text(
       prop, "Show Only Selected", "Only include rows that correspond to selected elements");
+  RNA_def_property_ui_icon(prop, ICON_RESTRICT_SELECT_OFF, 0);
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
 
   prop = RNA_def_property(srna, "geometry_component_type", PROP_ENUM, PROP_NONE);
-  RNA_def_property_enum_items(prop, geometry_component_type_items);
+  RNA_def_property_enum_items(prop, rna_enum_geometry_component_type_items);
   RNA_def_property_ui_text(
       prop, "Geometry Component", "Part of the geometry to display data from");
   RNA_def_property_update(prop,
@@ -7571,20 +8037,27 @@ static void rna_def_space_spreadsheet(BlenderRNA *brna)
   RNA_def_property_ui_text(prop, "Object Evaluation State", "");
   RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
 
-  func = RNA_def_function(
-      srna, "set_geometry_node_context", "rna_spreadsheet_set_geometry_node_context");
-  RNA_def_function_ui_description(
-      func, "Update context_path to point to a specific node in a node editor");
-  parm = RNA_def_pointer(
-      func, "node_editor", "SpaceNodeEditor", "", "Editor to take the context from");
-  RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
-  parm = RNA_def_pointer(func, "node", "Node", "", "");
-  RNA_def_parameter_flags(parm, 0, PARM_REQUIRED);
+  rna_def_spreadsheet_column(brna);
+
+  prop = RNA_def_property(srna, "columns", PROP_COLLECTION, PROP_NONE);
+  RNA_def_property_collection_sdna(prop, NULL, "columns", NULL);
+  RNA_def_property_struct_type(prop, "SpreadsheetColumn");
+  RNA_def_property_ui_text(prop, "Columns", "Persistent data associated with spreadsheet columns");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
+
+  rna_def_spreadsheet_row_filter(brna);
+
+  prop = RNA_def_property(srna, "row_filters", PROP_COLLECTION, PROP_NONE);
+  RNA_def_property_collection_sdna(prop, NULL, "row_filters", NULL);
+  RNA_def_property_struct_type(prop, "SpreadsheetRowFilter");
+  RNA_def_property_ui_text(prop, "Row Filters", "Filters to remove rows from the displayed data");
+  RNA_def_property_update(prop, NC_SPACE | ND_SPACE_SPREADSHEET, NULL);
 }
 
 void RNA_def_space(BlenderRNA *brna)
 {
   rna_def_space(brna);
+  rna_def_viewer_path(brna);
   rna_def_space_image(brna);
   rna_def_space_sequencer(brna);
   rna_def_space_text(brna);
@@ -7592,6 +8065,7 @@ void RNA_def_space(BlenderRNA *brna)
   rna_def_fileselect_params(brna);
   rna_def_fileselect_asset_params(brna);
   rna_def_fileselect_idfilter(brna);
+  rna_def_fileselect_asset_idfilter(brna);
   rna_def_filemenu_entry(brna);
   rna_def_space_filebrowser(brna);
   rna_def_space_outliner(brna);

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2013 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2013 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup depsgraph
@@ -83,7 +67,6 @@ bool DriverDescriptor::is_array() const
   return is_array_;
 }
 
-/* Assumes that 'other' comes from the same RNA group, that is, has the same RNA path prefix. */
 bool DriverDescriptor::is_same_array_as(const DriverDescriptor &other) const
 {
   if (!is_array_ || !other.is_array_) {
@@ -125,13 +108,13 @@ static bool is_reachable(const Node *const from, const Node *const to)
     return true;
   }
 
-  // Perform a graph walk from 'to' towards its incoming connections.
-  // Walking from 'from' towards its outgoing connections is 10x slower on the Spring rig.
+  /* Perform a graph walk from 'to' towards its incoming connections.
+   * Walking from 'from' towards its outgoing connections is 10x slower on the Spring rig. */
   deque<const Node *> queue;
   Set<const Node *> seen;
   queue.push_back(to);
   while (!queue.empty()) {
-    // Visit the next node to inspect.
+    /* Visit the next node to inspect. */
     const Node *visit = queue.back();
     queue.pop_back();
 
@@ -139,7 +122,7 @@ static bool is_reachable(const Node *const from, const Node *const to)
       return true;
     }
 
-    // Queue all incoming relations that we haven't seen before.
+    /* Queue all incoming relations that we haven't seen before. */
     for (Relation *relation : visit->inlinks) {
       const Node *prev_node = relation->from;
       if (seen.add(prev_node)) {
@@ -177,7 +160,7 @@ void DepsgraphRelationBuilder::build_driver_relations(IDNode *id_node)
     return;
   }
 
-  // Mapping from RNA prefix -> set of driver descriptors:
+  /* Mapping from RNA prefix -> set of driver descriptors: */
   Map<string, Vector<DriverDescriptor>> driver_groups;
 
   PointerRNA id_ptr;
@@ -197,47 +180,47 @@ void DepsgraphRelationBuilder::build_driver_relations(IDNode *id_node)
   }
 
   for (Span<DriverDescriptor> prefix_group : driver_groups.values()) {
-    // For each node in the driver group, try to connect it to another node
-    // in the same group without creating any cycles.
+    /* For each node in the driver group, try to connect it to another node
+     * in the same group without creating any cycles. */
     int num_drivers = prefix_group.size();
     if (num_drivers < 2) {
-      // A relation requires two drivers.
+      /* A relation requires two drivers. */
       continue;
     }
     for (int from_index = 0; from_index < num_drivers; ++from_index) {
       const DriverDescriptor &driver_from = prefix_group[from_index];
       Node *op_from = get_node(driver_from.depsgraph_key());
 
-      // Start by trying the next node in the group.
+      /* Start by trying the next node in the group. */
       for (int to_offset = 1; to_offset < num_drivers; ++to_offset) {
         const int to_index = (from_index + to_offset) % num_drivers;
         const DriverDescriptor &driver_to = prefix_group[to_index];
         Node *op_to = get_node(driver_to.depsgraph_key());
 
-        // Duplicate drivers can exist (see T78615), but cannot be distinguished by OperationKey
-        // and thus have the same depsgraph node. Relations between those drivers should not be
-        // created. This not something that is expected to happen (both the UI and the Python API
-        // prevent duplicate drivers), it did happen in a file and it is easy to deal with here.
+        /* Duplicate drivers can exist (see T78615), but cannot be distinguished by OperationKey
+         * and thus have the same depsgraph node. Relations between those drivers should not be
+         * created. This not something that is expected to happen (both the UI and the Python API
+         * prevent duplicate drivers), it did happen in a file and it is easy to deal with here. */
         if (op_from == op_to) {
           continue;
         }
 
         if (from_index < to_index && driver_from.is_same_array_as(driver_to)) {
-          // This is for adding a relation like `color[0]` -> `color[1]`.
-          // When the search for another driver wraps around, we cannot blindly add relations any
-          // more.
+          /* This is for adding a relation like `color[0]` -> `color[1]`.
+           * When the search for another driver wraps around,
+           * we cannot blindly add relations any more. */
         }
         else {
-          // Investigate whether this relation would create a dependency cycle.
-          // Example graph:
-          //     A -> B -> C
-          // and investigating a potential connection C->A. Because A->C is an
-          // existing transitive connection, adding C->A would create a cycle.
+          /* Investigate whether this relation would create a dependency cycle.
+           * Example graph:
+           *     A -> B -> C
+           * and investigating a potential connection C->A. Because A->C is an
+           * existing transitive connection, adding C->A would create a cycle. */
           if (is_reachable(op_to, op_from)) {
             continue;
           }
 
-          // No need to directly connect this node if there is already a transitive connection.
+          /* No need to directly connect this node if there is already a transitive connection. */
           if (is_reachable(op_from, op_to)) {
             break;
           }

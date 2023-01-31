@@ -66,7 +66,7 @@ float dof_hdr_color_weight(vec4 color)
 {
   /* From UE4. Very fast "luma" weighting. */
   float luma = (color.g * 2.0) + (color.r + color.b);
-  /* TODO(fclem) Pass correct exposure. */
+  /* TODO(@fclem): Pass correct exposure. */
   const float exposure = 1.0;
   return 1.0 / (luma * exposure + 4.0);
 }
@@ -92,7 +92,7 @@ vec4 dof_downsample_bilateral_coc_weights(vec4 cocs)
 {
   float chosen_coc = dof_coc_select(cocs);
 
-  const float scale = 4.0; /* TODO(fclem) revisit. */
+  const float scale = 4.0; /* TODO(@fclem): revisit. */
   /* NOTE: The difference between the cocs should be inside a abs() function,
    * but we follow UE4 implementation to improve how dithered transparency looks (see slide 19). */
   return saturate(1.0 - (chosen_coc - cocs) * scale);
@@ -136,7 +136,7 @@ const float layer_offset_fg = 0.5 + 1.0;
 /* Extra offset for convolution layers to avoid light leaking from background. */
 const float layer_offset = 0.5 + 0.5;
 
-#define DOF_MAX_SLIGHT_FOCUS_RADIUS 5
+#define DOF_MAX_SLIGHT_FOCUS_RADIUS 16
 
 float dof_layer_weight(float coc, const bool is_foreground)
 {
@@ -324,7 +324,7 @@ float dof_coc_max_slight_focus(float coc1, float coc2)
 struct DofGatherData {
   vec4 color;
   float weight;
-  float dist; /* TODO remove */
+  float dist; /* TODO: remove. */
   /* For scatter occlusion. */
   float coc;
   float coc_sqr;
@@ -334,7 +334,15 @@ struct DofGatherData {
   float layer_opacity;
 };
 
-#define GATHER_DATA_INIT DofGatherData(vec4(0.0), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+#ifdef GPU_METAL
+/* C++ struct initialization. */
+#  define GATHER_DATA_INIT \
+    { \
+      vec4(0.0), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 \
+    }
+#else
+#  define GATHER_DATA_INIT DofGatherData(vec4(0.0), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+#endif
 
 void dof_gather_ammend_weight(inout DofGatherData sample_data, float weight)
 {
@@ -373,7 +381,7 @@ void dof_gather_accumulate_sample_pair(DofGatherData pair_data[2],
 
 #if 0
   const float mirroring_threshold = -layer_threshold - layer_offset;
-  /* TODO(fclem) Promote to parameter? dither with Noise? */
+  /* TODO(@fclem): Promote to parameter? dither with Noise? */
   const float mirroring_min_distance = 15.0;
   if (pair_data[0].coc < mirroring_threshold &&
       (pair_data[1].coc - mirroring_min_distance) > pair_data[0].coc) {
@@ -395,7 +403,7 @@ void dof_gather_accumulate_sample_pair(DofGatherData pair_data[2],
     /**
      * If a CoC is larger than bordering radius we accumulate it to the general accumulator.
      * If not, we accumulate to the ring bucket. This is to have more consistent sample occlusion.
-     **/
+     */
     float accum_weight = dof_gather_accum_weight(pair_data[i].coc, bordering_radius, first_ring);
     dof_gather_accumulate_sample(pair_data[i], weight * accum_weight, accum_data);
     dof_gather_accumulate_sample(pair_data[i], weight * (1.0 - accum_weight), ring_data);
@@ -487,7 +495,8 @@ void dof_gather_accumulate_sample_ring(DofGatherData ring_data,
   }
 }
 
-/* FIXME(fclem) Seems to be wrong since it needs ringcount+1 as input for slightfocus gather. */
+/* FIXME(@fclem): Seems to be wrong since it needs `ringcount + 1` as input for slightfocus gather.
+ */
 int dof_gather_total_sample_count(const int ring_count, const int ring_density)
 {
   return (ring_count * ring_count - ring_count) * ring_density + 1;
@@ -607,7 +616,7 @@ ivec2 dof_square_ring_sample_offset(int ring_distance, int sample_id)
    *                 . . . . .
    *
    * Samples are expected to be mirrored to complete the pattern.
-   **/
+   */
   ivec2 offset;
   if (sample_id < ring_distance) {
     offset.x = ring_distance;

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2020 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2020 Blender Foundation. All rights reserved. */
 #include "abc_writer_abstract.h"
 #include "abc_hierarchy_iterator.h"
 
@@ -114,11 +98,11 @@ const Imath::Box3d &ABCAbstractWriter::bounding_box() const
 
 void ABCAbstractWriter::update_bounding_box(Object *object)
 {
-  BoundBox *bb = BKE_object_boundbox_get(object);
+  const BoundBox *bb = BKE_object_boundbox_get(object);
 
   if (!bb) {
     if (object->type != OB_CAMERA) {
-      CLOG_WARN(&LOG, "Bounding box is null!\n");
+      CLOG_WARN(&LOG, "Bounding box is null!");
     }
     bounding_box_.min.x = bounding_box_.min.y = bounding_box_.min.z = 0;
     bounding_box_.max.x = bounding_box_.max.y = bounding_box_.max.z = 0;
@@ -137,7 +121,7 @@ void ABCAbstractWriter::update_bounding_box(Object *object)
 
 void ABCAbstractWriter::write_visibility(const HierarchyContext &context)
 {
-  const bool is_visible = context.is_object_visible(DAG_EVAL_RENDER);
+  const bool is_visible = context.is_object_visible(args_.export_params->evaluation_mode);
   Alembic::Abc::OObject abc_object = get_alembic_object();
 
   if (!abc_visibility_.valid()) {

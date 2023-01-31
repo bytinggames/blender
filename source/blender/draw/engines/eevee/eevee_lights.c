@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2016, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Blender Foundation. */
 
 /** \file
  * \ingroup DNA
@@ -28,7 +13,6 @@
 
 #include "eevee_private.h"
 
-/* Reconstruct local obmat from EEVEE_light. (normalized) */
 void eevee_light_matrix_get(const EEVEE_Light *evli, float r_mat[4][4])
 {
   copy_v3_v3(r_mat[0], evli->rightvec);
@@ -88,7 +72,7 @@ static float light_shape_power_get(const Light *la, const EEVEE_Light *evli)
   /* Make illumination power constant */
   if (la->type == LA_AREA) {
     power = 1.0f / (evli->sizex * evli->sizey * 4.0f * M_PI) * /* 1/(w*h*Pi) */
-            0.8f; /* XXX : Empirical, Fit cycles power */
+            0.8f; /* XXX: Empirical, Fit cycles power. */
     if (ELEM(la->area_shape, LA_AREA_DISK, LA_AREA_ELLIPSE)) {
       /* Scale power to account for the lower area of the ellipse compared to the surrounding
        * rectangle. */
@@ -96,17 +80,17 @@ static float light_shape_power_get(const Light *la, const EEVEE_Light *evli)
     }
   }
   else if (ELEM(la->type, LA_SPOT, LA_LOCAL)) {
-    power = 1.0f / (4.0f * evli->radius * evli->radius * M_PI * M_PI); /* 1/(4*r²*Pi²) */
+    power = 1.0f / (4.0f * evli->radius * evli->radius * M_PI * M_PI); /* `1/(4*(r^2)*(Pi^2))` */
 
     /* for point lights (a.k.a radius == 0.0) */
-    // power = M_PI * M_PI * 0.78; /* XXX : Empirical, Fit cycles power */
+    // power = M_PI * M_PI * 0.78; /* XXX: Empirical, Fit cycles power. */
   }
   else { /* LA_SUN */
     power = 1.0f / (evli->radius * evli->radius * M_PI);
     /* Make illumination power closer to cycles for bigger radii. Cycles uses a cos^3 term that we
      * cannot reproduce so we account for that by scaling the light power. This function is the
      * result of a rough manual fitting. */
-    power += 1.0f / (2.0f * M_PI); /* power *= 1 + r²/2 */
+    power += 1.0f / (2.0f * M_PI); /* `power *= 1 + (r^2)/2` */
   }
   return power;
 }
@@ -148,7 +132,7 @@ static void eevee_light_setup(Object *ob, EEVEE_Light *evli)
   const float light_threshold = draw_ctx->scene->eevee.light_threshold;
 
   /* Position */
-  copy_v3_v3(evli->position, ob->obmat[3]);
+  copy_v3_v3(evli->position, ob->object_to_world[3]);
 
   /* Color */
   copy_v3_v3(evli->color, &la->r);
@@ -169,7 +153,7 @@ static void eevee_light_setup(Object *ob, EEVEE_Light *evli)
   evli->invsqrdist_volume = 1.0f / max_ff(1e-4f, square_f(att_radius_volume));
 
   /* Vectors */
-  normalize_m4_m4_ex(mat, ob->obmat, scale);
+  normalize_m4_m4_ex(mat, ob->object_to_world, scale);
   copy_v3_v3(evli->forwardvec, mat[2]);
   normalize_v3(evli->forwardvec);
   negate_v3(evli->forwardvec);
@@ -257,7 +241,7 @@ void EEVEE_lights_cache_finish(EEVEE_ViewLayerData *sldata, EEVEE_Data *vedata)
     float power = max_fff(UNPACK3(evli->color)) * evli->volume;
     if (power > 0.0f && evli->light_type != LA_SUN) {
       /* The limit of the power attenuation function when the distance to the light goes to 0 is
-       * 2 / r² where r is the light radius. We need to find the right radius that emits at most
+       * `2 / r^2` where r is the light radius. We need to find the right radius that emits at most
        * the volume light upper bound. Inverting the function we get: */
       float min_radius = 1.0f / sqrtf(0.5f * upper_bound / power);
       /* Square it here to avoid a multiplication inside the shader. */

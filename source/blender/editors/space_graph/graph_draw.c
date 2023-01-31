@@ -1,20 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) Blender Foundation
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Blender Foundation. */
 
 /** \file
  * \ingroup spgraph
@@ -95,7 +80,7 @@ static void draw_fcurve_modifier_controls_envelope(FModifier *fcm,
 
   GPU_line_width(1.0f);
 
-  immBindBuiltinProgram(GPU_SHADER_2D_LINE_DASHED_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_LINE_DASHED_UNIFORM_COLOR);
 
   float viewport_size[4];
   GPU_viewport_size_get_f(viewport_size);
@@ -122,7 +107,7 @@ static void draw_fcurve_modifier_controls_envelope(FModifier *fcm,
     /* set size of vertices (non-adjustable for now) */
     GPU_point_size(2.0f);
 
-    immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+    immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
     /* for now, point color is fixed, and is white */
     immUniformColor3f(1.0f, 1.0f, 1.0f);
@@ -414,7 +399,7 @@ static bool draw_fcurve_handles_check(SpaceGraph *sipo, FCurve *fcu)
 }
 
 /* draw lines for F-Curve handles only (this is only done in EditMode)
- * note: draw_fcurve_handles_check must be checked before running this. */
+ * NOTE: draw_fcurve_handles_check must be checked before running this. */
 static void draw_fcurve_handles(SpaceGraph *sipo, FCurve *fcu)
 {
   int sel, b;
@@ -423,7 +408,7 @@ static void draw_fcurve_handles(SpaceGraph *sipo, FCurve *fcu)
   uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
   uint color = GPU_vertformat_attr_add(
       format, "color", GPU_COMP_U8, 4, GPU_FETCH_INT_TO_FLOAT_UNIT);
-  immBindBuiltinProgram(GPU_SHADER_2D_FLAT_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_FLAT_COLOR);
   if ((sipo->flag & SIPO_BEAUTYDRAW_OFF) == 0) {
     GPU_line_smooth(true);
   }
@@ -437,7 +422,6 @@ static void draw_fcurve_handles(SpaceGraph *sipo, FCurve *fcu)
   for (sel = 0; sel < 2; sel++) {
     BezTriple *bezt = fcu->bezt, *prevbezt = NULL;
     int basecol = (sel) ? TH_HANDLE_SEL_FREE : TH_HANDLE_FREE;
-    const float *fp;
     uchar col[4];
 
     for (b = 0; b < fcu->totvert; b++, prevbezt = bezt, bezt++) {
@@ -452,17 +436,15 @@ static void draw_fcurve_handles(SpaceGraph *sipo, FCurve *fcu)
 
       /* draw handle with appropriate set of colors if selection is ok */
       if ((bezt->f2 & SELECT) == sel) {
-        fp = bezt->vec[0];
-
         /* only draw first handle if previous segment had handles */
         if ((!prevbezt && (bezt->ipo == BEZT_IPO_BEZ)) ||
             (prevbezt && (prevbezt->ipo == BEZT_IPO_BEZ))) {
           UI_GetThemeColor3ubv(basecol + bezt->h1, col);
           col[3] = fcurve_display_alpha(fcu) * 255;
           immAttr4ubv(color, col);
-          immVertex2fv(pos, fp);
+          immVertex2fv(pos, bezt->vec[0]);
           immAttr4ubv(color, col);
-          immVertex2fv(pos, fp + 3);
+          immVertex2fv(pos, bezt->vec[1]);
         }
 
         /* only draw second handle if this segment is bezier */
@@ -470,33 +452,31 @@ static void draw_fcurve_handles(SpaceGraph *sipo, FCurve *fcu)
           UI_GetThemeColor3ubv(basecol + bezt->h2, col);
           col[3] = fcurve_display_alpha(fcu) * 255;
           immAttr4ubv(color, col);
-          immVertex2fv(pos, fp + 3);
+          immVertex2fv(pos, bezt->vec[1]);
           immAttr4ubv(color, col);
-          immVertex2fv(pos, fp + 6);
+          immVertex2fv(pos, bezt->vec[2]);
         }
       }
       else {
         /* only draw first handle if previous segment was had handles, and selection is ok */
         if (((bezt->f1 & SELECT) == sel) && ((!prevbezt && (bezt->ipo == BEZT_IPO_BEZ)) ||
                                              (prevbezt && (prevbezt->ipo == BEZT_IPO_BEZ)))) {
-          fp = bezt->vec[0];
           UI_GetThemeColor3ubv(basecol + bezt->h1, col);
           col[3] = fcurve_display_alpha(fcu) * 255;
           immAttr4ubv(color, col);
-          immVertex2fv(pos, fp);
+          immVertex2fv(pos, bezt->vec[0]);
           immAttr4ubv(color, col);
-          immVertex2fv(pos, fp + 3);
+          immVertex2fv(pos, bezt->vec[1]);
         }
 
         /* only draw second handle if this segment is bezier, and selection is ok */
         if (((bezt->f3 & SELECT) == sel) && (bezt->ipo == BEZT_IPO_BEZ)) {
-          fp = bezt->vec[1];
           UI_GetThemeColor3ubv(basecol + bezt->h2, col);
           col[3] = fcurve_display_alpha(fcu) * 255;
           immAttr4ubv(color, col);
-          immVertex2fv(pos, fp);
+          immVertex2fv(pos, bezt->vec[0]);
           immAttr4ubv(color, col);
-          immVertex2fv(pos, fp + 3);
+          immVertex2fv(pos, bezt->vec[1]);
         }
       }
     }
@@ -560,7 +540,7 @@ static void draw_fcurve_samples(SpaceGraph *sipo, ARegion *region, FCurve *fcu)
     GPU_blend(GPU_BLEND_ALPHA);
 
     uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
-    immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+    immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
     immUniformThemeColor((fcu->flag & FCURVE_SELECTED) ? TH_TEXT_HI : TH_TEXT);
 
@@ -1060,21 +1040,21 @@ static void draw_fcurve(bAnimContext *ac, SpaceGraph *sipo, ARegion *region, bAn
     const uint shdr_pos = GPU_vertformat_attr_add(
         immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
-    immBindBuiltinProgram(GPU_SHADER_2D_LINE_DASHED_UNIFORM_COLOR);
-
     float viewport_size[4];
     GPU_viewport_size_get_f(viewport_size);
-    immUniform2f("viewport_size", viewport_size[2] / UI_DPI_FAC, viewport_size[3] / UI_DPI_FAC);
-
-    immUniform1i("colors_len", 0); /* Simple dashes. */
 
     if (BKE_fcurve_is_protected(fcu)) {
-      /* protected curves (non editable) are drawn with dotted lines */
+      /* Protected curves (non editable) are drawn with dotted lines. */
+      immBindBuiltinProgram(GPU_SHADER_3D_LINE_DASHED_UNIFORM_COLOR);
+      immUniform2f("viewport_size", viewport_size[2] / UI_DPI_FAC, viewport_size[3] / UI_DPI_FAC);
+      immUniform1i("colors_len", 0); /* Simple dashes. */
       immUniform1f("dash_width", 4.0f);
       immUniform1f("dash_factor", 0.5f);
     }
     else {
-      immUniform1f("dash_factor", 2.0f); /* solid line */
+      immBindBuiltinProgram(GPU_SHADER_3D_POLYLINE_UNIFORM_COLOR);
+      immUniform2fv("viewportSize", &viewport_size[2]);
+      immUniform1f("lineWidth", GPU_line_width_get());
     }
 
     if (((fcu->grp) && (fcu->grp->flag & AGRP_MUTED)) || (fcu->flag & FCURVE_MUTED)) {
@@ -1210,7 +1190,7 @@ static void graph_draw_driver_debug(bAnimContext *ac, ID *id, FCurve *fcu)
 
   const uint shdr_pos = GPU_vertformat_attr_add(
       immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
-  immBindBuiltinProgram(GPU_SHADER_2D_LINE_DASHED_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_LINE_DASHED_UNIFORM_COLOR);
 
   float viewport_size[4];
   GPU_viewport_size_get_f(viewport_size);
@@ -1251,7 +1231,7 @@ static void graph_draw_driver_debug(bAnimContext *ac, ID *id, FCurve *fcu)
     float x = driver->curval;
     float y = fcu->curval * unitfac;
 
-    /* only draw indicators if the point is in range*/
+    /* Only draw indicators if the point is in range. */
     if (x >= v2d->cur.xmin) {
       float co[2];
 
@@ -1259,14 +1239,15 @@ static void graph_draw_driver_debug(bAnimContext *ac, ID *id, FCurve *fcu)
       immUniformColor3f(0.9f, 0.9f, 0.9f);
       immUniform1f("dash_width", 10.0f);
       immUniform1f("dash_factor", 0.5f);
+      GPU_line_width(1.0f);
 
-      immBegin(GPU_PRIM_LINES, (y >= v2d->cur.ymin) ? 4 : 2);
+      immBegin(GPU_PRIM_LINES, (y <= v2d->cur.ymax) ? 4 : 2);
 
       /* x-axis lookup */
       co[0] = x;
 
-      if (y >= v2d->cur.ymin) {
-        co[1] = v2d->cur.ymin - 1.0f;
+      if (y <= v2d->cur.ymax) {
+        co[1] = v2d->cur.ymax + 1.0f;
         immVertex2fv(shdr_pos, co);
 
         co[1] = y;
@@ -1287,7 +1268,7 @@ static void graph_draw_driver_debug(bAnimContext *ac, ID *id, FCurve *fcu)
       immUnbindProgram();
 
       /* GPU_PRIM_POINTS do not survive dashed line geometry shader... */
-      immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+      immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
 
       /* x marks the spot .................................................... */
       /* -> outer frame */
@@ -1313,9 +1294,6 @@ static void graph_draw_driver_debug(bAnimContext *ac, ID *id, FCurve *fcu)
 
 /* Public Curve-Drawing API  ---------------- */
 
-/* Draw the 'ghost' F-Curves (i.e. snapshots of the curve)
- * NOTE: unit mapping has already been applied to the values, so do not try and apply again
- */
 void graph_draw_ghost_curves(bAnimContext *ac, SpaceGraph *sipo, ARegion *region)
 {
   FCurve *fcu;
@@ -1332,7 +1310,7 @@ void graph_draw_ghost_curves(bAnimContext *ac, SpaceGraph *sipo, ARegion *region
   const uint shdr_pos = GPU_vertformat_attr_add(
       immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
-  immBindBuiltinProgram(GPU_SHADER_2D_LINE_DASHED_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_LINE_DASHED_UNIFORM_COLOR);
 
   float viewport_size[4];
   GPU_viewport_size_get_f(viewport_size);
@@ -1363,9 +1341,6 @@ void graph_draw_ghost_curves(bAnimContext *ac, SpaceGraph *sipo, ARegion *region
   GPU_blend(GPU_BLEND_NONE);
 }
 
-/* This is called twice from space_graph.c -> graph_main_region_draw()
- * Unselected then selected F-Curves are drawn so that they do not occlude each other.
- */
 void graph_draw_curves(bAnimContext *ac, SpaceGraph *sipo, ARegion *region, short sel)
 {
   ListBase anim_data = {NULL, NULL};
@@ -1373,7 +1348,7 @@ void graph_draw_curves(bAnimContext *ac, SpaceGraph *sipo, ARegion *region, shor
   int filter;
 
   /* build list of curves to draw */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_CURVE_VISIBLE | ANIMFILTER_FCURVESONLY);
   filter |= ((sel) ? (ANIMFILTER_SEL) : (ANIMFILTER_UNSEL));
   ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
@@ -1407,7 +1382,6 @@ void graph_draw_curves(bAnimContext *ac, SpaceGraph *sipo, ARegion *region, shor
 /** \name Channel List
  * \{ */
 
-/* left hand part */
 void graph_draw_channel_names(bContext *C, bAnimContext *ac, ARegion *region)
 {
   ListBase anim_data = {NULL, NULL};
@@ -1419,7 +1393,8 @@ void graph_draw_channel_names(bContext *C, bAnimContext *ac, ARegion *region)
   size_t items;
 
   /* build list of channels to draw */
-  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE | ANIMFILTER_LIST_CHANNELS);
+  filter = (ANIMFILTER_DATA_VISIBLE | ANIMFILTER_LIST_VISIBLE | ANIMFILTER_LIST_CHANNELS |
+            ANIMFILTER_FCURVESONLY);
   items = ANIM_animdata_filter(ac, &anim_data, filter, ac->data, ac->datatype);
 
   /* Update max-extent of channels here (taking into account scrollers):
@@ -1428,7 +1403,7 @@ void graph_draw_channel_names(bContext *C, bAnimContext *ac, ARegion *region)
   height = ACHANNEL_TOT_HEIGHT(ac, items);
   v2d->tot.ymin = -height;
 
-  /* loop through channels, and set up drawing depending on their type  */
+  /* Loop through channels, and set up drawing depending on their type. */
   { /* first pass: just the standard GL-drawing for backdrop + text */
     size_t channel_index = 0;
     float ymax = ACHANNEL_FIRST_TOP(ac);
@@ -1471,7 +1446,7 @@ void graph_draw_channel_names(bContext *C, bAnimContext *ac, ARegion *region)
     GPU_blend(GPU_BLEND_NONE);
   }
 
-  /* free tempolary channels */
+  /* Free temporary channels. */
   ANIM_animdata_freelist(&anim_data);
 }
 

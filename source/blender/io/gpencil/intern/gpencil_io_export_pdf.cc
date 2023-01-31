@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2020 Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2020 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bgpencil
@@ -53,16 +37,16 @@
 
 namespace blender ::io ::gpencil {
 
-static void error_handler(HPDF_STATUS error_no, HPDF_STATUS detail_no, void *UNUSED(user_data))
+static void error_handler(HPDF_STATUS error_no, HPDF_STATUS detail_no, void * /*user_data*/)
 {
   printf("ERROR: error_no=%04X, detail_no=%u\n", (HPDF_UINT)error_no, (HPDF_UINT)detail_no);
 }
 
 /* Constructor. */
-GpencilExporterPDF::GpencilExporterPDF(const char *filename, const GpencilIOParams *iparams)
+GpencilExporterPDF::GpencilExporterPDF(const char *filepath, const GpencilIOParams *iparams)
     : GpencilExporter(iparams)
 {
-  filename_set(filename);
+  filepath_set(filepath);
 
   invert_axis_[0] = false;
   invert_axis_[1] = false;
@@ -91,24 +75,24 @@ bool GpencilExporterPDF::write()
 {
   /* Support unicode character paths on Windows. */
   HPDF_STATUS res = 0;
-  /* TODO: It looks libharu does not support unicode. */
-  //#ifdef WIN32
-  //  char filename_cstr[FILE_MAX];
-  //  BLI_strncpy(filename_cstr, filename_, FILE_MAX);
-  //
-  //  UTF16_ENCODE(filename_cstr);
-  //  std::wstring wstr(filename_cstr_16);
-  //  res = HPDF_SaveToFile(pdf_, wstr.c_str());
-  //
-  //  UTF16_UN_ENCODE(filename_cstr);
-  //#else
-  res = HPDF_SaveToFile(pdf_, filename_);
-  //#endif
+
+  /* TODO: It looks `libharu` does not support unicode. */
+#if 0 /* `ifdef WIN32` */
+  char filepath_cstr[FILE_MAX];
+  BLI_strncpy(filepath_cstr, filepath_, FILE_MAX);
+
+  UTF16_ENCODE(filepath_cstr);
+  std::wstring wstr(filepath_cstr_16);
+  res = HPDF_SaveToFile(pdf_, wstr.c_str());
+
+  UTF16_UN_ENCODE(filepath_cstr);
+#else
+  res = HPDF_SaveToFile(pdf_, filepath_);
+#endif
 
   return (res == 0) ? true : false;
 }
 
-/* Create pdf document. */
 bool GpencilExporterPDF::create_document()
 {
   pdf_ = HPDF_New(error_handler, nullptr);
@@ -119,7 +103,6 @@ bool GpencilExporterPDF::create_document()
   return true;
 }
 
-/* Add page. */
 bool GpencilExporterPDF::add_page()
 {
   /* Add a new page object. */
@@ -135,7 +118,6 @@ bool GpencilExporterPDF::add_page()
   return true;
 }
 
-/* Main layer loop. */
 void GpencilExporterPDF::export_gpencil_layers()
 {
   /* If is doing a set of frames, the list of objects can change for each frame. */
@@ -195,7 +177,8 @@ void GpencilExporterPDF::export_gpencil_layers()
         /* Apply layer thickness change. */
         gps_duplicate->thickness += gpl->line_change;
         /* Apply object scale to thickness. */
-        gps_duplicate->thickness *= mat4_to_scale(ob->obmat);
+        const float scalef = mat4_to_scale(ob->object_to_world);
+        gps_duplicate->thickness = ceilf((float)gps_duplicate->thickness * scalef);
         CLAMP_MIN(gps_duplicate->thickness, 1.0f);
         /* Fill. */
         if ((is_fill) && (params_.flag & GP_EXPORT_FILL)) {
@@ -210,11 +193,11 @@ void GpencilExporterPDF::export_gpencil_layers()
           }
           else {
             bGPDstroke *gps_perimeter = BKE_gpencil_stroke_perimeter_from_view(
-                rv3d_, gpd_, gpl, gps_duplicate, 3, diff_mat_.values);
+                rv3d_->viewmat, gpd_, gpl, gps_duplicate, 3, diff_mat_.values, 0.0f);
 
             /* Sample stroke. */
             if (params_.stroke_sample > 0.0f) {
-              BKE_gpencil_stroke_sample(gpd_eval, gps_perimeter, params_.stroke_sample, false);
+              BKE_gpencil_stroke_sample(gpd_eval, gps_perimeter, params_.stroke_sample, false, 0);
             }
 
             export_stroke_to_polyline(gpl, gps_perimeter, is_stroke, false, false);
@@ -228,10 +211,6 @@ void GpencilExporterPDF::export_gpencil_layers()
   }
 }
 
-/**
- * Export a stroke using polyline or polygon
- * \param do_fill: True if the stroke is only fill
- */
 void GpencilExporterPDF::export_stroke_to_polyline(bGPDlayer *gpl,
                                                    bGPDstroke *gps,
                                                    const bool is_stroke,
@@ -244,7 +223,7 @@ void GpencilExporterPDF::export_stroke_to_polyline(bGPDlayer *gpl,
   /* Get the thickness in pixels using a simple 1 point stroke. */
   bGPDstroke *gps_temp = BKE_gpencil_stroke_duplicate(gps, false, false);
   gps_temp->totpoints = 1;
-  gps_temp->points = (bGPDspoint *)MEM_callocN(sizeof(bGPDspoint), "gp_stroke_points");
+  gps_temp->points = MEM_new<bGPDspoint>("gp_stroke_points");
   const bGPDspoint *pt_src = &gps->points[0];
   bGPDspoint *pt_dst = &gps_temp->points[0];
   copy_v3_v3(&pt_dst->x, &pt_src->x);
@@ -258,7 +237,9 @@ void GpencilExporterPDF::export_stroke_to_polyline(bGPDlayer *gpl,
 
   if (is_stroke && !do_fill) {
     HPDF_Page_SetLineJoin(page_, HPDF_ROUND_JOIN);
-    HPDF_Page_SetLineWidth(page_, MAX2((radius * 2.0f) - gpl->line_change, 1.0f));
+    const float width = MAX2(
+        MAX2(gps->thickness + gpl->line_change, (radius * 2.0f) + gpl->line_change), 1.0f);
+    HPDF_Page_SetLineWidth(page_, width);
   }
 
   /* Loop all points. */
@@ -287,10 +268,6 @@ void GpencilExporterPDF::export_stroke_to_polyline(bGPDlayer *gpl,
   HPDF_Page_GRestore(page_);
 }
 
-/**
- * Set color
- * @param do_fill: True if the stroke is only fill
- */
 void GpencilExporterPDF::color_set(bGPDlayer *gpl, const bool do_fill)
 {
   const float fill_opacity = fill_color_[3] * gpl->opacity;

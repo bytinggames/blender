@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edutil
@@ -68,13 +52,13 @@ typedef struct ImageSampleInfo {
   int width, height;
   int sample_size;
 
-  unsigned char col[4];
+  uchar col[4];
   float colf[4];
   float linearcol[4];
   int z;
   float zf;
 
-  unsigned char *colp;
+  uchar *colp;
   const float *colfp;
   int *zp;
   float *zfp;
@@ -95,7 +79,7 @@ static void image_sample_pixel_color_ubyte(const ImBuf *ibuf,
                                            uchar r_col[4],
                                            float r_col_linear[4])
 {
-  const uchar *cp = (unsigned char *)(ibuf->rect + coord[1] * ibuf->x + coord[0]);
+  const uchar *cp = (uchar *)(ibuf->rect + coord[1] * ibuf->x + coord[0]);
   copy_v4_v4_uchar(r_col, cp);
   rgba_uchar_to_float(r_col_linear, r_col);
   IMB_colormanagement_colorspace_to_scene_linear_v4(r_col_linear, false, ibuf->rect_colorspace);
@@ -244,7 +228,7 @@ static void image_sample_apply(bContext *C, wmOperator *op, const wmEvent *event
     }
 
     if (ibuf->zbuf) {
-      /* TODO, blend depth (not urgent). */
+      /* TODO: blend depth (not urgent). */
       info->z = ibuf->zbuf[y * ibuf->x + x];
       info->zp = &info->z;
       if (ibuf->zbuf == (int *)ibuf->rect) {
@@ -252,7 +236,7 @@ static void image_sample_apply(bContext *C, wmOperator *op, const wmEvent *event
       }
     }
     if (ibuf->zbuf_float) {
-      /* TODO, blend depth (not urgent). */
+      /* TODO: blend depth (not urgent). */
       info->zf = ibuf->zbuf_float[y * ibuf->x + x];
       info->zfp = &info->zf;
       if (ibuf->zbuf_float == ibuf->rect_float) {
@@ -278,13 +262,13 @@ static void image_sample_apply(bContext *C, wmOperator *op, const wmEvent *event
     /* XXX node curve integration. */
 #if 0
     {
-      ScrArea *sa, *cur = curarea;
+      ScrArea *area, *cur = curarea;
 
       node_curvemap_sample(fp); /* sends global to node editor */
-      for (sa = G.curscreen->areabase.first; sa; sa = sa->next) {
-        if (sa->spacetype == SPACE_NODE) {
-          areawinset(sa->win);
-          scrarea_do_windraw(sa);
+      for (area = G.curscreen->areabase.first; area; area = area->next) {
+        if (area->spacetype == SPACE_NODE) {
+          areawinset(area->win);
+          scrarea_do_windraw(area);
         }
       }
       node_curvemap_sample(NULL); /* clears global in node editor */
@@ -307,12 +291,11 @@ static void sequencer_sample_apply(bContext *C, wmOperator *op, const wmEvent *e
   Scene *scene = CTX_data_scene(C);
   SpaceSeq *sseq = (SpaceSeq *)CTX_wm_space_data(C);
   ARegion *region = CTX_wm_region(C);
-  ImBuf *ibuf = sequencer_ibuf_get(bmain, region, depsgraph, scene, sseq, CFRA, 0, NULL);
+  ImBuf *ibuf = sequencer_ibuf_get(bmain, region, depsgraph, scene, sseq, scene->r.cfra, 0, NULL);
   ImageSampleInfo *info = op->customdata;
   float fx, fy;
 
   if (ibuf == NULL) {
-    IMB_freeImBuf(ibuf);
     info->draw = 0;
     return;
   }
@@ -328,7 +311,7 @@ static void sequencer_sample_apply(bContext *C, wmOperator *op, const wmEvent *e
 
   if (fx >= 0.0f && fy >= 0.0f && fx < ibuf->x && fy < ibuf->y) {
     const float *fp;
-    unsigned char *cp;
+    uchar *cp;
     int x = (int)fx, y = (int)fy;
 
     info->x = x;
@@ -340,7 +323,7 @@ static void sequencer_sample_apply(bContext *C, wmOperator *op, const wmEvent *e
     info->colfp = NULL;
 
     if (ibuf->rect) {
-      cp = (unsigned char *)(ibuf->rect + y * ibuf->x + x);
+      cp = (uchar *)(ibuf->rect + y * ibuf->x + x);
 
       info->col[0] = cp[0];
       info->col[1] = cp[1];
@@ -386,14 +369,20 @@ static void sequencer_sample_apply(bContext *C, wmOperator *op, const wmEvent *e
 
 static void ed_imbuf_sample_apply(bContext *C, wmOperator *op, const wmEvent *event)
 {
-  ScrArea *sa = CTX_wm_area(C);
-
-  if (sa && sa->spacetype == SPACE_IMAGE) {
-    image_sample_apply(C, op, event);
+  ScrArea *area = CTX_wm_area(C);
+  if (area == NULL) {
+    return;
   }
 
-  if (sa && sa->spacetype == SPACE_SEQ) {
-    sequencer_sample_apply(C, op, event);
+  switch (area->spacetype) {
+    case SPACE_IMAGE: {
+      image_sample_apply(C, op, event);
+      break;
+    }
+    case SPACE_SEQ: {
+      sequencer_sample_apply(C, op, event);
+      break;
+    }
   }
 }
 
@@ -427,9 +416,9 @@ void ED_imbuf_sample_draw(const bContext *C, ARegion *region, void *arg_info)
                      info->zfp);
 
   if (info->sample_size > 1) {
-    ScrArea *sa = CTX_wm_area(C);
+    ScrArea *area = CTX_wm_area(C);
 
-    if (sa && sa->spacetype == SPACE_IMAGE) {
+    if (area && area->spacetype == SPACE_IMAGE) {
 
       const wmWindow *win = CTX_wm_window(C);
       const wmEvent *event = win->eventstate;
@@ -439,14 +428,14 @@ void ED_imbuf_sample_draw(const bContext *C, ARegion *region, void *arg_info)
       uint pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
 
       const float color[3] = {1, 1, 1};
-      immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+      immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
       immUniformColor3fv(color);
 
-      /* TODO(campbell): lock to pixels. */
+      /* TODO(@campbellbarton): lock to pixels. */
       rctf sample_rect_fl;
       BLI_rctf_init_pt_radius(
           &sample_rect_fl,
-          (float[2]){event->x - region->winrct.xmin, event->y - region->winrct.ymin},
+          (float[2]){event->xy[0] - region->winrct.xmin, event->xy[1] - region->winrct.ymin},
           (float)(info->sample_size / 2.0f) * sima->zoom);
 
       GPU_logic_op_xor_set(true);
@@ -477,31 +466,35 @@ void ED_imbuf_sample_exit(bContext *C, wmOperator *op)
 int ED_imbuf_sample_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 {
   ARegion *region = CTX_wm_region(C);
-  ImageSampleInfo *info;
+  ScrArea *area = CTX_wm_area(C);
+  if (area) {
+    switch (area->spacetype) {
+      case SPACE_IMAGE: {
+        SpaceImage *sima = area->spacedata.first;
+        if (region->regiontype == RGN_TYPE_WINDOW) {
+          if (ED_space_image_show_cache_and_mval_over(sima, region, event->mval)) {
+            return OPERATOR_PASS_THROUGH;
+          }
+        }
+        if (!ED_space_image_has_buffer(sima)) {
+          return OPERATOR_CANCELLED;
+        }
+        break;
+      }
+      case SPACE_SEQ: {
+        /* Sequencer checks could be added. */
+        break;
+      }
+    }
+  }
 
-  info = MEM_callocN(sizeof(ImageSampleInfo), "ImageSampleInfo");
+  ImageSampleInfo *info = MEM_callocN(sizeof(ImageSampleInfo), "ImageSampleInfo");
 
   info->art = region->type;
   info->draw_handle = ED_region_draw_cb_activate(
       region->type, ED_imbuf_sample_draw, info, REGION_DRAW_POST_PIXEL);
   info->sample_size = RNA_int_get(op->ptr, "size");
   op->customdata = info;
-
-  ScrArea *sa = CTX_wm_area(C);
-
-  if (sa && sa->spacetype == SPACE_IMAGE) {
-    SpaceImage *sima = CTX_wm_space_image(C);
-
-    if (region->regiontype == RGN_TYPE_WINDOW) {
-      if (event->mval[1] <= 16 && ED_space_image_show_cache(sima)) {
-        return OPERATOR_PASS_THROUGH;
-      }
-    }
-
-    if (!ED_space_image_has_buffer(sima)) {
-      return OPERATOR_CANCELLED;
-    }
-  }
 
   ed_imbuf_sample_apply(C, op, event);
 
@@ -535,37 +528,42 @@ void ED_imbuf_sample_cancel(bContext *C, wmOperator *op)
 
 bool ED_imbuf_sample_poll(bContext *C)
 {
-  ScrArea *sa = CTX_wm_area(C);
-
-  if (sa && sa->spacetype == SPACE_IMAGE) {
-    SpaceImage *sima = CTX_wm_space_image(C);
-    if (sima == NULL) {
-      return false;
-    }
-
-    Object *obedit = CTX_data_edit_object(C);
-    if (obedit) {
-      /* Disable when UV editing so it doesn't swallow all click events
-       * (use for setting cursor). */
-      if (ED_space_image_show_uvedit(sima, obedit)) {
-        return false;
-      }
-    }
-    else if (sima->mode != SI_MODE_VIEW) {
-      return false;
-    }
-
-    return true;
+  ScrArea *area = CTX_wm_area(C);
+  if (area == NULL) {
+    return false;
   }
 
-  if (sa && sa->spacetype == SPACE_SEQ) {
-    SpaceSeq *sseq = CTX_wm_space_seq(C);
-
-    if (sseq->mainb != SEQ_DRAW_IMG_IMBUF) {
-      return false;
+  switch (area->spacetype) {
+    case SPACE_IMAGE: {
+      SpaceImage *sima = area->spacedata.first;
+      Object *obedit = CTX_data_edit_object(C);
+      if (obedit) {
+        /* Disable when UV editing so it doesn't swallow all click events
+         * (use for setting cursor). */
+        if (ED_space_image_show_uvedit(sima, obedit)) {
+          return false;
+        }
+      }
+      else if (sima->mode != SI_MODE_VIEW) {
+        return false;
+      }
+      return true;
     }
+    case SPACE_SEQ: {
+      SpaceSeq *sseq = area->spacedata.first;
 
-    return sseq && SEQ_editing_get(CTX_data_scene(C), false) != NULL;
+      if (sseq->mainb != SEQ_DRAW_IMG_IMBUF) {
+        return false;
+      }
+      if (SEQ_editing_get(CTX_data_scene(C)) == NULL) {
+        return false;
+      }
+      ARegion *region = CTX_wm_region(C);
+      if (!(region && (region->regiontype == RGN_TYPE_PREVIEW))) {
+        return false;
+      }
+      return true;
+    }
   }
 
   return false;

@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -24,13 +10,17 @@
 #include "MEM_guardedalloc.h"
 
 #include "BKE_movieclip.h"
+#include "BKE_node_tree_update.h"
 #include "BKE_tracking.h"
+
+#include "BLT_translation.h"
 
 #include "RNA_access.h"
 #include "RNA_define.h"
 
 #include "rna_internal.h"
 
+#include "DNA_defaults.h"
 #include "DNA_movieclip_types.h"
 #include "DNA_object_types.h" /* SELECT */
 #include "DNA_scene_types.h"
@@ -53,7 +43,7 @@
 
 #  include "WM_api.h"
 
-static char *rna_tracking_path(PointerRNA *UNUSED(ptr))
+static char *rna_tracking_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("tracking");
 }
@@ -84,7 +74,7 @@ static void rna_tracking_defaultSettings_searchUpdate(Main *UNUSED(bmain),
   }
 }
 
-static char *rna_trackingTrack_path(PointerRNA *ptr)
+static char *rna_trackingTrack_path(const PointerRNA *ptr)
 {
   MovieClip *clip = (MovieClip *)ptr->owner_id;
   MovieTrackingTrack *track = (MovieTrackingTrack *)ptr->data;
@@ -267,7 +257,7 @@ static void rna_trackingPlaneMarker_frame_set(PointerRNA *ptr, int value)
   }
 }
 
-static char *rna_trackingPlaneTrack_path(PointerRNA *ptr)
+static char *rna_trackingPlaneTrack_path(const PointerRNA *ptr)
 {
   MovieClip *clip = (MovieClip *)ptr->owner_id;
   MovieTrackingPlaneTrack *plane_track = (MovieTrackingPlaneTrack *)ptr->data;
@@ -301,7 +291,7 @@ static void rna_trackingPlaneTrack_name_set(PointerRNA *ptr, const char *value)
   }
 }
 
-static char *rna_trackingCamera_path(PointerRNA *UNUSED(ptr))
+static char *rna_trackingCamera_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("tracking.camera");
 }
@@ -333,7 +323,7 @@ static void rna_trackingCamera_focal_mm_set(PointerRNA *ptr, float value)
   }
 }
 
-static char *rna_trackingStabilization_path(PointerRNA *UNUSED(ptr))
+static char *rna_trackingStabilization_path(const PointerRNA *UNUSED(ptr))
 {
   return BLI_strdup("tracking.stabilization");
 }
@@ -415,11 +405,12 @@ static void rna_tracking_stabRotTracks_active_index_range(
   *max = max_ii(0, clip->tracking.stabilization.tot_rot_track - 1);
 }
 
-static void rna_tracking_flushUpdate(Main *UNUSED(bmain), Scene *scene, PointerRNA *ptr)
+static void rna_tracking_flushUpdate(Main *bmain, Scene *UNUSED(scene), PointerRNA *ptr)
 {
   MovieClip *clip = (MovieClip *)ptr->owner_id;
 
-  nodeUpdateID(scene->nodetree, &clip->id);
+  BKE_ntree_update_tag_id_changed(bmain, &clip->id);
+  BKE_ntree_update_main(bmain, NULL);
 
   WM_main_add_notifier(NC_SCENE | ND_NODES, NULL);
   WM_main_add_notifier(NC_SCENE, NULL);
@@ -568,7 +559,7 @@ static void rna_tracking_markerPattern_update(Main *UNUSED(bmain),
 {
   MovieTrackingMarker *marker = (MovieTrackingMarker *)ptr->data;
 
-  BKE_tracking_marker_clamp(marker, CLAMP_PAT_DIM);
+  BKE_tracking_marker_clamp_search_size(marker);
 }
 
 static void rna_tracking_markerSearch_update(Main *UNUSED(bmain),
@@ -577,7 +568,7 @@ static void rna_tracking_markerSearch_update(Main *UNUSED(bmain),
 {
   MovieTrackingMarker *marker = (MovieTrackingMarker *)ptr->data;
 
-  BKE_tracking_marker_clamp(marker, CLAMP_SEARCH_DIM);
+  BKE_tracking_marker_clamp_search_size(marker);
 }
 
 static void rna_tracking_markerPattern_boundbox_get(PointerRNA *ptr, float *values)
@@ -607,7 +598,7 @@ static MovieTrackingTrack *add_track_to_base(
     MovieClip *clip, MovieTracking *tracking, ListBase *tracksbase, const char *name, int frame)
 {
   int width, height;
-  MovieClipUser user = {0};
+  MovieClipUser user = *DNA_struct_default_get(MovieClipUser);
   MovieTrackingTrack *track;
 
   user.framenr = 1;
@@ -697,7 +688,7 @@ static MovieTrackingMarker *rna_trackingMarkers_find_frame(MovieTrackingTrack *t
 
 static MovieTrackingMarker *rna_trackingMarkers_insert_frame(MovieTrackingTrack *track,
                                                              int framenr,
-                                                             float *co)
+                                                             float co[2])
 {
   MovieTrackingMarker marker, *new_marker;
 
@@ -1649,7 +1640,7 @@ static void rna_def_trackingTrack(BlenderRNA *brna)
   RNA_def_property_update(prop, NC_MOVIECLIP | ND_DISPLAY, NULL);
 
   /* color */
-  prop = RNA_def_property(srna, "color", PROP_FLOAT, PROP_COLOR);
+  prop = RNA_def_property(srna, "color", PROP_FLOAT, PROP_COLOR_GAMMA);
   RNA_def_property_array(prop, 3);
   RNA_def_property_range(prop, 0.0f, 1.0f);
   RNA_def_property_ui_text(
@@ -2208,6 +2199,7 @@ static void rna_def_trackingTracks(BlenderRNA *brna)
       prop, "rna_tracking_active_track_get", "rna_tracking_active_track_set", NULL, NULL);
   RNA_def_property_flag(prop, PROP_EDITABLE | PROP_NEVER_UNLINK);
   RNA_def_property_ui_text(prop, "Active Track", "Active track in this tracking data object");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_MOVIECLIP);
 }
 
 static void rna_def_trackingPlaneTracks(BlenderRNA *brna)
@@ -2268,6 +2260,7 @@ static void rna_def_trackingObjectTracks(BlenderRNA *brna)
       prop, "rna_tracking_active_track_get", "rna_tracking_active_track_set", NULL, NULL);
   RNA_def_property_flag(prop, PROP_EDITABLE | PROP_NEVER_UNLINK);
   RNA_def_property_ui_text(prop, "Active Track", "Active track in this tracking data object");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_MOVIECLIP);
 }
 
 static void rna_def_trackingObjectPlaneTracks(BlenderRNA *brna)
@@ -2289,6 +2282,7 @@ static void rna_def_trackingObjectPlaneTracks(BlenderRNA *brna)
                                  NULL);
   RNA_def_property_flag(prop, PROP_EDITABLE | PROP_NEVER_UNLINK);
   RNA_def_property_ui_text(prop, "Active Track", "Active track in this tracking data object");
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_MOVIECLIP);
 }
 
 static void rna_def_trackingObject(BlenderRNA *brna)
@@ -2437,6 +2431,8 @@ static void rna_def_trackingDopesheet(BlenderRNA *brna)
        0,
        "Average Error",
        "Sort channels by average reprojection error of tracks after solve"},
+      {TRACKING_DOPE_SORT_START, "START", 0, "Start Frame", "Sort channels by first frame number"},
+      {TRACKING_DOPE_SORT_END, "END", 0, "End Frame", "Sort channels by last frame number"},
       {0, NULL, 0, NULL, NULL},
   };
 

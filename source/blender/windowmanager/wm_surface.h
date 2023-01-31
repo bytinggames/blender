@@ -1,25 +1,11 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup wm
  *
  * \name WM-Surface
  *
- * Container to manage painting in an offscreen context.
+ * Container to manage painting in an off-screen context.
  */
 
 #pragma once
@@ -39,12 +25,14 @@ typedef struct wmSurface {
   void *customdata;
 
   void (*draw)(struct bContext *);
+  /* To evaluate the surface's depsgraph. Called as part of the main loop. */
+  void (*do_depsgraph)(struct bContext *C);
   /** Free customdata, not the surface itself (done by wm_surface API) */
   void (*free_data)(struct wmSurface *);
 
-  /** Called  when surface is activated for drawing (made drawable). */
+  /** Called when surface is activated for drawing (made drawable). */
   void (*activate)(void);
-  /** Called  when surface is deactivated for drawing (current drawable cleared). */
+  /** Called when surface is deactivated for drawing (current drawable cleared). */
   void (*deactivate)(void);
 } wmSurface;
 
@@ -55,6 +43,9 @@ void wm_surfaces_free(void);
 
 /* Utils */
 void wm_surfaces_iter(struct bContext *C, void (*cb)(struct bContext *, wmSurface *));
+
+/* Evaluation. */
+void wm_surfaces_do_depsgraph(struct bContext *C);
 
 /* Drawing */
 void wm_surface_make_drawable(wmSurface *surface);

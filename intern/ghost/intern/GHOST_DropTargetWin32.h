@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup GHOST
@@ -37,7 +21,7 @@ class GHOST_DropTargetWin32 : public IDropTarget {
    * inherited, directly or indirectly, from IUnknown. Therefore, the three
    * methods in IUnknown are the first entries in the VTable for every interface.
    */
-  HRESULT __stdcall QueryInterface(REFIID riid, void **ppvObj);
+  HRESULT __stdcall QueryInterface(REFIID riid, void **ppv_obj);
   ULONG __stdcall AddRef(void);
   ULONG __stdcall Release(void);
 
@@ -60,13 +44,16 @@ class GHOST_DropTargetWin32 : public IDropTarget {
    * RevokeDragDrop functions.
    */
 
-  HRESULT __stdcall DragEnter(IDataObject *pDataObject,
-                              DWORD grfKeyState,
+  HRESULT __stdcall DragEnter(IDataObject *p_data_object,
+                              DWORD grf_key_state,
                               POINTL pt,
-                              DWORD *pdwEffect);
-  HRESULT __stdcall DragOver(DWORD grfKeyState, POINTL pt, DWORD *pdwEffect);
+                              DWORD *pdw_effect);
+  HRESULT __stdcall DragOver(DWORD grf_key_state, POINTL pt, DWORD *pdw_effect);
   HRESULT __stdcall DragLeave(void);
-  HRESULT __stdcall Drop(IDataObject *pDataObject, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect);
+  HRESULT __stdcall Drop(IDataObject *p_data_object,
+                         DWORD grf_key_state,
+                         POINTL pt,
+                         DWORD *pdw_effect);
 
   /**
    * Constructor
@@ -92,36 +79,36 @@ class GHOST_DropTargetWin32 : public IDropTarget {
    * \param dwAllowed: Drop sources allowed drop effect.
    * \return The allowed drop effect.
    */
-  DWORD allowedDropEffect(DWORD dwAllowed);
+  DWORD allowedDropEffect(DWORD dw_allowed);
 
   /**
    * Query DataObject for the data types it supports.
-   * \param pDataObject: Pointer to the DataObject.
+   * \param p_data_object: Pointer to the DataObject.
    * \return GHOST data type.
    */
-  GHOST_TDragnDropTypes getGhostType(IDataObject *pDataObject);
+  GHOST_TDragnDropTypes getGhostType(IDataObject *p_data_object);
 
   /**
    * Get data to pass in event.
    * It checks the type and calls specific functions for each type.
-   * \param pDataObject: Pointer to the DataObject.
+   * \param p_data_object: Pointer to the DataObject.
    * \return Pointer to data.
    */
-  void *getGhostData(IDataObject *pDataObject);
+  void *getGhostData(IDataObject *p_data_object);
 
   /**
    * Allocate data as file array to pass in event.
-   * \param pDataObject: Pointer to the DataObject.
+   * \param p_data_object: Pointer to the DataObject.
    * \return Pointer to data.
    */
-  void *getDropDataAsFilenames(IDataObject *pDataObject);
+  void *getDropDataAsFilenames(IDataObject *p_data_object);
 
   /**
    * Allocate data as string to pass in event.
-   * \param pDataObject: Pointer to the DataObject.
+   * \param p_data_object: Pointer to the DataObject.
    * \return Pointer to data.
    */
-  void *getDropDataAsString(IDataObject *pDataObject);
+  void *getDropDataAsString(IDataObject *p_data_object);
 
   /**
    * Convert Unicode to ANSI, replacing uncomfortable chars with '?'.

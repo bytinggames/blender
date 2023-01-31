@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2012 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2012 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup pybmesh
@@ -179,7 +163,7 @@ static Py_ssize_t bpy_bmeditselseq_length(BPy_BMEditSelSeq *self)
   return BLI_listbase_count(&self->bm->selected);
 }
 
-static PyObject *bpy_bmeditselseq_subscript_int(BPy_BMEditSelSeq *self, int keynum)
+static PyObject *bpy_bmeditselseq_subscript_int(BPy_BMEditSelSeq *self, Py_ssize_t keynum)
 {
   BMEditSelection *ese;
 
@@ -205,7 +189,6 @@ static PyObject *bpy_bmeditselseq_subscript_slice(BPy_BMEditSelSeq *self,
                                                   Py_ssize_t stop)
 {
   int count = 0;
-  bool ok;
 
   PyObject *list;
   BMEditSelection *ese;
@@ -214,30 +197,22 @@ static PyObject *bpy_bmeditselseq_subscript_slice(BPy_BMEditSelSeq *self,
 
   list = PyList_New(0);
 
-  ese = self->bm->selected.first;
-
-  ok = (ese != NULL);
-
-  if (UNLIKELY(ok == false)) {
-    return list;
-  }
-
-  /* first loop up-until the start */
-  for (ok = true; ok; ok = ((ese = ese->next) != NULL)) {
+  /* First loop up-until the start. */
+  for (ese = self->bm->selected.first; ese; ese = ese->next) {
     if (count == start) {
       break;
     }
     count++;
   }
 
-  /* add items until stop */
-  do {
+  /* Add items until stop. */
+  for (; ese; ese = ese->next) {
     PyList_APPEND(list, BPy_BMElem_CreatePyObject(self->bm, &ese->ele->head));
     count++;
     if (count == stop) {
       break;
     }
-  } while ((ese = ese->next));
+  }
 
   return list;
 }
@@ -282,9 +257,11 @@ static PyObject *bpy_bmeditselseq_subscript(BPy_BMEditSelSeq *self, PyObject *ke
       const Py_ssize_t len = bpy_bmeditselseq_length(self);
       if (start < 0) {
         start += len;
+        CLAMP_MIN(start, 0);
       }
       if (stop < 0) {
         stop += len;
+        CLAMP_MIN(stop, 0);
       }
     }
 
@@ -418,9 +395,6 @@ void BPy_BM_init_types_select(void)
 
 /* utility function */
 
-/**
- * \note doesn't actually check selection.
- */
 int BPy_BMEditSel_Assign(BPy_BMesh *self, PyObject *value)
 {
   BMesh *bm;

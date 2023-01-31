@@ -1,12 +1,7 @@
-#=============================================================================
+# SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2014 Blender Foundation.
-#
-# Distributed under the OSI-approved BSD 3-Clause License,
-# see accompanying file BSD-3-Clause-license.txt for details.
-#
+
 # Inspired on the Testing.cmake from Libmv
-#
-#=============================================================================
 
 function(GET_BLENDER_TEST_INSTALL_DIR VARIABLE_NAME)
   get_property(GENERATOR_IS_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -45,12 +40,10 @@ macro(BLENDER_SRC_GTEST_EX)
       set(MANIFEST "${CMAKE_BINARY_DIR}/tests.exe.manifest")
     endif()
 
-    add_definitions(-DBLENDER_GFLAGS_NAMESPACE=${GFLAGS_NAMESPACE})
-    add_definitions(${GFLAGS_DEFINES})
-    add_definitions(${GLOG_DEFINES})
-
     add_executable(${TARGET_NAME} ${ARG_SRC} ${MANIFEST})
     setup_platform_linker_flags(${TARGET_NAME})
+    target_compile_definitions(${TARGET_NAME} PRIVATE ${GFLAGS_DEFINES})
+    target_compile_definitions(${TARGET_NAME} PRIVATE ${GLOG_DEFINES})
     target_include_directories(${TARGET_NAME} PUBLIC "${TEST_INC}")
     target_include_directories(${TARGET_NAME} SYSTEM PUBLIC "${TEST_INC_SYS}")
     target_link_libraries(${TARGET_NAME} ${ARG_EXTRA_LIBS} ${PLATFORM_LINKLIBS})

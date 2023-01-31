@@ -1,32 +1,14 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2017, Blender Foundation
- * This is a new part of Blender
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2017 Blender Foundation. */
 
 /** \file
  * \ingroup modifiers
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "BLI_utildefines.h"
-
-#include "BLI_blenlib.h"
-#include "BLI_math_vector.h"
 
 #include "BLT_translation.h"
 
@@ -47,8 +29,6 @@
 #include "BKE_screen.h"
 
 #include "DEG_depsgraph.h"
-#include "DEG_depsgraph_build.h"
-#include "DEG_depsgraph_query.h"
 
 #include "UI_interface.h"
 #include "UI_resources.h"
@@ -86,39 +66,6 @@ static void copyData(const GpencilModifierData *md, GpencilModifierData *target)
   tgmd->curve_intensity = BKE_curvemapping_copy(gmd->curve_intensity);
 }
 
-static float give_opacity_fading_factor(OpacityGpencilModifierData *mmd,
-                                        Object *ob_this,
-                                        float *pos,
-                                        bool apply_obmat)
-{
-  float factor_depth = 1.0f;
-
-  if (((mmd->flag & GP_OPACITY_FADING) == 0) || ((mmd->object) == NULL)) {
-    return factor_depth;
-  }
-
-  float gvert[3];
-  if (apply_obmat) {
-    mul_v3_m4v3(gvert, ob_this->obmat, pos);
-  }
-  float dist = len_v3v3(mmd->object->obmat[3], gvert);
-  float fading_max = MAX2(mmd->fading_start, mmd->fading_end);
-  float fading_min = MIN2(mmd->fading_start, mmd->fading_end);
-
-  /* Better with ratiof() function from line art. */
-  if (dist > fading_max) {
-    factor_depth = 0.0f;
-  }
-  else if (dist <= fading_max && dist > fading_min) {
-    factor_depth = (fading_max - dist) / (fading_max - fading_min);
-  }
-  else {
-    factor_depth = 1.0f;
-  }
-
-  return factor_depth;
-}
-
 /* opacity strokes */
 static void deformStroke(GpencilModifierData *md,
                          Depsgraph *UNUSED(depsgraph),
@@ -130,6 +77,9 @@ static void deformStroke(GpencilModifierData *md,
   OpacityGpencilModifierData *mmd = (OpacityGpencilModifierData *)md;
   const int def_nr = BKE_object_defgroup_name_index(ob, mmd->vgname);
   const bool use_curve = (mmd->flag & GP_OPACITY_CUSTOM_CURVE) != 0 && mmd->curve_intensity;
+  const bool is_normalized = (mmd->flag & GP_OPACITY_NORMALIZE);
+  bool is_inverted = ((mmd->flag & GP_OPACITY_WEIGHT_FACTOR) == 0) &&
+                     ((mmd->flag & GP_OPACITY_INVERT_VGROUP) != 0);
 
   if (!is_stroke_affected_by_modifier(ob,
                                       mmd->layername,
@@ -161,20 +111,23 @@ static void deformStroke(GpencilModifierData *md,
     /* Stroke using strength. */
     if (mmd->modify_color != GP_MODIFY_COLOR_FILL) {
       /* verify vertex group */
-      float weight = get_modifier_point_weight(
-          dvert, (mmd->flag & GP_OPACITY_INVERT_VGROUP) != 0, def_nr);
+      float weight = get_modifier_point_weight(dvert, is_inverted, def_nr);
       if (weight < 0.0f) {
         continue;
       }
+
+      /* Apply weight directly. */
+      if ((mmd->flag & GP_OPACITY_WEIGHT_FACTOR) && (!is_normalized)) {
+        pt->strength *= ((mmd->flag & GP_OPACITY_INVERT_VGROUP) ? 1.0f - weight : weight);
+        continue;
+      }
+
       /* Custom curve to modulate value. */
       float factor_curve = mmd->factor;
       if (use_curve) {
         float value = (float)i / (gps->totpoints - 1);
         factor_curve *= BKE_curvemapping_evaluateF(mmd->curve_intensity, 0, value);
       }
-
-      float factor_depth = give_opacity_fading_factor(mmd, ob, &pt->x, true);
-      factor_curve = interpf(factor_curve, mmd->fading_end_factor, factor_depth);
 
       if (def_nr < 0) {
         if (mmd->flag & GP_OPACITY_NORMALIZE) {
@@ -204,11 +157,19 @@ static void deformStroke(GpencilModifierData *md,
 
   /* Fill using opacity factor. */
   if (mmd->modify_color != GP_MODIFY_COLOR_STROKE) {
-    gps->fill_opacity_fac = mmd->factor;
+    float fill_factor = mmd->factor;
 
-    float factor_depth = give_opacity_fading_factor(mmd, ob, ob->obmat[3], true);
-    gps->fill_opacity_fac = interpf(mmd->factor, mmd->fading_end_factor, factor_depth);
+    if ((mmd->flag & GP_OPACITY_WEIGHT_FACTOR) && (!is_normalized)) {
+      /* Use first point for weight. */
+      MDeformVert *dvert = (gps->dvert != NULL) ? &gps->dvert[0] : NULL;
+      float weight = get_modifier_point_weight(
+          dvert, (mmd->flag & GP_OPACITY_INVERT_VGROUP) != 0, def_nr);
+      if (weight >= 0.0f) {
+        fill_factor = ((mmd->flag & GP_OPACITY_INVERT_VGROUP) ? 1.0f - weight : weight);
+      }
+    }
 
+    gps->fill_opacity_fac = fill_factor;
     CLAMP(gps->fill_opacity_fac, 0.0f, 1.0f);
   }
 }
@@ -218,15 +179,7 @@ static void bakeModifier(Main *UNUSED(bmain),
                          GpencilModifierData *md,
                          Object *ob)
 {
-  bGPdata *gpd = ob->data;
-
-  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
-    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
-      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
-        deformStroke(md, depsgraph, ob, gpl, gpf, gps);
-      }
-    }
-  }
+  generic_bake_deform_stroke(depsgraph, md, ob, false, deformStroke);
 }
 
 static void freeData(GpencilModifierData *md)
@@ -243,18 +196,6 @@ static void foreachIDLink(GpencilModifierData *md, Object *ob, IDWalkFunc walk, 
   OpacityGpencilModifierData *mmd = (OpacityGpencilModifierData *)md;
 
   walk(userData, ob, (ID **)&mmd->material, IDWALK_CB_USER);
-  walk(userData, ob, (ID **)&mmd->object, IDWALK_CB_NOP);
-}
-
-static void updateDepsgraph(GpencilModifierData *md,
-                            const ModifierUpdateDepsgraphContext *ctx,
-                            const int UNUSED(mode))
-{
-  OpacityGpencilModifierData *mmd = (OpacityGpencilModifierData *)md;
-  if (mmd->object != NULL) {
-    DEG_add_object_relation(ctx->node, mmd->object, DEG_OB_COMP_TRANSFORM, "Opacity Modifier");
-  }
-  DEG_add_object_relation(ctx->node, ctx->object, DEG_OB_COMP_TRANSFORM, "Opacity Modifier");
 }
 
 static void panel_draw(const bContext *UNUSED(C), Panel *panel)
@@ -273,27 +214,23 @@ static void panel_draw(const bContext *UNUSED(C), Panel *panel)
     uiItemR(layout, ptr, "hardness", 0, NULL, ICON_NONE);
   }
   else {
-    uiItemR(layout, ptr, "normalize_opacity", 0, NULL, ICON_NONE);
-    const char *text = (RNA_boolean_get(ptr, "normalize_opacity")) ? IFACE_("Strength") :
-                                                                     IFACE_("Opacity Factor");
-    uiItemR(layout, ptr, "factor", 0, text, ICON_NONE);
+    const bool is_normalized = RNA_boolean_get(ptr, "use_normalized_opacity");
+    const bool is_weighted = RNA_boolean_get(ptr, "use_weight_factor");
+
+    uiItemR(layout, ptr, "use_normalized_opacity", 0, NULL, ICON_NONE);
+    const char *text = (is_normalized) ? IFACE_("Strength") : IFACE_("Opacity Factor");
+
+    uiLayout *row = uiLayoutRow(layout, true);
+    uiLayoutSetActive(row, !is_weighted || is_normalized);
+    uiItemR(row, ptr, "factor", 0, text, ICON_NONE);
+    if (!is_normalized) {
+      uiLayout *sub = uiLayoutRow(row, true);
+      uiLayoutSetActive(sub, true);
+      uiItemR(row, ptr, "use_weight_factor", 0, "", ICON_MOD_VERTEX_WEIGHT);
+    }
   }
 
   gpencil_modifier_panel_end(layout, ptr);
-}
-
-static void fading_header_draw(const bContext *UNUSED(C), Panel *panel)
-{
-  uiLayout *layout = panel->layout;
-
-  PointerRNA *ptr = gpencil_modifier_panel_get_property_pointers(panel, NULL);
-
-  uiItemR(layout, ptr, "use_fading", 0, NULL, ICON_NONE);
-}
-
-static void fading_panel_draw(const bContext *C, Panel *panel)
-{
-  gpencil_modifier_fading_draw(C, panel);
 }
 
 static void mask_panel_draw(const bContext *UNUSED(C), Panel *panel)
@@ -335,8 +272,6 @@ static void panelRegister(ARegionType *region_type)
   PanelType *panel_type = gpencil_modifier_panel_register(
       region_type, eGpencilModifierType_Opacity, panel_draw);
 
-  gpencil_modifier_subpanel_register(
-      region_type, "fading", "", fading_header_draw, fading_panel_draw, panel_type);
   PanelType *mask_panel_type = gpencil_modifier_subpanel_register(
       region_type, "mask", "Influence", NULL, mask_panel_draw, panel_type);
   gpencil_modifier_subpanel_register(
@@ -344,7 +279,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 GpencilModifierTypeInfo modifierType_Gpencil_Opacity = {
-    /* name */ "Opacity",
+    /* name */ N_("Opacity"),
     /* structName */ "OpacityGpencilModifierData",
     /* structSize */ sizeof(OpacityGpencilModifierData),
     /* type */ eGpencilModifierTypeType_Gpencil,
@@ -360,7 +295,7 @@ GpencilModifierTypeInfo modifierType_Gpencil_Opacity = {
     /* initData */ initData,
     /* freeData */ freeData,
     /* isDisabled */ NULL,
-    /* updateDepsgraph */ updateDepsgraph,
+    /* updateDepsgraph */ NULL,
     /* dependsOnTime */ NULL,
     /* foreachIDLink */ foreachIDLink,
     /* foreachTexLink */ NULL,

@@ -1,39 +1,7 @@
 
 #pragma BLENDER_REQUIRE(common_math_lib.glsl)
 #pragma BLENDER_REQUIRE(common_view_lib.glsl)
-#pragma BLENDER_REQUIRE(gpu_shader_common_obinfos_lib.glsl)
-#pragma BLENDER_REQUIRE(workbench_data_lib.glsl)
 #pragma BLENDER_REQUIRE(workbench_common_lib.glsl)
-
-uniform sampler2D depthBuffer;
-
-uniform sampler3D densityTexture;
-uniform sampler3D shadowTexture;
-uniform sampler3D flameTexture;
-uniform usampler3D flagTexture;
-uniform sampler1D flameColorTexture;
-uniform sampler1D transferTexture;
-uniform mat4 volumeObjectToTexture;
-
-uniform int samplesLen = 256;
-uniform float noiseOfs = 0.0;
-uniform float stepLength;   /* Step length in local space. */
-uniform float densityScale; /* Simple Opacity multiplicator. */
-uniform float gridScale;    /* Multiplicator for grid scaling. */
-uniform vec3 activeColor;
-
-uniform float slicePosition;
-uniform int sliceAxis; /* -1 is no slice, 0 is X, 1 is Y, 2 is Z. */
-
-uniform bool showPhi = false;
-uniform bool showFlags = false;
-uniform bool showPressure = false;
-
-#ifdef VOLUME_SLICE
-in vec3 localPos;
-#endif
-
-out vec4 fragColor;
 
 float phase_function_isotropic()
 {
@@ -62,7 +30,7 @@ vec4 sample_tricubic(sampler3D ima, vec3 co)
   vec3 f = co - tc;
   vec3 f2 = f * f;
   vec3 f3 = f2 * f;
-  /* Bspline coefs (optimized) */
+  /* Bspline coefficients (optimized). */
   vec3 w3 = f3 / 6.0;
   vec3 w0 = -w3 + f2 * 0.5 - f * 0.5 + 1.0 / 6.0;
   vec3 w1 = f3 * 0.5 - f2 + 2.0 / 3.0;
@@ -126,7 +94,7 @@ vec4 flag_to_color(uint flag)
   if (bool(flag & uint(16))) {
     color.rgb += vec3(0.9, 0.3, 0.0); /* orange */
   }
-  if (color.rgb == vec3(0.0)) {
+  if (is_zero(color.rgb)) {
     color.rgb += vec3(0.5, 0.0, 0.0); /* medium red */
   }
   return color;
@@ -198,7 +166,7 @@ void volume_properties(vec3 ls_pos, out vec3 scattering, out float extinction)
   scattering *= exp(clamp(log(shadows) * densityScale * 0.1, -2.5, 0.0)) * M_PI;
 
 #  ifdef VOLUME_SMOKE
-  /* 800 is arbitrary and here to mimic old viewport. TODO make it a parameter */
+  /* 800 is arbitrary and here to mimic old viewport. TODO: make it a parameter. */
   scattering += emission.rgb * emission.a * 800.0;
 #  endif
 #endif
@@ -247,10 +215,18 @@ vec4 volume_integration(vec3 ray_ori, vec3 ray_dir, float ray_inc, float ray_max
 void main()
 {
 #ifdef VOLUME_SLICE
-  /* Manual depth test. TODO remove. */
+  /* Manual depth test. TODO: remove. */
   float depth = texelFetch(depthBuffer, ivec2(gl_FragCoord.xy), 0).r;
   if (gl_FragCoord.z >= depth) {
+    /* NOTE: In the Metal API, prior to Metal 2.3, Discard is not an explicit return and can
+     * produce undefined behavior. This is especially prominent with derivatives if control-flow
+     * divergence is present.
+     *
+     * Adding a return call eliminates undefined behavior and a later out-of-bounds read causing
+     * a crash on AMD platforms.
+     * This behavior can also affect OpenGL on certain devices. */
     discard;
+    return;
   }
 
   vec3 Lscat;
@@ -261,7 +237,7 @@ void main()
   fragColor = vec4(Lscat, Tr);
 #else
   vec2 screen_uv = gl_FragCoord.xy / vec2(textureSize(depthBuffer, 0).xy);
-  bool is_persp = ProjectionMatrix[3][3] == 0.0;
+  bool is_persp = drw_view.winmat[3][3] == 0.0;
 
   vec3 volume_center = ModelMatrix[3].xyz;
 
@@ -300,6 +276,7 @@ void main()
     /* Start is further away than the end.
      * That means no volume is intersected. */
     discard;
+    return;
   }
 
   fragColor = volume_integration(ls_ray_ori,

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -38,7 +22,7 @@
 /** \name Meta Elements Transform Creation
  * \{ */
 
-void createTransMBallVerts(TransInfo *t)
+static void createTransMBallVerts(bContext *UNUSED(C), TransInfo *t)
 {
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     MetaBall *mb = (MetaBall *)tc->obedit->data;
@@ -77,7 +61,7 @@ void createTransMBallVerts(TransInfo *t)
     tx = tc->data_ext = MEM_callocN(tc->data_len * sizeof(TransDataExtension),
                                     "MetaElement_TransExtension");
 
-    copy_m3_m4(mtx, tc->obedit->obmat);
+    copy_m3_m4(mtx, tc->obedit->object_to_world);
     pseudoinverse_m3_m3(smtx, mtx, PSEUDOINVERSE_EPSILON);
 
     for (ml = mb->editelems->first; ml; ml = ml->next) {
@@ -135,16 +119,23 @@ void createTransMBallVerts(TransInfo *t)
 /** \name Recalc Meta Ball
  * \{ */
 
-void recalcData_mball(TransInfo *t)
+static void recalcData_mball(TransInfo *t)
 {
   if (t->state != TRANS_CANCEL) {
-    applyProject(t);
+    applySnappingIndividual(t);
   }
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     if (tc->data_len) {
-      DEG_id_tag_update(tc->obedit->data, 0); /* sets recalc flags */
+      DEG_id_tag_update(tc->obedit->data, ID_RECALC_GEOMETRY);
     }
   }
 }
 
 /** \} */
+
+TransConvertTypeInfo TransConvertType_MBall = {
+    /* flags */ (T_EDIT | T_POINTS),
+    /* createTransData */ createTransMBallVerts,
+    /* recalcData */ recalcData_mball,
+    /* special_aftertrans_update */ NULL,
+};

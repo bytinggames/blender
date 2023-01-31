@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -39,7 +25,7 @@
 
 #ifdef RNA_RUNTIME
 
-static void rna_Text_filename_get(PointerRNA *ptr, char *value)
+static void rna_Text_filepath_get(PointerRNA *ptr, char *value)
 {
   Text *text = (Text *)ptr->data;
 
@@ -51,13 +37,13 @@ static void rna_Text_filename_get(PointerRNA *ptr, char *value)
   }
 }
 
-static int rna_Text_filename_length(PointerRNA *ptr)
+static int rna_Text_filepath_length(PointerRNA *ptr)
 {
   Text *text = (Text *)ptr->data;
   return (text->filepath) ? strlen(text->filepath) : 0;
 }
 
-static void rna_Text_filename_set(PointerRNA *ptr, const char *value)
+static void rna_Text_filepath_set(PointerRNA *ptr, const char *value)
 {
   Text *text = (Text *)ptr->data;
 
@@ -218,7 +204,7 @@ static void rna_def_text(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "filepath", PROP_STRING, PROP_NONE);
   RNA_def_property_string_funcs(
-      prop, "rna_Text_filename_get", "rna_Text_filename_length", "rna_Text_filename_set");
+      prop, "rna_Text_filepath_get", "rna_Text_filepath_length", "rna_Text_filepath_set");
   RNA_def_property_ui_text(prop, "File Path", "Filename of the text file");
 
   prop = RNA_def_property(srna, "is_dirty", PROP_BOOLEAN, PROP_NONE);
@@ -240,12 +226,12 @@ static void rna_def_text(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "use_module", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flags", TXT_ISSCRIPT);
-  RNA_def_property_ui_text(
-      prop, "Register", "Run this text as a script on loading, Text name must end with \".py\"");
+  RNA_def_property_ui_text(prop, "Register", "Run this text as a Python script on loading");
 
   prop = RNA_def_property(srna, "indentation", PROP_ENUM, PROP_NONE); /* as an enum */
   RNA_def_property_enum_bitflag_sdna(prop, NULL, "flags");
   RNA_def_property_enum_items(prop, indentation_items);
+  RNA_def_property_translation_context(prop, BLT_I18NCONTEXT_ID_TEXT);
   RNA_def_property_ui_text(prop, "Indentation", "Use tabs or spaces for indentation");
 
   prop = RNA_def_property(srna, "lines", PROP_COLLECTION, PROP_NONE);

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2016 Kévin Dietrich.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Kévin Dietrich. All rights reserved. */
 
 /** \file
  * \ingroup balembic
@@ -101,7 +85,7 @@ void ABCPointsWriter::do_write(HierarchyContext &context)
   sim.ob = context.object;
   sim.psys = psys;
 
-  psys->lattice_deform_data = psys_create_lattice_deform_data(&sim);
+  psys_sim_data_init(&sim);
 
   uint64_t index = 0;
   for (int p = 0; p < psys->totpart; p++) {
@@ -112,12 +96,12 @@ void ABCPointsWriter::do_write(HierarchyContext &context)
     }
 
     state.time = DEG_get_ctime(args_.depsgraph);
-    if (psys_get_particle_state(&sim, p, &state, 0) == 0) {
+    if (psys_get_particle_state(&sim, p, &state, false) == 0) {
       continue;
     }
 
     /* location */
-    mul_v3_m4v3(pos, context.object->imat, state.co);
+    mul_v3_m4v3(pos, context.object->world_to_object, state.co);
 
     /* velocity */
     sub_v3_v3v3(vel, state.co, psys->particles[p].prev_state.co);
@@ -129,10 +113,7 @@ void ABCPointsWriter::do_write(HierarchyContext &context)
     ids.push_back(index++);
   }
 
-  if (psys->lattice_deform_data) {
-    BKE_lattice_deform_data_destroy(psys->lattice_deform_data);
-    psys->lattice_deform_data = nullptr;
-  }
+  psys_sim_data_free(&sim);
 
   Alembic::Abc::P3fArraySample psample(points);
   Alembic::Abc::UInt64ArraySample idsample(ids);

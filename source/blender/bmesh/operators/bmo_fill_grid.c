@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -619,7 +605,7 @@ void bmo_grid_fill_exec(BMesh *bm, BMOperator *op)
      * extract two 'rail' loops from a single edge loop, see T72075. */
     BMO_error_raise(bm,
                     op,
-                    BMERR_INVALID_SELECTION,
+                    BMO_ERROR_CANCEL,
                     "Select two edge loops "
                     "or a single closed edge loop from which two edge loops can be calculated");
     goto cleanup;
@@ -634,7 +620,7 @@ void bmo_grid_fill_exec(BMesh *bm, BMOperator *op)
   v_b_last = ((LinkData *)BM_edgeloop_verts_get(estore_b)->last)->data;
 
   if (BM_edgeloop_is_closed(estore_a) || BM_edgeloop_is_closed(estore_b)) {
-    BMO_error_raise(bm, op, BMERR_INVALID_SELECTION, "Closed loops unsupported");
+    BMO_error_raise(bm, op, BMO_ERROR_CANCEL, "Closed loops unsupported");
     goto cleanup;
   }
 
@@ -645,20 +631,20 @@ void bmo_grid_fill_exec(BMesh *bm, BMOperator *op)
   bm_edgeloop_flag_set(estore_a, BM_ELEM_HIDDEN, true);
   bm_edgeloop_flag_set(estore_b, BM_ELEM_HIDDEN, true);
 
-  if ((BM_mesh_edgeloops_find_path(
-          bm, &eloops_rail, bm_edge_test_rail_cb, bm, v_a_first, v_b_first)) &&
-      (BM_mesh_edgeloops_find_path(
-          bm, &eloops_rail, bm_edge_test_rail_cb, bm, v_a_last, v_b_last))) {
+  if (BM_mesh_edgeloops_find_path(
+          bm, &eloops_rail, bm_edge_test_rail_cb, bm, v_a_first, v_b_first) &&
+      BM_mesh_edgeloops_find_path(
+          bm, &eloops_rail, bm_edge_test_rail_cb, bm, v_a_last, v_b_last)) {
     estore_rail_a = eloops_rail.first;
     estore_rail_b = eloops_rail.last;
   }
   else {
     BM_mesh_edgeloops_free(&eloops_rail);
 
-    if ((BM_mesh_edgeloops_find_path(
-            bm, &eloops_rail, bm_edge_test_rail_cb, bm, v_a_first, v_b_last)) &&
-        (BM_mesh_edgeloops_find_path(
-            bm, &eloops_rail, bm_edge_test_rail_cb, bm, v_a_last, v_b_first))) {
+    if (BM_mesh_edgeloops_find_path(
+            bm, &eloops_rail, bm_edge_test_rail_cb, bm, v_a_first, v_b_last) &&
+        BM_mesh_edgeloops_find_path(
+            bm, &eloops_rail, bm_edge_test_rail_cb, bm, v_a_last, v_b_first)) {
       estore_rail_a = eloops_rail.first;
       estore_rail_b = eloops_rail.last;
       BM_edgeloop_flip(bm, estore_b);
@@ -672,8 +658,7 @@ void bmo_grid_fill_exec(BMesh *bm, BMOperator *op)
   bm_edgeloop_flag_set(estore_b, BM_ELEM_HIDDEN, false);
 
   if (BLI_listbase_is_empty(&eloops_rail)) {
-    BMO_error_raise(
-        bm, op, BMERR_INVALID_SELECTION, "Loops are not connected by wire/boundary edges");
+    BMO_error_raise(bm, op, BMO_ERROR_CANCEL, "Loops are not connected by wire/boundary edges");
     goto cleanup;
   }
 
@@ -681,7 +666,7 @@ void bmo_grid_fill_exec(BMesh *bm, BMOperator *op)
   BLI_assert(v_a_last != v_b_last);
 
   if (BM_edgeloop_overlap_check(estore_rail_a, estore_rail_b)) {
-    BMO_error_raise(bm, op, BMERR_INVALID_SELECTION, "Connecting edge loops overlap");
+    BMO_error_raise(bm, op, BMO_ERROR_CANCEL, "Connecting edge loops overlap");
     goto cleanup;
   }
 

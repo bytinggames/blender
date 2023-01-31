@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edcurve
@@ -33,9 +19,10 @@
 #include "DNA_scene_types.h"
 
 #include "BKE_context.h"
-#include "BKE_font.h"
+#include "BKE_layer.h"
 #include "BKE_main.h"
 #include "BKE_undo_system.h"
+#include "BKE_vfont.h"
 
 #include "DEG_depsgraph.h"
 
@@ -321,8 +308,10 @@ static void undofont_free_data(UndoFont *uf)
 
 static Object *editfont_object_from_context(bContext *C)
 {
+  Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
-  Object *obedit = OBEDIT_FROM_VIEW_LAYER(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *obedit = BKE_view_layer_edit_object_get(view_layer);
   if (obedit && obedit->type == OB_FONT) {
     Curve *cu = obedit->data;
     EditFont *ef = cu->editfont;
@@ -341,7 +330,7 @@ static Object *editfont_object_from_context(bContext *C)
 
 typedef struct FontUndoStep {
   UndoStep step;
-  /* note: will split out into list for multi-object-editmode. */
+  /* NOTE: will split out into list for multi-object-editmode. */
   UndoRefID_Object obedit_ref;
   UndoFont data;
 } FontUndoStep;
@@ -379,7 +368,7 @@ static void font_undosys_step_decode(struct bContext *C,
 
   Curve *cu = obedit->data;
   undofont_to_editfont(&us->data, cu);
-  DEG_id_tag_update(&obedit->id, ID_RECALC_GEOMETRY);
+  DEG_id_tag_update(&cu->id, ID_RECALC_GEOMETRY);
 
   ED_undo_object_set_active_or_warn(
       CTX_data_scene(C), CTX_data_view_layer(C), obedit, us_p->name, &LOG);
@@ -405,7 +394,6 @@ static void font_undosys_foreach_ID_ref(UndoStep *us_p,
   foreach_ID_ref_fn(user_data, ((UndoRefID *)&us->obedit_ref));
 }
 
-/* Export for ED_undo_sys. */
 void ED_font_undosys_type(UndoType *ut)
 {
   ut->name = "Edit Font";

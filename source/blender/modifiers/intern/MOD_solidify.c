@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2005 by the Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2005 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup modifiers
@@ -40,6 +24,7 @@
 #include "UI_resources.h"
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "MOD_modifiertypes.h"
 #include "MOD_ui_common.h"
@@ -68,9 +53,7 @@ static void initData(ModifierData *md)
 #  pragma GCC diagnostic error "-Wsign-conversion"
 #endif
 
-static void requiredDataMask(Object *UNUSED(ob),
-                             ModifierData *md,
-                             CustomData_MeshMasks *r_cddata_masks)
+static void requiredDataMask(ModifierData *md, CustomData_MeshMasks *r_cddata_masks)
 {
   SolidifyModifierData *smd = (SolidifyModifierData *)md;
 
@@ -90,7 +73,7 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
     case MOD_SOLIDIFY_MODE_NONMANIFOLD:
       return MOD_solidify_nonmanifold_modifyMesh(md, ctx, mesh);
     default:
-      BLI_assert(0);
+      BLI_assert_unreachable();
   }
   return mesh;
 }
@@ -125,7 +108,7 @@ static void panel_draw(const bContext *UNUSED(C), Panel *panel)
     uiItemR(layout, ptr, "use_even_offset", 0, NULL, ICON_NONE);
   }
 
-  col = uiLayoutColumnWithHeading(layout, false, IFACE_("Rim"));
+  col = uiLayoutColumnWithHeading(layout, false, CTX_IFACE_(BLT_I18NCONTEXT_ID_MESH, "Rim"));
   uiItemR(col, ptr, "use_rim", 0, IFACE_("Fill"), ICON_NONE);
   sub = uiLayoutColumn(col, false);
   uiLayoutSetActive(sub, RNA_boolean_get(ptr, "use_rim"));
@@ -179,7 +162,8 @@ static void materials_panel_draw(const bContext *UNUSED(C), Panel *panel)
   uiItemR(layout, ptr, "material_offset", 0, NULL, ICON_NONE);
   col = uiLayoutColumn(layout, true);
   uiLayoutSetActive(col, RNA_boolean_get(ptr, "use_rim"));
-  uiItemR(col, ptr, "material_offset_rim", 0, IFACE_("Rim"), ICON_NONE);
+  uiItemR(
+      col, ptr, "material_offset_rim", 0, CTX_IFACE_(BLT_I18NCONTEXT_ID_MESH, "Rim"), ICON_NONE);
 }
 
 static void edge_data_panel_draw(const bContext *UNUSED(C), Panel *panel)
@@ -198,7 +182,7 @@ static void edge_data_panel_draw(const bContext *UNUSED(C), Panel *panel)
     col = uiLayoutColumn(layout, true);
     uiItemR(col, ptr, "edge_crease_inner", 0, IFACE_("Crease Inner"), ICON_NONE);
     uiItemR(col, ptr, "edge_crease_outer", 0, IFACE_("Outer"), ICON_NONE);
-    uiItemR(col, ptr, "edge_crease_rim", 0, IFACE_("Rim"), ICON_NONE);
+    uiItemR(col, ptr, "edge_crease_rim", 0, CTX_IFACE_(BLT_I18NCONTEXT_ID_MESH, "Rim"), ICON_NONE);
   }
   uiItemR(layout, ptr, "bevel_convex", UI_ITEM_R_SLIDER, NULL, ICON_NONE);
 }
@@ -233,7 +217,13 @@ static void vertex_group_panel_draw(const bContext *UNUSED(C), Panel *panel)
   col = uiLayoutColumn(layout, false);
   uiItemPointerR(
       col, ptr, "shell_vertex_group", &ob_ptr, "vertex_groups", IFACE_("Shell"), ICON_NONE);
-  uiItemPointerR(col, ptr, "rim_vertex_group", &ob_ptr, "vertex_groups", IFACE_("Rim"), ICON_NONE);
+  uiItemPointerR(col,
+                 ptr,
+                 "rim_vertex_group",
+                 &ob_ptr,
+                 "vertex_groups",
+                 CTX_IFACE_(BLT_I18NCONTEXT_ID_MESH, "Rim"),
+                 ICON_NONE);
 }
 
 static void panelRegister(ARegionType *region_type)
@@ -256,7 +246,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 ModifierTypeInfo modifierType_Solidify = {
-    /* name */ "Solidify",
+    /* name */ N_("Solidify"),
     /* structName */ "SolidifyModifierData",
     /* structSize */ sizeof(SolidifyModifierData),
     /* srna */ &RNA_SolidifyModifier,
@@ -274,7 +264,6 @@ ModifierTypeInfo modifierType_Solidify = {
     /* deformVertsEM */ NULL,
     /* deformMatricesEM */ NULL,
     /* modifyMesh */ modifyMesh,
-    /* modifyHair */ NULL,
     /* modifyGeometrySet */ NULL,
 
     /* initData */ initData,

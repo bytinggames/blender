@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -45,6 +31,13 @@
 #include "BPy_ViewMap.h"
 #include "BPy_ViewShape.h"
 
+#include "BKE_appdir.h"
+#include "DNA_scene_types.h"
+#include "FRS_freestyle.h"
+#include "RNA_access.h"
+#include "RNA_prototypes.h"
+#include "bpy_rna.h" /* pyrna_struct_CreatePyObject() */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -52,12 +45,6 @@ extern "C" {
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 //------------------------ MODULE FUNCTIONS ----------------------------------
-
-#include "BKE_appdir.h"
-#include "DNA_scene_types.h"
-#include "FRS_freestyle.h"
-#include "RNA_access.h"
-#include "bpy_rna.h" /* pyrna_struct_CreatePyObject() */
 
 static char Freestyle_getCurrentScene___doc__[] =
     ".. function:: getCurrentScene()\n"
@@ -213,7 +200,7 @@ static PyObject *Freestyle_evaluateColorRamp(PyObject * /*self*/, PyObject *args
   ColorBand *coba;
   float in, out[4];
 
-  if (!(PyArg_ParseTuple(args, "O!f", &pyrna_struct_Type, &py_srna, &in))) {
+  if (!PyArg_ParseTuple(args, "O!f", &pyrna_struct_Type, &py_srna, &in)) {
     return nullptr;
   }
   if (!RNA_struct_is_a(py_srna->ptr.type, &RNA_ColorRamp)) {
@@ -252,7 +239,7 @@ static PyObject *Freestyle_evaluateCurveMappingF(PyObject * /*self*/, PyObject *
   int cur;
   float value;
 
-  if (!(PyArg_ParseTuple(args, "O!if", &pyrna_struct_Type, &py_srna, &cur, &value))) {
+  if (!PyArg_ParseTuple(args, "O!if", &pyrna_struct_Type, &py_srna, &cur, &value)) {
     return nullptr;
   }
   if (!RNA_struct_is_a(py_srna->ptr.type, &RNA_CurveMapping)) {
@@ -266,7 +253,7 @@ static PyObject *Freestyle_evaluateCurveMappingF(PyObject * /*self*/, PyObject *
   cumap = (CurveMapping *)py_srna->ptr.data;
   BKE_curvemapping_init(cumap);
   /* disable extrapolation if enabled */
-  if ((cumap->flag & CUMA_EXTEND_EXTRAPOLATE)) {
+  if (cumap->flag & CUMA_EXTEND_EXTRAPOLATE) {
     cumap->flag &= ~CUMA_EXTEND_EXTRAPOLATE;
     BKE_curvemapping_changed(cumap, false);
   }
@@ -544,7 +531,7 @@ PyObject *Freestyle_Init(void)
   const char *const path = BKE_appdir_folder_id(BLENDER_SYSTEM_SCRIPTS, "freestyle");
   if (path) {
     char modpath[FILE_MAX];
-    BLI_join_dirfile(modpath, sizeof(modpath), path, "modules");
+    BLI_path_join(modpath, sizeof(modpath), path, "modules");
     PyObject *sys_path = PySys_GetObject("path"); /* borrow */
     PyObject *py_modpath = PyUnicode_FromString(modpath);
     PyList_Append(sys_path, py_modpath);

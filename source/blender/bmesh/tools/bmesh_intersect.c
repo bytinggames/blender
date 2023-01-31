@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -379,7 +365,7 @@ static BMVert *bm_isect_edge_tri(struct ISectState *s,
   } \
   (void)0
 
-  /* order tri, then order (1-2, 2-3)*/
+  /* Order tri, then order (1-2, 2-3). */
 #define KEY_EDGE_TRI_ORDER(k) \
   { \
     if (k[2] > k[3]) { \
@@ -560,8 +546,8 @@ static void bm_isect_tri_tri(
   /* vert-vert
    * --------- */
   {
-    /* first check in any verts are touching
-     * (any case where we wont create new verts)
+    /* first check if any verts are touching
+     * (any case where we won't create new verts)
      */
     uint i_a;
     for (i_a = 0; i_a < 3; i_a++) {
@@ -901,7 +887,7 @@ static int isect_bvhtree_point_v3(BVHTree *tree, const float **looptris, const f
   const float dir[3] = {1.0f, 0.0f, 0.0f};
 
   /* Need to initialize hit even tho it's not used.
-   * This is to make it so kd-tree believes we didn't intersect anything and
+   * This is to make it so KD-tree believes we didn't intersect anything and
    * keeps calling the intersect callback.
    */
   hit.index = -1;
@@ -947,14 +933,6 @@ static int isect_bvhtree_point_v3(BVHTree *tree, const float **looptris, const f
 
 #endif /* USE_BVH */
 
-/**
- * Intersect tessellated faces
- * leaving the resulting edges tagged.
- *
- * \param test_fn: Return value: -1: skip, 0: tree_a, 1: tree_b (use_self == false)
- * \param boolean_mode: -1: no-boolean, 0: intersection... see #BMESH_ISECT_BOOLEAN_ISECT.
- * \return true if the mesh is changed (intersections cut or faces removed from boolean).
- */
 bool BM_mesh_intersect(BMesh *bm,
                        struct BMLoop *(*looptris)[3],
                        const int looptris_tot,
@@ -1285,7 +1263,7 @@ bool BM_mesh_intersect(BMesh *bm,
         /* only start on an edge-case */
         /* pass */
       }
-      else if ((!BM_elem_flag_test(v_a, BM_ELEM_TAG)) && (!BM_elem_flag_test(v_b, BM_ELEM_TAG))) {
+      else if (!BM_elem_flag_test(v_a, BM_ELEM_TAG) && !BM_elem_flag_test(v_b, BM_ELEM_TAG)) {
         /* simple case, single edge spans face */
         BMVert **splice_pair;
         BM_elem_flag_enable(e_pair[1], BM_ELEM_TAG);
@@ -1512,7 +1490,7 @@ bool BM_mesh_intersect(BMesh *bm,
   (void)use_separate;
 #endif /* USE_SEPARATE */
 
-  if ((boolean_mode != BMESH_ISECT_BOOLEAN_NONE)) {
+  if (boolean_mode != BMESH_ISECT_BOOLEAN_NONE) {
     BVHTree *tree_pair[2] = {tree_a, tree_b};
 
     /* group vars */
@@ -1606,7 +1584,7 @@ bool BM_mesh_intersect(BMesh *bm,
       for (node = s.vert_dissolve; node; node = node->next) {
         BMVert *v = node->link;
         if (BM_vert_is_edge_pair(v)) {
-          /* we wont create degenerate faces from this */
+          /* we won't create degenerate faces from this */
           bool ok = true;
 
           /* would we create a 2-sided-face?

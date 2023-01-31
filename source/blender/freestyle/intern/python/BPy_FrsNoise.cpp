@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -22,6 +8,8 @@
 #include "BPy_Convert.h"
 
 #include "../system/RandGen.h"
+
+#include "BLI_sys_types.h"
 
 #include <sstream>
 
@@ -122,8 +110,8 @@ static PyObject *FrsNoise_turbulence_smooth(BPy_FrsNoise *self, PyObject *args, 
 {
   static const char *kwlist[] = {"v", "oct", nullptr};
 
-  double x;  // note: this has to be a double (not float)
-  unsigned nbOctaves = 8;
+  double x;  // NOTE: this has to be a double (not float)
+  uint nbOctaves = 8;
 
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "d|I", (char **)kwlist, &x, &nbOctaves)) {
     return nullptr;
@@ -135,7 +123,7 @@ static PyObject *FrsNoise_turbulence1(BPy_FrsNoise *self, PyObject *args, PyObje
 {
   static const char *kwlist[] = {"v", "freq", "amp", "oct", nullptr};
   float f1, f2, f3;
-  unsigned int i = 4;
+  uint i = 4;
 
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "fff|I", (char **)kwlist, &f1, &f2, &f3, &i)) {
     return nullptr;
@@ -164,7 +152,7 @@ static PyObject *FrsNoise_turbulence2(BPy_FrsNoise *self, PyObject *args, PyObje
   static const char *kwlist[] = {"v", "freq", "amp", "oct", nullptr};
   PyObject *obj1;
   float f2, f3;
-  unsigned int i = 4;
+  uint i = 4;
   Vec2f vec;
 
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "Off|I", (char **)kwlist, &obj1, &f2, &f3, &i)) {
@@ -200,7 +188,7 @@ static PyObject *FrsNoise_turbulence3(BPy_FrsNoise *self, PyObject *args, PyObje
   static const char *kwlist[] = {"v", "freq", "amp", "oct", nullptr};
   PyObject *obj1;
   float f2, f3;
-  unsigned int i = 4;
+  uint i = 4;
   Vec3f vec;
 
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "Off|I", (char **)kwlist, &obj1, &f2, &f3, &i)) {
@@ -340,7 +328,7 @@ PyTypeObject FrsNoise_Type = {
     nullptr,                                   /* tp_as_number */
     nullptr,                                   /* tp_as_sequence */
     nullptr,                                   /* tp_as_mapping */
-    nullptr,                                   /* tp_hash  */
+    nullptr,                                   /* tp_hash */
     nullptr,                                   /* tp_call */
     nullptr,                                   /* tp_str */
     nullptr,                                   /* tp_getattro */

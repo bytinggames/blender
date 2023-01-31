@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup balembic
@@ -27,24 +13,32 @@
 
 #include "MEM_guardedalloc.h"
 
+#include "DNA_customdata_types.h"
 #include "DNA_material_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 #include "DNA_object_types.h"
 
 #include "BLI_compiler_compat.h"
+#include "BLI_edgehash.h"
+#include "BLI_index_range.hh"
 #include "BLI_listbase.h"
 #include "BLI_math_geom.h"
 
+#include "BKE_attribute.hh"
+#include "BKE_lib_id.h"
 #include "BKE_main.h"
 #include "BKE_material.h"
 #include "BKE_mesh.h"
 #include "BKE_modifier.h"
 #include "BKE_object.h"
 
+using Alembic::Abc::FloatArraySamplePtr;
 using Alembic::Abc::Int32ArraySamplePtr;
+using Alembic::Abc::IV3fArrayProperty;
 using Alembic::Abc::P3fArraySamplePtr;
 using Alembic::Abc::PropertyHeader;
+using Alembic::Abc::V3fArraySamplePtr;
 
 using Alembic::AbcGeom::IC3fGeomParam;
 using Alembic::AbcGeom::IC4fGeomParam;
@@ -85,10 +79,8 @@ static void assign_materials(Main *bmain,
                              const std::map<std::string, int> &mat_index_map)
 {
   std::map<std::string, int>::const_iterator it;
-  for (it = mat_index_map.begin(); it != mat_index_map.end(); ++it) {
-    if (!BKE_object_material_slot_add(bmain, ob)) {
-      return;
-    }
+  if (mat_index_map.size() > MAXMAT) {
+    return;
   }
 
   std::map<std::string, Material *> matname_to_material = build_material_map(bmain);
@@ -102,13 +94,17 @@ static void assign_materials(Main *bmain,
     mat_iter = matname_to_material.find(mat_name);
     if (mat_iter == matname_to_material.end()) {
       assigned_mat = BKE_material_add(bmain, mat_name.c_str());
+      id_us_min(&assigned_mat->id);
       matname_to_material[mat_name] = assigned_mat;
     }
     else {
       assigned_mat = mat_iter->second;
     }
 
-    BKE_object_material_assign(bmain, ob, assigned_mat, mat_index, BKE_MAT_ASSIGN_OBDATA);
+    BKE_object_material_assign_single_obdata(bmain, ob, assigned_mat, mat_index);
+  }
+  if (ob->totcol > 0) {
+    ob->actcol = 1;
   }
 }
 
@@ -121,6 +117,7 @@ struct AbcMeshData {
   P3fArraySamplePtr positions;
   P3fArraySamplePtr ceil_positions;
 
+  AbcUvScope uv_scope;
   V2fArraySamplePtr uvs;
   UInt32ArraySamplePtr uvs_indices;
 };
@@ -128,7 +125,7 @@ struct AbcMeshData {
 static void read_mverts_interp(MVert *mverts,
                                const P3fArraySamplePtr &positions,
                                const P3fArraySamplePtr &ceil_positions,
-                               const float weight)
+                               const double weight)
 {
   float tmp[3];
   for (int i = 0; i < positions->size(); i++) {
@@ -136,10 +133,8 @@ static void read_mverts_interp(MVert *mverts,
     const Imath::V3f &floor_pos = (*positions)[i];
     const Imath::V3f &ceil_pos = (*ceil_positions)[i];
 
-    interp_v3_v3v3(tmp, floor_pos.getValue(), ceil_pos.getValue(), weight);
+    interp_v3_v3v3(tmp, floor_pos.getValue(), ceil_pos.getValue(), float(weight));
     copy_zup_from_yup(mvert.co, tmp);
-
-    mvert.bweight = 0;
   }
 }
 
@@ -155,27 +150,25 @@ static void read_mverts(CDStreamConfig &config, const AbcMeshData &mesh_data)
     return;
   }
 
-  read_mverts(mverts, positions, nullptr);
+  read_mverts(*config.mesh, positions, nullptr);
 }
 
-void read_mverts(MVert *mverts, const P3fArraySamplePtr positions, const N3fArraySamplePtr normals)
+void read_mverts(Mesh &mesh, const P3fArraySamplePtr positions, const N3fArraySamplePtr normals)
 {
+  MutableSpan<MVert> verts = mesh.verts_for_write();
   for (int i = 0; i < positions->size(); i++) {
-    MVert &mvert = mverts[i];
+    MVert &mvert = verts[i];
     Imath::V3f pos_in = (*positions)[i];
 
     copy_zup_from_yup(mvert.co, pos_in.getValue());
-
-    mvert.bweight = 0;
-
-    if (normals) {
+  }
+  if (normals) {
+    float(*vert_normals)[3] = BKE_mesh_vertex_normals_for_write(&mesh);
+    for (const int64_t i : IndexRange(normals->size())) {
       Imath::V3f nor_in = (*normals)[i];
-
-      short no[3];
-      normal_float_to_short_v3(no, nor_in.getValue());
-
-      copy_zup_from_yup(mvert.no, no);
+      copy_zup_from_yup(vert_normals[i], nor_in.getValue());
     }
+    BKE_mesh_vertex_normals_clear_dirty(&mesh);
   }
 }
 
@@ -192,11 +185,12 @@ static void read_mpolys(CDStreamConfig &config, const AbcMeshData &mesh_data)
 
   const UInt32ArraySamplePtr &uvs_indices = mesh_data.uvs_indices;
 
-  const bool do_uvs = (mloopuvs && uvs && uvs_indices) &&
-                      (uvs_indices->size() == face_indices->size());
-  unsigned int loop_index = 0;
-  unsigned int rev_loop_index = 0;
-  unsigned int uv_index = 0;
+  const bool do_uvs = (mloopuvs && uvs && uvs_indices);
+  const bool do_uvs_per_loop = do_uvs && mesh_data.uv_scope == ABC_UV_SCOPE_LOOP;
+  BLI_assert(!do_uvs || mesh_data.uv_scope != ABC_UV_SCOPE_NONE);
+  uint loop_index = 0;
+  uint rev_loop_index = 0;
+  uint uv_index = 0;
   bool seen_invalid_geometry = false;
 
   for (int i = 0; i < face_counts->size(); i++) {
@@ -227,8 +221,7 @@ static void read_mpolys(CDStreamConfig &config, const AbcMeshData &mesh_data)
 
       if (do_uvs) {
         MLoopUV &loopuv = mloopuvs[rev_loop_index];
-
-        uv_index = (*uvs_indices)[loop_index];
+        uv_index = (*uvs_indices)[do_uvs_per_loop ? loop_index : loop.v];
 
         /* Some Alembic files are broken (or at least export UVs in a way we don't expect). */
         if (uv_index >= uvs_size) {
@@ -253,7 +246,7 @@ static void read_mpolys(CDStreamConfig &config, const AbcMeshData &mesh_data)
 static void process_no_normals(CDStreamConfig &config)
 {
   /* Absence of normals in the Alembic mesh is interpreted as 'smooth'. */
-  BKE_mesh_calc_normals(config.mesh);
+  BKE_mesh_normals_tag_dirty(config.mesh);
 }
 
 static void process_loop_normals(CDStreamConfig &config, const N3fArraySamplePtr loop_normals_ptr)
@@ -278,7 +271,7 @@ static void process_loop_normals(CDStreamConfig &config, const N3fArraySamplePtr
   float(*lnors)[3] = static_cast<float(*)[3]>(
       MEM_malloc_arrayN(loop_count, sizeof(float[3]), "ABC::FaceNormals"));
 
-  MPoly *mpoly = mesh->mpoly;
+  MPoly *mpoly = mesh->polys_for_write().data();
   const N3fArraySample &loop_normals = *loop_normals_ptr;
   int abc_index = 0;
   for (int i = 0, e = mesh->totpoly; i < e; i++, mpoly++) {
@@ -313,7 +306,7 @@ static void process_vertex_normals(CDStreamConfig &config,
   }
 
   config.mesh->flag |= ME_AUTOSMOOTH;
-  BKE_mesh_set_custom_normals_from_vertices(config.mesh, vnors);
+  BKE_mesh_set_custom_normals_from_verts(config.mesh, vnors);
   MEM_freeN(vnors);
 }
 
@@ -357,46 +350,50 @@ BLI_INLINE void read_uvs_params(CDStreamConfig &config,
   IV2fGeomParam::Sample uvsamp;
   uv.getIndexed(uvsamp, selector);
 
-  abc_data.uvs = uvsamp.getVals();
-  abc_data.uvs_indices = uvsamp.getIndices();
+  UInt32ArraySamplePtr uvs_indices = uvsamp.getIndices();
 
-  if (abc_data.uvs_indices->size() == config.totloop) {
-    std::string name = Alembic::Abc::GetSourceName(uv.getMetaData());
+  const AbcUvScope uv_scope = get_uv_scope(uv.getScope(), config, uvs_indices);
 
-    /* According to the convention, primary UVs should have had their name
-     * set using Alembic::Abc::SetSourceName, but you can't expect everyone
-     * to follow it! :) */
-    if (name.empty()) {
-      name = uv.getName();
-    }
-
-    void *cd_ptr = config.add_customdata_cb(config.mesh, name.c_str(), CD_MLOOPUV);
-    config.mloopuv = static_cast<MLoopUV *>(cd_ptr);
+  if (uv_scope == ABC_UV_SCOPE_NONE) {
+    return;
   }
+
+  abc_data.uv_scope = uv_scope;
+  abc_data.uvs = uvsamp.getVals();
+  abc_data.uvs_indices = uvs_indices;
+
+  std::string name = Alembic::Abc::GetSourceName(uv.getMetaData());
+
+  /* According to the convention, primary UVs should have had their name
+   * set using Alembic::Abc::SetSourceName, but you can't expect everyone
+   * to follow it! :) */
+  if (name.empty()) {
+    name = uv.getName();
+  }
+
+  void *cd_ptr = config.add_customdata_cb(config.mesh, name.c_str(), CD_MLOOPUV);
+  config.mloopuv = static_cast<MLoopUV *>(cd_ptr);
 }
 
 static void *add_customdata_cb(Mesh *mesh, const char *name, int data_type)
 {
-  CustomDataType cd_data_type = static_cast<CustomDataType>(data_type);
-  void *cd_ptr;
-  CustomData *loopdata;
-  int numloops;
+  eCustomDataType cd_data_type = static_cast<eCustomDataType>(data_type);
 
   /* unsupported custom data type -- don't do anything. */
-  if (!ELEM(cd_data_type, CD_MLOOPUV, CD_MLOOPCOL)) {
+  if (!ELEM(cd_data_type, CD_MLOOPUV, CD_PROP_BYTE_COLOR)) {
     return nullptr;
   }
 
-  loopdata = &mesh->ldata;
-  cd_ptr = CustomData_get_layer_named(loopdata, cd_data_type, name);
+  void *cd_ptr = CustomData_get_layer_named(&mesh->ldata, cd_data_type, name);
   if (cd_ptr != nullptr) {
     /* layer already exists, so just return it. */
     return cd_ptr;
   }
 
   /* Create a new layer. */
-  numloops = mesh->totloop;
-  cd_ptr = CustomData_add_layer_named(loopdata, cd_data_type, CD_DEFAULT, nullptr, numloops, name);
+  int numloops = mesh->totloop;
+  cd_ptr = CustomData_add_layer_named(
+      &mesh->ldata, cd_data_type, CD_SET_DEFAULT, nullptr, numloops, name);
   return cd_ptr;
 }
 
@@ -410,6 +407,63 @@ static void get_weight_and_index(CDStreamConfig &config,
 
   config.index = i0;
   config.ceil_index = i1;
+}
+
+static V3fArraySamplePtr get_velocity_prop(const ICompoundProperty &schema,
+                                           const ISampleSelector &selector,
+                                           const std::string &name)
+{
+  for (size_t i = 0; i < schema.getNumProperties(); i++) {
+    const PropertyHeader &header = schema.getPropertyHeader(i);
+
+    if (header.isCompound()) {
+      const ICompoundProperty &prop = ICompoundProperty(schema, header.getName());
+
+      if (has_property(prop, name)) {
+        /* Header cannot be null here, as its presence is checked via has_property, so it is safe
+         * to dereference. */
+        const PropertyHeader *header = prop.getPropertyHeader(name);
+        if (!IV3fArrayProperty::matches(*header)) {
+          continue;
+        }
+
+        const IV3fArrayProperty &velocity_prop = IV3fArrayProperty(prop, name, 0);
+        if (velocity_prop) {
+          return velocity_prop.getValue(selector);
+        }
+      }
+    }
+    else if (header.isArray()) {
+      if (header.getName() == name && IV3fArrayProperty::matches(header)) {
+        const IV3fArrayProperty &velocity_prop = IV3fArrayProperty(schema, name, 0);
+        return velocity_prop.getValue(selector);
+      }
+    }
+  }
+
+  return V3fArraySamplePtr();
+}
+
+static void read_velocity(const V3fArraySamplePtr &velocities,
+                          const CDStreamConfig &config,
+                          const float velocity_scale)
+{
+  const int num_velocity_vectors = int(velocities->size());
+  if (num_velocity_vectors != config.mesh->totvert) {
+    /* Files containing videogrammetry data may be malformed and export velocity data on missing
+     * frames (most likely by copying the last valid data). */
+    return;
+  }
+
+  CustomDataLayer *velocity_layer = BKE_id_attribute_new(
+      &config.mesh->id, "velocity", CD_PROP_FLOAT3, ATTR_DOMAIN_POINT, nullptr);
+  float(*velocity)[3] = (float(*)[3])velocity_layer->data;
+
+  for (int i = 0; i < num_velocity_vectors; i++) {
+    const Imath::V3f &vel_in = (*velocities)[i];
+    copy_zup_from_yup(velocity[i], vel_in.getValue());
+    mul_v3_fl(velocity[i], velocity_scale);
+  }
 }
 
 static void read_mesh_sample(const std::string &iobject_full_name,
@@ -439,6 +493,7 @@ static void read_mesh_sample(const std::string &iobject_full_name,
 
   if ((settings->read_flag & MOD_MESHSEQ_READ_VERT) != 0) {
     read_mverts(config, abc_mesh_data);
+    read_generated_coordinates(schema.getArbGeomParams(), config, selector);
   }
 
   if ((settings->read_flag & MOD_MESHSEQ_READ_POLY) != 0) {
@@ -449,18 +504,23 @@ static void read_mesh_sample(const std::string &iobject_full_name,
   if ((settings->read_flag & (MOD_MESHSEQ_READ_UV | MOD_MESHSEQ_READ_COLOR)) != 0) {
     read_custom_data(iobject_full_name, schema.getArbGeomParams(), config, selector);
   }
+
+  if (!settings->velocity_name.empty() && settings->velocity_scale != 0.0f) {
+    V3fArraySamplePtr velocities = get_velocity_prop(schema, selector, settings->velocity_name);
+    if (velocities) {
+      read_velocity(velocities, config, settings->velocity_scale);
+    }
+  }
 }
 
 CDStreamConfig get_config(Mesh *mesh, const bool use_vertex_interpolation)
 {
   CDStreamConfig config;
-
-  BLI_assert(mesh->mvert || mesh->totvert == 0);
-
   config.mesh = mesh;
-  config.mvert = mesh->mvert;
-  config.mloop = mesh->mloop;
-  config.mpoly = mesh->mpoly;
+  config.mvert = mesh->verts_for_write().data();
+  config.mloop = mesh->loops_for_write().data();
+  config.mpoly = mesh->polys_for_write().data();
+  config.totvert = mesh->totvert;
   config.totloop = mesh->totloop;
   config.totpoly = mesh->totpoly;
   config.loopdata = &mesh->ldata;
@@ -553,13 +613,9 @@ void AbcMeshReader::readObjectData(Main *bmain, const Alembic::Abc::ISampleSelec
   m_object = BKE_object_add_only_object(bmain, OB_MESH, m_object_name.c_str());
   m_object->data = mesh;
 
-  Mesh *read_mesh = this->read_mesh(mesh, sample_sel, MOD_MESHSEQ_READ_ALL, nullptr);
+  Mesh *read_mesh = this->read_mesh(mesh, sample_sel, MOD_MESHSEQ_READ_ALL, "", 0.0f, nullptr);
   if (read_mesh != mesh) {
-    /* XXX fixme after 2.80; mesh->flag isn't copied by BKE_mesh_nomain_to_mesh() */
-    /* read_mesh can be freed by BKE_mesh_nomain_to_mesh(), so get the flag before that happens. */
-    short autosmooth = (read_mesh->flag & ME_AUTOSMOOTH);
-    BKE_mesh_nomain_to_mesh(read_mesh, mesh, m_object, &CD_MASK_MESH, true);
-    mesh->flag |= autosmooth;
+    BKE_mesh_nomain_to_mesh(read_mesh, mesh, m_object);
   }
 
   if (m_settings->validate_meshes) {
@@ -568,7 +624,7 @@ void AbcMeshReader::readObjectData(Main *bmain, const Alembic::Abc::ISampleSelec
 
   readFaceSetsSample(bmain, mesh, sample_sel);
 
-  if (has_animations(m_schema, m_settings)) {
+  if (m_settings->always_add_cache_reader || has_animations(m_schema, m_settings)) {
     addCacheModifier();
   }
 }
@@ -593,7 +649,7 @@ bool AbcMeshReader::accepts_object_type(
   return true;
 }
 
-bool AbcMeshReader::topology_changed(Mesh *existing_mesh, const ISampleSelector &sample_sel)
+bool AbcMeshReader::topology_changed(const Mesh *existing_mesh, const ISampleSelector &sample_sel)
 {
   IPolyMeshSchema::Sample sample;
   try {
@@ -620,7 +676,9 @@ bool AbcMeshReader::topology_changed(Mesh *existing_mesh, const ISampleSelector 
 
 Mesh *AbcMeshReader::read_mesh(Mesh *existing_mesh,
                                const ISampleSelector &sample_sel,
-                               int read_flag,
+                               const int read_flag,
+                               const char *velocity_name,
+                               const float velocity_scale,
                                const char **err_str)
 {
   IPolyMeshSchema::Sample sample;
@@ -663,6 +721,8 @@ Mesh *AbcMeshReader::read_mesh(Mesh *existing_mesh,
   /* Only read point data when streaming meshes, unless we need to create new ones. */
   ImportSettings settings;
   settings.read_flag |= read_flag;
+  settings.velocity_name = velocity_name;
+  settings.velocity_scale = velocity_scale;
 
   if (topology_changed(existing_mesh, sample_sel)) {
     new_mesh = BKE_mesh_new_nomain_from_template(
@@ -701,7 +761,11 @@ Mesh *AbcMeshReader::read_mesh(Mesh *existing_mesh,
     size_t num_polys = new_mesh->totpoly;
     if (num_polys > 0) {
       std::map<std::string, int> mat_map;
-      assign_facesets_to_mpoly(sample_sel, new_mesh->mpoly, num_polys, mat_map);
+      bke::MutableAttributeAccessor attributes = new_mesh->attributes_for_write();
+      bke::SpanAttributeWriter<int> material_indices =
+          attributes.lookup_or_add_for_write_span<int>("material_index", ATTR_DOMAIN_FACE);
+      assign_facesets_to_material_indices(sample_sel, material_indices.span, mat_map);
+      material_indices.finish();
     }
 
     return new_mesh;
@@ -710,10 +774,9 @@ Mesh *AbcMeshReader::read_mesh(Mesh *existing_mesh,
   return existing_mesh;
 }
 
-void AbcMeshReader::assign_facesets_to_mpoly(const ISampleSelector &sample_sel,
-                                             MPoly *mpoly,
-                                             int totpoly,
-                                             std::map<std::string, int> &r_mat_map)
+void AbcMeshReader::assign_facesets_to_material_indices(const ISampleSelector &sample_sel,
+                                                        MutableSpan<int> material_indices,
+                                                        std::map<std::string, int> &r_mat_map)
 {
   std::vector<std::string> face_sets;
   m_schema.getFaceSetNames(face_sets);
@@ -746,13 +809,12 @@ void AbcMeshReader::assign_facesets_to_mpoly(const ISampleSelector &sample_sel,
     for (size_t l = 0; l < num_group_faces; l++) {
       size_t pos = (*group_faces)[l];
 
-      if (pos >= totpoly) {
+      if (pos >= material_indices.size()) {
         std::cerr << "Faceset overflow on " << faceset.getName() << '\n';
         break;
       }
 
-      MPoly &poly = mpoly[pos];
-      poly.mat_nr = assigned_mat - 1;
+      material_indices[pos] = assigned_mat - 1;
     }
   }
 }
@@ -760,24 +822,15 @@ void AbcMeshReader::assign_facesets_to_mpoly(const ISampleSelector &sample_sel,
 void AbcMeshReader::readFaceSetsSample(Main *bmain, Mesh *mesh, const ISampleSelector &sample_sel)
 {
   std::map<std::string, int> mat_map;
-  assign_facesets_to_mpoly(sample_sel, mesh->mpoly, mesh->totpoly, mat_map);
+  bke::MutableAttributeAccessor attributes = mesh->attributes_for_write();
+  bke::SpanAttributeWriter<int> material_indices = attributes.lookup_or_add_for_write_span<int>(
+      "material_index", ATTR_DOMAIN_FACE);
+  assign_facesets_to_material_indices(sample_sel, material_indices.span, mat_map);
+  material_indices.finish();
   utils::assign_materials(bmain, m_object, mat_map);
 }
 
 /* ************************************************************************** */
-
-BLI_INLINE MEdge *find_edge(MEdge *edges, int totedge, int v1, int v2)
-{
-  for (int i = 0, e = totedge; i < e; i++) {
-    MEdge &edge = edges[i];
-
-    if (edge.v1 == v1 && edge.v2 == v2) {
-      return &edge;
-    }
-  }
-
-  return nullptr;
-}
 
 static void read_subd_sample(const std::string &iobject_full_name,
                              ImportSettings *settings,
@@ -819,6 +872,79 @@ static void read_subd_sample(const std::string &iobject_full_name,
   if ((settings->read_flag & (MOD_MESHSEQ_READ_UV | MOD_MESHSEQ_READ_COLOR)) != 0) {
     read_custom_data(iobject_full_name, schema.getArbGeomParams(), config, selector);
   }
+
+  if (!settings->velocity_name.empty() && settings->velocity_scale != 0.0f) {
+    V3fArraySamplePtr velocities = get_velocity_prop(schema, selector, settings->velocity_name);
+    if (velocities) {
+      read_velocity(velocities, config, settings->velocity_scale);
+    }
+  }
+}
+
+static void read_vertex_creases(Mesh *mesh,
+                                const Int32ArraySamplePtr &indices,
+                                const FloatArraySamplePtr &sharpnesses)
+{
+  if (!(indices && sharpnesses && indices->size() == sharpnesses->size() &&
+        indices->size() != 0)) {
+    return;
+  }
+
+  float *vertex_crease_data = (float *)CustomData_add_layer(
+      &mesh->vdata, CD_CREASE, CD_SET_DEFAULT, nullptr, mesh->totvert);
+  const int totvert = mesh->totvert;
+
+  for (int i = 0, v = indices->size(); i < v; ++i) {
+    const int idx = (*indices)[i];
+
+    if (idx >= totvert) {
+      continue;
+    }
+
+    vertex_crease_data[idx] = (*sharpnesses)[i];
+  }
+}
+
+static void read_edge_creases(Mesh *mesh,
+                              const Int32ArraySamplePtr &indices,
+                              const FloatArraySamplePtr &sharpnesses)
+{
+  if (!(indices && sharpnesses)) {
+    return;
+  }
+
+  MutableSpan<MEdge> edges = mesh->edges_for_write();
+  EdgeHash *edge_hash = BLI_edgehash_new_ex(__func__, edges.size());
+
+  float *creases = static_cast<float *>(
+      CustomData_add_layer(&mesh->edata, CD_CREASE, CD_SET_DEFAULT, nullptr, edges.size()));
+
+  for (const int i : edges.index_range()) {
+    MEdge *edge = &edges[i];
+    BLI_edgehash_insert(edge_hash, edge->v1, edge->v2, edge);
+  }
+
+  for (int i = 0, s = 0, e = indices->size(); i < e; i += 2, s++) {
+    int v1 = (*indices)[i];
+    int v2 = (*indices)[i + 1];
+
+    if (v2 < v1) {
+      /* It appears to be common to store edges with the smallest index first, in which case this
+       * prevents us from doing the second search below. */
+      std::swap(v1, v2);
+    }
+
+    MEdge *edge = static_cast<MEdge *>(BLI_edgehash_lookup(edge_hash, v1, v2));
+    if (edge == nullptr) {
+      edge = static_cast<MEdge *>(BLI_edgehash_lookup(edge_hash, v2, v1));
+    }
+
+    if (edge) {
+      creases[edge - edges.data()] = unit_float_to_uchar_clamp((*sharpnesses)[s]);
+    }
+  }
+
+  BLI_edgehash_free(edge_hash, nullptr);
 }
 
 /* ************************************************************************** */
@@ -866,9 +992,9 @@ void AbcSubDReader::readObjectData(Main *bmain, const Alembic::Abc::ISampleSelec
   m_object = BKE_object_add_only_object(bmain, OB_MESH, m_object_name.c_str());
   m_object->data = mesh;
 
-  Mesh *read_mesh = this->read_mesh(mesh, sample_sel, MOD_MESHSEQ_READ_ALL, nullptr);
+  Mesh *read_mesh = this->read_mesh(mesh, sample_sel, MOD_MESHSEQ_READ_ALL, "", 0.0f, nullptr);
   if (read_mesh != mesh) {
-    BKE_mesh_nomain_to_mesh(read_mesh, mesh, m_object, &CD_MASK_MESH, true);
+    BKE_mesh_nomain_to_mesh(read_mesh, mesh, m_object);
   }
 
   ISubDSchema::Sample sample;
@@ -884,48 +1010,24 @@ void AbcSubDReader::readObjectData(Main *bmain, const Alembic::Abc::ISampleSelec
     return;
   }
 
-  Int32ArraySamplePtr indices = sample.getCreaseIndices();
-  Alembic::Abc::FloatArraySamplePtr sharpnesses = sample.getCreaseSharpnesses();
+  read_edge_creases(mesh, sample.getCreaseIndices(), sample.getCreaseSharpnesses());
 
-  if (indices && sharpnesses) {
-    MEdge *edges = mesh->medge;
-    int totedge = mesh->totedge;
-
-    for (int i = 0, s = 0, e = indices->size(); i < e; i += 2, s++) {
-      int v1 = (*indices)[i];
-      int v2 = (*indices)[i + 1];
-
-      if (v2 < v1) {
-        /* It appears to be common to store edges with the smallest index first, in which case this
-         * prevents us from doing the second search below. */
-        std::swap(v1, v2);
-      }
-
-      MEdge *edge = find_edge(edges, totedge, v1, v2);
-      if (edge == nullptr) {
-        edge = find_edge(edges, totedge, v2, v1);
-      }
-
-      if (edge) {
-        edge->crease = unit_float_to_uchar_clamp((*sharpnesses)[s]);
-      }
-    }
-
-    mesh->cd_flag |= ME_CDFLAG_EDGE_CREASE;
-  }
+  read_vertex_creases(mesh, sample.getCornerIndices(), sample.getCornerSharpnesses());
 
   if (m_settings->validate_meshes) {
     BKE_mesh_validate(mesh, false, false);
   }
 
-  if (has_animations(m_schema, m_settings)) {
+  if (m_settings->always_add_cache_reader || has_animations(m_schema, m_settings)) {
     addCacheModifier();
   }
 }
 
 Mesh *AbcSubDReader::read_mesh(Mesh *existing_mesh,
                                const ISampleSelector &sample_sel,
-                               int read_flag,
+                               const int read_flag,
+                               const char *velocity_name,
+                               const float velocity_scale,
                                const char **err_str)
 {
   ISubDSchema::Sample sample;
@@ -952,6 +1054,8 @@ Mesh *AbcSubDReader::read_mesh(Mesh *existing_mesh,
 
   ImportSettings settings;
   settings.read_flag |= read_flag;
+  settings.velocity_name = velocity_name;
+  settings.velocity_scale = velocity_scale;
 
   if (existing_mesh->totvert != positions->size()) {
     new_mesh = BKE_mesh_new_nomain_from_template(

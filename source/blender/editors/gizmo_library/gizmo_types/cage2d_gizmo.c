@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2014 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2014 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edgizmolib
@@ -98,62 +82,10 @@ static bool gizmo_calc_rect_view_margin(const wmGizmo *gz, const float dims[2], 
     zero_v2(margin);
     return false;
   }
-  margin[0] = ((handle_size * scale_xy[0]));
-  margin[1] = ((handle_size * scale_xy[1]));
+
+  margin[0] = (handle_size * scale_xy[0]);
+  margin[1] = (handle_size * scale_xy[1]);
   return true;
-}
-
-/* -------------------------------------------------------------------- */
-
-static void gizmo_rect_pivot_from_scale_part(int part, float r_pt[2], bool r_constrain_axis[2])
-{
-  bool x = true, y = true;
-  switch (part) {
-    case ED_GIZMO_CAGE2D_PART_SCALE_MIN_X: {
-      ARRAY_SET_ITEMS(r_pt, 0.5, 0.0);
-      x = false;
-      break;
-    }
-    case ED_GIZMO_CAGE2D_PART_SCALE_MAX_X: {
-      ARRAY_SET_ITEMS(r_pt, -0.5, 0.0);
-      x = false;
-      break;
-    }
-    case ED_GIZMO_CAGE2D_PART_SCALE_MIN_Y: {
-      ARRAY_SET_ITEMS(r_pt, 0.0, 0.5);
-      y = false;
-      break;
-    }
-    case ED_GIZMO_CAGE2D_PART_SCALE_MAX_Y: {
-      ARRAY_SET_ITEMS(r_pt, 0.0, -0.5);
-      y = false;
-      break;
-    }
-    case ED_GIZMO_CAGE2D_PART_SCALE_MIN_X_MIN_Y: {
-      ARRAY_SET_ITEMS(r_pt, 0.5, 0.5);
-      x = y = false;
-      break;
-    }
-    case ED_GIZMO_CAGE2D_PART_SCALE_MIN_X_MAX_Y: {
-      ARRAY_SET_ITEMS(r_pt, 0.5, -0.5);
-      x = y = false;
-      break;
-    }
-    case ED_GIZMO_CAGE2D_PART_SCALE_MAX_X_MIN_Y: {
-      ARRAY_SET_ITEMS(r_pt, -0.5, 0.5);
-      x = y = false;
-      break;
-    }
-    case ED_GIZMO_CAGE2D_PART_SCALE_MAX_X_MAX_Y: {
-      ARRAY_SET_ITEMS(r_pt, -0.5, -0.5);
-      x = y = false;
-      break;
-    }
-    default:
-      BLI_assert(0);
-  }
-  r_constrain_axis[0] = x;
-  r_constrain_axis[1] = y;
 }
 
 /* -------------------------------------------------------------------- */
@@ -167,7 +99,8 @@ static void cage2d_draw_box_corners(const rctf *r,
                                     const float color[3],
                                     const float line_width)
 {
-  uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
+  /* NOTE(Metal): Prefer using 3D coordinates with 3D shader, even if rendering 2D gizmo's. */
+  uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
   immBindBuiltinProgram(GPU_SHADER_3D_POLYLINE_UNIFORM_COLOR);
   immUniformColor3fv(color);
@@ -180,25 +113,25 @@ static void cage2d_draw_box_corners(const rctf *r,
 
   immBegin(GPU_PRIM_LINES, 16);
 
-  immVertex2f(pos, r->xmin, r->ymin + margin[1]);
-  immVertex2f(pos, r->xmin, r->ymin);
-  immVertex2f(pos, r->xmin, r->ymin);
-  immVertex2f(pos, r->xmin + margin[0], r->ymin);
+  immVertex3f(pos, r->xmin, r->ymin + margin[1], 0.0f);
+  immVertex3f(pos, r->xmin, r->ymin, 0.0f);
+  immVertex3f(pos, r->xmin, r->ymin, 0.0f);
+  immVertex3f(pos, r->xmin + margin[0], r->ymin, 0.0f);
 
-  immVertex2f(pos, r->xmax, r->ymin + margin[1]);
-  immVertex2f(pos, r->xmax, r->ymin);
-  immVertex2f(pos, r->xmax, r->ymin);
-  immVertex2f(pos, r->xmax - margin[0], r->ymin);
+  immVertex3f(pos, r->xmax, r->ymin + margin[1], 0.0f);
+  immVertex3f(pos, r->xmax, r->ymin, 0.0f);
+  immVertex3f(pos, r->xmax, r->ymin, 0.0f);
+  immVertex3f(pos, r->xmax - margin[0], r->ymin, 0.0f);
 
-  immVertex2f(pos, r->xmax, r->ymax - margin[1]);
-  immVertex2f(pos, r->xmax, r->ymax);
-  immVertex2f(pos, r->xmax, r->ymax);
-  immVertex2f(pos, r->xmax - margin[0], r->ymax);
+  immVertex3f(pos, r->xmax, r->ymax - margin[1], 0.0f);
+  immVertex3f(pos, r->xmax, r->ymax, 0.0f);
+  immVertex3f(pos, r->xmax, r->ymax, 0.0f);
+  immVertex3f(pos, r->xmax - margin[0], r->ymax, 0.0f);
 
-  immVertex2f(pos, r->xmin, r->ymax - margin[1]);
-  immVertex2f(pos, r->xmin, r->ymax);
-  immVertex2f(pos, r->xmin, r->ymax);
-  immVertex2f(pos, r->xmin + margin[0], r->ymax);
+  immVertex3f(pos, r->xmin, r->ymax - margin[1], 0.0f);
+  immVertex3f(pos, r->xmin, r->ymax, 0.0f);
+  immVertex3f(pos, r->xmin, r->ymax, 0.0f);
+  immVertex3f(pos, r->xmin + margin[0], r->ymax, 0.0f);
 
   immEnd();
 
@@ -400,6 +333,7 @@ static void cage2d_draw_box_interaction(const float color[4],
       ARRAY_SET_ITEMS(verts[1], r_rotate.xmin, r_rotate.ymax);
       ARRAY_SET_ITEMS(verts[2], r_rotate.xmax, r_rotate.ymax);
       ARRAY_SET_ITEMS(verts[3], r_rotate.xmax, r_rotate.ymin);
+
       verts_len = 4;
       if (is_solid) {
         prim_type = GPU_PRIM_TRI_FAN;
@@ -454,7 +388,7 @@ static void cage2d_draw_box_interaction(const float color[4],
       .pos = GPU_vertformat_attr_add(format, "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT),
       .col = GPU_vertformat_attr_add(format, "color", GPU_COMP_F32, 3, GPU_FETCH_FLOAT),
   };
-  immBindBuiltinProgram(is_solid ? GPU_SHADER_2D_FLAT_COLOR : GPU_SHADER_3D_POLYLINE_FLAT_COLOR);
+  immBindBuiltinProgram(is_solid ? GPU_SHADER_3D_FLAT_COLOR : GPU_SHADER_3D_POLYLINE_FLAT_COLOR);
 
   {
     if (is_solid) {
@@ -507,12 +441,35 @@ static void cage2d_draw_box_interaction(const float color[4],
 static void imm_draw_point_aspect_2d(
     uint pos, float x, float y, float rad_x, float rad_y, bool solid)
 {
-  immBegin(solid ? GPU_PRIM_TRI_FAN : GPU_PRIM_LINE_LOOP, 4);
-  immVertex2f(pos, x - rad_x, y - rad_y);
-  immVertex2f(pos, x - rad_x, y + rad_y);
-  immVertex2f(pos, x + rad_x, y + rad_y);
-  immVertex2f(pos, x + rad_x, y - rad_y);
-  immEnd();
+  if (solid) {
+    /* NOTE(Metal/AMD): Small Triangle-list primitives more optimal for GPU HW than Triangle-strip.
+     */
+    immBegin(GPU_PRIM_TRIS, 6);
+    immVertex2f(pos, x - rad_x, y - rad_y);
+    immVertex2f(pos, x - rad_x, y + rad_y);
+    immVertex2f(pos, x + rad_x, y + rad_y);
+
+    immVertex2f(pos, x - rad_x, y - rad_y);
+    immVertex2f(pos, x + rad_x, y + rad_y);
+    immVertex2f(pos, x + rad_x, y - rad_y);
+    immEnd();
+  }
+  else {
+    /* NOTE(Metal/AMD): Small Line-list primitives more optimal for GPU HW than Line-strip. */
+    immBegin(GPU_PRIM_LINES, 8);
+    immVertex2f(pos, x - rad_x, y - rad_y);
+    immVertex2f(pos, x - rad_x, y + rad_y);
+
+    immVertex2f(pos, x - rad_x, y + rad_y);
+    immVertex2f(pos, x + rad_x, y + rad_y);
+
+    immVertex2f(pos, x + rad_x, y + rad_y);
+    immVertex2f(pos, x + rad_x, y - rad_y);
+
+    immVertex2f(pos, x + rad_x, y - rad_y);
+    immVertex2f(pos, x - rad_x, y - rad_y);
+    immEnd();
+  }
 }
 
 static void cage2d_draw_circle_wire(const rctf *r,
@@ -522,7 +479,9 @@ static void cage2d_draw_circle_wire(const rctf *r,
                                     const int draw_options,
                                     const float line_width)
 {
-  uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
+  /* NOTE(Metal): Prefer using 3D coordinates with 3D shader input, even if rendering 2D gizmo's.
+   */
+  uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 3, GPU_FETCH_FLOAT);
 
   immBindBuiltinProgram(GPU_SHADER_3D_POLYLINE_UNIFORM_COLOR);
   immUniformColor3fv(color);
@@ -532,17 +491,28 @@ static void cage2d_draw_circle_wire(const rctf *r,
   immUniform2fv("viewportSize", &viewport[2]);
   immUniform1f("lineWidth", line_width * U.pixelsize);
 
-  immBegin(GPU_PRIM_LINE_LOOP, 4);
-  immVertex2f(pos, r->xmin, r->ymin);
-  immVertex2f(pos, r->xmax, r->ymin);
-  immVertex2f(pos, r->xmax, r->ymax);
-  immVertex2f(pos, r->xmin, r->ymax);
+  /* Small 'lines' primitives more efficient for hardware processing than line-strip. */
+  immBegin(GPU_PRIM_LINES, 8);
+  immVertex3f(pos, r->xmin, r->ymin, 0.0f);
+  immVertex3f(pos, r->xmax, r->ymin, 0.0f);
+
+  immVertex3f(pos, r->xmax, r->ymin, 0.0f);
+  immVertex3f(pos, r->xmax, r->ymax, 0.0f);
+
+  immVertex3f(pos, r->xmax, r->ymax, 0.0f);
+  immVertex3f(pos, r->xmin, r->ymax, 0.0f);
+
+  immVertex3f(pos, r->xmin, r->ymax, 0.0f);
+  immVertex3f(pos, r->xmin, r->ymin, 0.0f);
   immEnd();
 
   if (transform_flag & ED_GIZMO_CAGE2D_XFORM_FLAG_ROTATE) {
-    immBegin(GPU_PRIM_LINE_LOOP, 2);
-    immVertex2f(pos, BLI_rctf_cent_x(r), r->ymax);
-    immVertex2f(pos, BLI_rctf_cent_x(r), r->ymax + margin[1]);
+    immBegin(GPU_PRIM_LINES, 4);
+    immVertex3f(pos, BLI_rctf_cent_x(r), r->ymax, 0.0f);
+    immVertex3f(pos, BLI_rctf_cent_x(r), r->ymax + margin[1], 0.0f);
+
+    immVertex3f(pos, BLI_rctf_cent_x(r), r->ymax + margin[1], 0.0f);
+    immVertex3f(pos, BLI_rctf_cent_x(r), r->ymax, 0.0f);
     immEnd();
   }
 
@@ -552,10 +522,10 @@ static void cage2d_draw_circle_wire(const rctf *r,
       const float center[2] = {BLI_rctf_cent_x(r), BLI_rctf_cent_y(r)};
 
       immBegin(GPU_PRIM_LINES, 4);
-      immVertex2f(pos, center[0] - rad[0], center[1] - rad[1]);
-      immVertex2f(pos, center[0] + rad[0], center[1] + rad[1]);
-      immVertex2f(pos, center[0] + rad[0], center[1] - rad[1]);
-      immVertex2f(pos, center[0] - rad[0], center[1] + rad[1]);
+      immVertex3f(pos, center[0] - rad[0], center[1] - rad[1], 0.0f);
+      immVertex3f(pos, center[0] + rad[0], center[1] + rad[1], 0.0f);
+      immVertex3f(pos, center[0] + rad[0], center[1] - rad[1], 0.0f);
+      immVertex3f(pos, center[0] - rad[0], center[1] + rad[1], 0.0f);
       immEnd();
     }
   }
@@ -576,7 +546,7 @@ static void cage2d_draw_circle_handles(const rctf *r,
   const int resolu = 12;
   const float rad[2] = {margin[0] / 3, margin[1] / 3};
 
-  immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+  immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
   immUniformColor3fv(color);
 
   /* should  really divide by two, but looks too bulky. */
@@ -628,7 +598,7 @@ static void gizmo_cage2d_draw_intern(wmGizmo *gz,
   if (false) {
     GPU_blend(GPU_BLEND_ALPHA);
     uint pos = GPU_vertformat_attr_add(immVertexFormat(), "pos", GPU_COMP_F32, 2, GPU_FETCH_FLOAT);
-    immBindBuiltinProgram(GPU_SHADER_2D_UNIFORM_COLOR);
+    immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
     immUniformColor4fv((const float[4]){1, 1, 1, 0.5f});
     float s = 0.5f;
     immRectf(pos, -s, -s, s, s);
@@ -769,12 +739,12 @@ static int gizmo_cage2d_get_cursor(wmGizmo *gz)
       return WM_CURSOR_NSEW_SCROLL;
     case ED_GIZMO_CAGE2D_PART_SCALE_MIN_X:
     case ED_GIZMO_CAGE2D_PART_SCALE_MAX_X:
-      return WM_CURSOR_X_MOVE;
+      return WM_CURSOR_NSEW_SCROLL;
     case ED_GIZMO_CAGE2D_PART_SCALE_MIN_Y:
     case ED_GIZMO_CAGE2D_PART_SCALE_MAX_Y:
-      return WM_CURSOR_Y_MOVE;
+      return WM_CURSOR_NSEW_SCROLL;
 
-      /* TODO diagonal cursor */
+      /* TODO: diagonal cursor. */
     case ED_GIZMO_CAGE2D_PART_SCALE_MIN_X_MIN_Y:
     case ED_GIZMO_CAGE2D_PART_SCALE_MAX_X_MIN_Y:
       return WM_CURSOR_NSEW_SCROLL;
@@ -935,6 +905,57 @@ static int gizmo_cage2d_invoke(bContext *C, wmGizmo *gz, const wmEvent *event)
   gz->interaction_data = data;
 
   return OPERATOR_RUNNING_MODAL;
+}
+
+static void gizmo_rect_pivot_from_scale_part(int part, float r_pt[2], bool r_constrain_axis[2])
+{
+  bool x = true, y = true;
+  switch (part) {
+    case ED_GIZMO_CAGE2D_PART_SCALE_MIN_X: {
+      ARRAY_SET_ITEMS(r_pt, 0.5, 0.0);
+      x = false;
+      break;
+    }
+    case ED_GIZMO_CAGE2D_PART_SCALE_MAX_X: {
+      ARRAY_SET_ITEMS(r_pt, -0.5, 0.0);
+      x = false;
+      break;
+    }
+    case ED_GIZMO_CAGE2D_PART_SCALE_MIN_Y: {
+      ARRAY_SET_ITEMS(r_pt, 0.0, 0.5);
+      y = false;
+      break;
+    }
+    case ED_GIZMO_CAGE2D_PART_SCALE_MAX_Y: {
+      ARRAY_SET_ITEMS(r_pt, 0.0, -0.5);
+      y = false;
+      break;
+    }
+    case ED_GIZMO_CAGE2D_PART_SCALE_MIN_X_MIN_Y: {
+      ARRAY_SET_ITEMS(r_pt, 0.5, 0.5);
+      x = y = false;
+      break;
+    }
+    case ED_GIZMO_CAGE2D_PART_SCALE_MIN_X_MAX_Y: {
+      ARRAY_SET_ITEMS(r_pt, 0.5, -0.5);
+      x = y = false;
+      break;
+    }
+    case ED_GIZMO_CAGE2D_PART_SCALE_MAX_X_MIN_Y: {
+      ARRAY_SET_ITEMS(r_pt, -0.5, 0.5);
+      x = y = false;
+      break;
+    }
+    case ED_GIZMO_CAGE2D_PART_SCALE_MAX_X_MAX_Y: {
+      ARRAY_SET_ITEMS(r_pt, -0.5, -0.5);
+      x = y = false;
+      break;
+    }
+    default:
+      BLI_assert(0);
+  }
+  r_constrain_axis[0] = x;
+  r_constrain_axis[1] = y;
 }
 
 static int gizmo_cage2d_modal(bContext *C,

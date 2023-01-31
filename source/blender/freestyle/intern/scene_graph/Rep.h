@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -102,7 +88,7 @@ class Rep : public BaseObject {
     }
   }
 
-  /*! Accept the corresponding visitor
+  /** Accept the corresponding visitor
    *  Must be overload by inherited classes
    */
   virtual void accept(SceneVisitor &v)
@@ -113,13 +99,13 @@ class Rep : public BaseObject {
     v.visitRep(*this);
   }
 
-  /*! Computes the rep bounding box.
+  /** Computes the rep bounding box.
    *  Each Inherited rep must compute its bbox depending on the way the data are stored. So, each
    * inherited class must overload this method
    */
   virtual void ComputeBBox() = 0;
 
-  /*! Returns the rep bounding box */
+  /** Returns the rep bounding box */
   virtual const BBox<Vec3f> &bbox() const
   {
     return _BBox;
@@ -145,7 +131,7 @@ class Rep : public BaseObject {
     return _FrsMaterial;
   }
 
-  /*! Sets the Rep bounding box */
+  /** Sets the Rep bounding box */
   virtual void setBBox(const BBox<Vec3f> &iBox)
   {
     _BBox = iBox;

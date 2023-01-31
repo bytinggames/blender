@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 import bpy
 from bpy.types import (
@@ -28,6 +10,7 @@ from bpy.props import (
     CollectionProperty,
     StringProperty,
 )
+from bpy.app.translations import pgettext_tip as tip_
 
 # ########## Datablock previews... ##########
 
@@ -43,22 +26,30 @@ class WM_OT_previews_batch_generate(Operator):
     files: CollectionProperty(
         type=OperatorFileListElement,
         options={'HIDDEN', 'SKIP_SAVE'},
+        name="",
+        description="Collection of file paths with common `directory` root",
     )
 
     directory: StringProperty(
         maxlen=1024,
         subtype='FILE_PATH',
         options={'HIDDEN', 'SKIP_SAVE'},
+        name="",
+        description="Root path of all files listed in `files` collection",
     )
 
     # Show only images/videos, and directories!
     filter_blender: BoolProperty(
         default=True,
         options={'HIDDEN', 'SKIP_SAVE'},
+        name="",
+        description="Show Blender files in the File Browser",
     )
     filter_folder: BoolProperty(
         default=True,
         options={'HIDDEN', 'SKIP_SAVE'},
+        name="",
+        description="Show folders in the File Browser",
     )
 
     # -----------
@@ -133,7 +124,7 @@ class WM_OT_previews_batch_generate(Operator):
             if not self.use_backups:
                 cmd.append("--no_backups")
             if subprocess.call(cmd):
-                self.report({'ERROR'}, "Previews generation process failed for file '%s'!" % blen_path)
+                self.report({'ERROR'}, tip_("Previews generation process failed for file '%s'!") % blen_path)
                 context.window_manager.progress_end()
                 return {'CANCELLED'}
             context.window_manager.progress_update(i + 1)
@@ -244,7 +235,7 @@ class WM_OT_previews_batch_clear(Operator):
             if not self.use_backups:
                 cmd.append("--no_backups")
             if subprocess.call(cmd):
-                self.report({'ERROR'}, "Previews clear process failed for file '%s'!" % blen_path)
+                self.report({'ERROR'}, tip_("Previews clear process failed for file '%s'!") % blen_path)
                 context.window_manager.progress_end()
                 return {'CANCELLED'}
             context.window_manager.progress_update(i + 1)
@@ -255,7 +246,7 @@ class WM_OT_previews_batch_clear(Operator):
 
 class WM_OT_blend_strings_utf8_validate(Operator):
     """Check and fix all strings in current .blend file to be valid UTF-8 Unicode """ \
-    """(needed for some old, 2.4x area files)"""
+        """(needed for some old, 2.4x area files)"""
     bl_idname = "wm.blend_strings_utf8_validate"
     bl_label = "Validate .blend strings"
     bl_options = {'REGISTER'}

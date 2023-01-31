@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -184,8 +168,8 @@ IDTypeInfo IDType_ID_IP = {
     .name = "Ipo",
     .name_plural = "ipos",
     .translation_context = "",
-    .flags = IDTYPE_FLAGS_NO_COPY | IDTYPE_FLAGS_NO_LIBLINKING | IDTYPE_FLAGS_NO_MAKELOCAL |
-             IDTYPE_FLAGS_NO_ANIMDATA,
+    .flags = IDTYPE_FLAGS_NO_COPY | IDTYPE_FLAGS_NO_LIBLINKING | IDTYPE_FLAGS_NO_ANIMDATA,
+    .asset_type_info = NULL,
 
     .init_data = NULL,
     .copy_data = NULL,
@@ -193,7 +177,8 @@ IDTypeInfo IDType_ID_IP = {
     .make_local = NULL,
     .foreach_id = NULL,
     .foreach_cache = NULL,
-    .owner_get = NULL,
+    .foreach_path = NULL,
+    .owner_pointer_get = NULL,
 
     .blend_write = NULL,
     .blend_read_data = ipo_blend_read_data,
@@ -262,7 +247,7 @@ static AdrBit2Path *adrcode_bitmaps_to_paths(int blocktype, int adrcode, int *to
 /* Object types */
 static const char *ob_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -377,7 +362,7 @@ static const char *ob_adrcodes_to_paths(int adrcode, int *array_index)
  */
 static const char *pchan_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -434,7 +419,7 @@ static const char *pchan_adrcodes_to_paths(int adrcode, int *array_index)
 /* Constraint types */
 static const char *constraint_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -605,7 +590,7 @@ static const char *mtex_adrcodes_to_paths(int adrcode, int *UNUSED(array_index))
 /* Texture types */
 static const char *texture_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -692,7 +677,7 @@ static const char *texture_adrcodes_to_paths(int adrcode, int *array_index)
 /* Material Types */
 static const char *material_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -785,7 +770,7 @@ static const char *material_adrcodes_to_paths(int adrcode, int *array_index)
 /* Camera Types */
 static const char *camera_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -830,7 +815,7 @@ static const char *camera_adrcodes_to_paths(int adrcode, int *array_index)
 /* Light Types */
 static const char *light_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -875,7 +860,7 @@ static const char *light_adrcodes_to_paths(int adrcode, int *array_index)
 /* Sound Types */
 static const char *sound_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -901,7 +886,7 @@ static const char *sound_adrcodes_to_paths(int adrcode, int *array_index)
 /* World Types */
 static const char *world_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -947,7 +932,7 @@ static const char *world_adrcodes_to_paths(int adrcode, int *array_index)
 /* Particle Types */
 static const char *particle_adrcodes_to_paths(int adrcode, int *array_index)
 {
-  /* set array index like this in-case nothing sets it correctly  */
+  /* Set array index like this in-case nothing sets it correctly. */
   *array_index = 0;
 
   /* result depends on adrcode */
@@ -1105,7 +1090,7 @@ static char *get_rna_access(ID *id,
       propname = particle_adrcodes_to_paths(adrcode, &dummy_index);
       break;
 
-    case ID_CU: /* curve */
+    case ID_CU_LEGACY: /* curve */
       /* this used to be a 'dummy' curve which got evaluated on the fly...
        * now we've got real var for this!
        */
@@ -1135,7 +1120,7 @@ static char *get_rna_access(ID *id,
       /* special case for rotdiff drivers... we don't need a property for this... */
       break;
 
-    /* TODO... add other blocktypes... */
+    /* TODO: add other block-types. */
     default:
       CLOG_WARN(&LOG, "No path for blocktype %d, adrcode %d yet", blocktype, adrcode);
       break;
@@ -1162,7 +1147,7 @@ static char *get_rna_access(ID *id,
 
   /* 'buf' _must_ be initialized in this block */
   /* append preceding bits to path */
-  /* note, strings are not escapted and they should be! */
+  /* NOTE: strings are not escaped and they should be! */
   if ((actname && actname[0]) && (constname && constname[0])) {
     /* Constraint in Pose-Channel */
     char actname_esc[sizeof(((bActionChannel *)NULL)->name) * 2];
@@ -1305,7 +1290,7 @@ static ChannelDriver *idriver_to_cdriver(IpoDriver *idriver)
         dtar = &dvar->targets[1];
         dtar->id = (ID *)idriver->ob;
         dtar->idtype = ID_OB;
-        if (idriver->name[0]) { /* xxx... for safety */
+        if (idriver->name[0]) { /* XXX: for safety. */
           BLI_strncpy(
               dtar->pchan_name, idriver->name + DRIVER_NAME_OFFS, sizeof(dtar->pchan_name));
         }
@@ -1358,12 +1343,12 @@ static void fcurve_add_to_list(
     bActionGroup *agrp = NULL;
 
     /* init the temp action */
-    memset(&tmp_act, 0, sizeof(bAction)); /* XXX only enable this line if we get errors */
+    memset(&tmp_act, 0, sizeof(bAction)); /* XXX: Only enable this line if we get errors. */
     tmp_act.groups.first = groups->first;
     tmp_act.groups.last = groups->last;
     tmp_act.curves.first = list->first;
     tmp_act.curves.last = list->last;
-    /* ... xxx, the other vars don't need to be filled in */
+    /* XXX: The other vars don't need to be filled in. */
 
     /* get the group to use */
     agrp = BKE_action_group_find_name(&tmp_act, grpname);
@@ -1507,7 +1492,7 @@ static void icu_to_fcurves(ID *id,
      * 3) filter the keyframes for the flag of interest
      */
     for (b = 0; b < totbits; b++, abp++) {
-      unsigned int i = 0;
+      uint i = 0;
 
       /* make a copy of existing base-data if not the last curve */
       if (b < (totbits - 1)) {
@@ -1557,7 +1542,7 @@ static void icu_to_fcurves(ID *id,
           }
 
           /* correct values, by checking if the flag of interest is set */
-          if (((int)(dst->vec[1][1])) & (abp->bit)) {
+          if ((int)(dst->vec[1][1]) & (abp->bit)) {
             dst->vec[0][1] = dst->vec[1][1] = dst->vec[2][1] = 1.0f;
           }
           else {
@@ -1577,7 +1562,7 @@ static void icu_to_fcurves(ID *id,
     }
   }
   else {
-    unsigned int i = 0;
+    uint i = 0;
 
     /* get rna-path
      * - we will need to set the 'disabled' flag if no path is able to be made (for now)
@@ -2014,7 +1999,8 @@ static void nlastrips_to_animdata(ID *id, ListBase *strips)
         }
       }
 
-      /* try to add this strip to the current NLA-Track (i.e. the 'last' one on the stack atm) */
+      /* Try to add this strip to the current NLA-Track
+       * (i.e. the 'last' one on the stack at the moment). */
       if (BKE_nlatrack_add_strip(nlt, strip, false) == 0) {
         /* trying to add to the current failed (no space),
          * so add a new track to the stack, and add to that...
@@ -2038,20 +2024,61 @@ static void nlastrips_to_animdata(ID *id, ListBase *strips)
   }
 }
 
+typedef struct Seq_callback_data {
+  Main *bmain;
+  Scene *scene;
+  AnimData *adt;
+} Seq_callback_data;
+
+static bool seq_convert_callback(Sequence *seq, void *userdata)
+{
+  IpoCurve *icu = (seq->ipo) ? seq->ipo->curve.first : NULL;
+  short adrcode = SEQ_FAC1;
+
+  if (G.debug & G_DEBUG) {
+    printf("\tconverting sequence strip %s\n", seq->name + 2);
+  }
+
+  if (ELEM(NULL, seq->ipo, icu)) {
+    seq->flag |= SEQ_USE_EFFECT_DEFAULT_FADE;
+    return true;
+  }
+
+  /* patch adrcode, so that we can map
+   * to different DNA variables later
+   * (semi-hack (tm) )
+   */
+  switch (seq->type) {
+    case SEQ_TYPE_IMAGE:
+    case SEQ_TYPE_META:
+    case SEQ_TYPE_SCENE:
+    case SEQ_TYPE_MOVIE:
+    case SEQ_TYPE_COLOR:
+      adrcode = SEQ_FAC_OPACITY;
+      break;
+    case SEQ_TYPE_SPEED:
+      adrcode = SEQ_FAC_SPEED;
+      break;
+  }
+  icu->adrcode = adrcode;
+
+  Seq_callback_data *cd = (Seq_callback_data *)userdata;
+
+  /* convert IPO */
+  ipo_to_animdata(cd->bmain, (ID *)cd->scene, seq->ipo, NULL, NULL, seq);
+
+  if (cd->adt->action) {
+    cd->adt->action->idroot = ID_SCE; /* scene-rooted */
+  }
+
+  id_us_min(&seq->ipo->id);
+  seq->ipo = NULL;
+  return true;
+}
+
 /* *************************************************** */
 /* External API - Only Called from do_versions() */
 
-/* Called from do_versions() in readfile.c to convert the old 'IPO/adrcode' system
- * to the new 'Animato/RNA' system.
- *
- * The basic method used here, is to loop over data-blocks which have IPO-data,
- * and add those IPO's to new AnimData blocks as Actions.
- * Action/NLA data only works well for Objects, so these only need to be checked for there.
- *
- * Data that has been converted should be freed immediately, which means that it is immediately
- * clear which data-blocks have yet to be converted, and also prevent freeing errors when we exit.
- */
-/* XXX currently done after all file reading... */
 void do_versions_ipos_to_animato(Main *bmain)
 {
   ListBase drivers = {NULL, NULL};
@@ -2087,7 +2114,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* check if object has any animation data */
     if (ob->nlastrips.first) {
       /* Add AnimData block */
-      BKE_animdata_add_id(id);
+      BKE_animdata_ensure_id(id);
 
       /* IPO first to take into any non-NLA'd Object Animation */
       if (ob->ipo) {
@@ -2109,13 +2136,13 @@ void do_versions_ipos_to_animato(Main *bmain)
     }
     else if ((ob->ipo) || (ob->action)) {
       /* Add AnimData block */
-      AnimData *adt = BKE_animdata_add_id(id);
+      AnimData *adt = BKE_animdata_ensure_id(id);
 
       /* Action first - so that Action name get conserved */
       if (ob->action) {
         action_to_animdata(id, ob->action);
 
-        /* only decrease usercount if this Action isn't now being used by AnimData */
+        /* Only decrease user-count if this Action isn't now being used by AnimData. */
         if (ob->action != adt->action) {
           id_us_min(&ob->action->id);
           ob->action = NULL;
@@ -2133,7 +2160,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* check PoseChannels for constraints with local data */
     if (ob->pose) {
       /* Verify if there's AnimData block */
-      BKE_animdata_add_id(id);
+      BKE_animdata_ensure_id(id);
 
       for (pchan = ob->pose->chanbase.first; pchan; pchan = pchan->next) {
         for (con = pchan->constraints.first; con; con = con->next) {
@@ -2159,7 +2186,7 @@ void do_versions_ipos_to_animato(Main *bmain)
        */
       if (con->ipo) {
         /* Verify if there's AnimData block, just in case */
-        BKE_animdata_add_id(id);
+        BKE_animdata_ensure_id(id);
 
         /* although this was the constraint's local IPO, we still need to provide con
          * so that drivers can be added properly...
@@ -2176,7 +2203,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* check constraint channels - we need to remove them anyway... */
     if (ob->constraintChannels.first) {
       /* Verify if there's AnimData block */
-      BKE_animdata_add_id(id);
+      BKE_animdata_ensure_id(id);
 
       for (conchan = ob->constraintChannels.first; conchan; conchan = conchann) {
         /* get pointer to next Constraint Channel */
@@ -2217,9 +2244,9 @@ void do_versions_ipos_to_animato(Main *bmain)
      */
     if (key->ipo) {
       /* Add AnimData block */
-      AnimData *adt = BKE_animdata_add_id(id);
+      AnimData *adt = BKE_animdata_ensure_id(id);
 
-      /* Convert Shapekey data... */
+      /* Convert Shape-key data... */
       ipo_to_animdata(bmain, id, key->ipo, NULL, NULL, NULL);
 
       if (adt->action) {
@@ -2242,7 +2269,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* we're only interested in the IPO */
     if (ma->ipo) {
       /* Add AnimData block */
-      AnimData *adt = BKE_animdata_add_id(id);
+      AnimData *adt = BKE_animdata_ensure_id(id);
 
       /* Convert Material data... */
       ipo_to_animdata(bmain, id, ma->ipo, NULL, NULL, NULL);
@@ -2267,7 +2294,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* we're only interested in the IPO */
     if (wo->ipo) {
       /* Add AnimData block */
-      AnimData *adt = BKE_animdata_add_id(id);
+      AnimData *adt = BKE_animdata_ensure_id(id);
 
       /* Convert World data... */
       ipo_to_animdata(bmain, id, wo->ipo, NULL, NULL, NULL);
@@ -2286,52 +2313,8 @@ void do_versions_ipos_to_animato(Main *bmain)
     Scene *scene = (Scene *)id;
     Editing *ed = scene->ed;
     if (ed && ed->seqbasep) {
-      Sequence *seq;
-
-      AnimData *adt = BKE_animdata_add_id(id);
-
-      SEQ_ALL_BEGIN (ed, seq) {
-        IpoCurve *icu = (seq->ipo) ? seq->ipo->curve.first : NULL;
-        short adrcode = SEQ_FAC1;
-
-        if (G.debug & G_DEBUG) {
-          printf("\tconverting sequence strip %s\n", seq->name + 2);
-        }
-
-        if (ELEM(NULL, seq->ipo, icu)) {
-          seq->flag |= SEQ_USE_EFFECT_DEFAULT_FADE;
-          continue;
-        }
-
-        /* patch adrcode, so that we can map
-         * to different DNA variables later
-         * (semi-hack (tm) )
-         */
-        switch (seq->type) {
-          case SEQ_TYPE_IMAGE:
-          case SEQ_TYPE_META:
-          case SEQ_TYPE_SCENE:
-          case SEQ_TYPE_MOVIE:
-          case SEQ_TYPE_COLOR:
-            adrcode = SEQ_FAC_OPACITY;
-            break;
-          case SEQ_TYPE_SPEED:
-            adrcode = SEQ_FAC_SPEED;
-            break;
-        }
-        icu->adrcode = adrcode;
-
-        /* convert IPO */
-        ipo_to_animdata(bmain, (ID *)scene, seq->ipo, NULL, NULL, seq);
-
-        if (adt->action) {
-          adt->action->idroot = ID_SCE; /* scene-rooted */
-        }
-
-        id_us_min(&seq->ipo->id);
-        seq->ipo = NULL;
-      }
-      SEQ_ALL_END;
+      Seq_callback_data cb_data = {bmain, scene, BKE_animdata_ensure_id(id)};
+      SEQ_for_each_callback(&ed->seqbase, seq_convert_callback, &cb_data);
     }
   }
 
@@ -2346,7 +2329,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* we're only interested in the IPO */
     if (te->ipo) {
       /* Add AnimData block */
-      AnimData *adt = BKE_animdata_add_id(id);
+      AnimData *adt = BKE_animdata_ensure_id(id);
 
       /* Convert Texture data... */
       ipo_to_animdata(bmain, id, te->ipo, NULL, NULL, NULL);
@@ -2371,7 +2354,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* we're only interested in the IPO */
     if (ca->ipo) {
       /* Add AnimData block */
-      AnimData *adt = BKE_animdata_add_id(id);
+      AnimData *adt = BKE_animdata_ensure_id(id);
 
       /* Convert Camera data... */
       ipo_to_animdata(bmain, id, ca->ipo, NULL, NULL, NULL);
@@ -2396,7 +2379,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* we're only interested in the IPO */
     if (la->ipo) {
       /* Add AnimData block */
-      AnimData *adt = BKE_animdata_add_id(id);
+      AnimData *adt = BKE_animdata_ensure_id(id);
 
       /* Convert Light data... */
       ipo_to_animdata(bmain, id, la->ipo, NULL, NULL, NULL);
@@ -2421,7 +2404,7 @@ void do_versions_ipos_to_animato(Main *bmain)
     /* we're only interested in the IPO */
     if (cu->ipo) {
       /* Add AnimData block */
-      AnimData *adt = BKE_animdata_add_id(id);
+      AnimData *adt = BKE_animdata_ensure_id(id);
 
       /* Convert Curve data... */
       ipo_to_animdata(bmain, id, cu->ipo, NULL, NULL, NULL);

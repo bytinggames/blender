@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -190,7 +176,7 @@ PyDoc_STRVAR(ChainingIterator_object_doc,
              "\n"
              ":type: :class:`ViewEdge`");
 
-static PyObject *ChainingIterator_object_get(BPy_ChainingIterator *self, void *UNUSED(closure))
+static PyObject *ChainingIterator_object_get(BPy_ChainingIterator *self, void * /*closure*/)
 {
   if (self->c_it->isEnd()) {
     PyErr_SetString(PyExc_RuntimeError, "iteration has stopped");
@@ -209,8 +195,7 @@ PyDoc_STRVAR(ChainingIterator_next_vertex_doc,
              "\n"
              ":type: :class:`ViewVertex`");
 
-static PyObject *ChainingIterator_next_vertex_get(BPy_ChainingIterator *self,
-                                                  void *UNUSED(closure))
+static PyObject *ChainingIterator_next_vertex_get(BPy_ChainingIterator *self, void * /*closure*/)
 {
   ViewVertex *v = self->c_it->getVertex();
   if (v) {
@@ -226,7 +211,7 @@ PyDoc_STRVAR(ChainingIterator_is_incrementing_doc,
              ":type: bool");
 
 static PyObject *ChainingIterator_is_incrementing_get(BPy_ChainingIterator *self,
-                                                      void *UNUSED(closure))
+                                                      void * /*closure*/)
 {
   return PyBool_from_bool(self->c_it->isIncrementing());
 }
@@ -265,7 +250,7 @@ PyTypeObject ChainingIterator_Type = {
     nullptr,                                              /* tp_as_number */
     nullptr,                                              /* tp_as_sequence */
     nullptr,                                              /* tp_as_mapping */
-    nullptr,                                              /* tp_hash  */
+    nullptr,                                              /* tp_hash */
     nullptr,                                              /* tp_call */
     nullptr,                                              /* tp_str */
     nullptr,                                              /* tp_getattro */

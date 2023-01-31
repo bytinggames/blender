@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup GHOST
@@ -41,15 +25,14 @@ class GHOST_Window : public GHOST_IWindow {
    * Constructor.
    * Creates a new window and opens it.
    * To check if the window was created properly, use the getValid() method.
-   * \param width: The width the window.
-   * \param heigh: The height the window.
+   * \param width: The width of the window.
+   * \param height: The height of the window.
    * \param state: The state the window is initially opened with.
-   * \param type: The type of drawing context installed in this window.
-   * \param stereoVisual: Stereo visual for quad buffered stereo.
-   * \param exclusive: Use to show the window ontop and ignore others (used full-screen).
+   * \param wantStereoVisual: Stereo visual for quad buffered stereo.
+   * \param exclusive: Use to show the window on top and ignore others (used full-screen).
    */
-  GHOST_Window(GHOST_TUns32 width,
-               GHOST_TUns32 height,
+  GHOST_Window(uint32_t width,
+               uint32_t height,
                GHOST_TWindowState state,
                const bool wantStereoVisual = false,
                const bool exclusive = false);
@@ -62,13 +45,13 @@ class GHOST_Window : public GHOST_IWindow {
    * virtual std::string getTitle() const = 0;
    * virtual  void getWindowBounds(GHOST_Rect& bounds) const = 0;
    * virtual  void getClientBounds(GHOST_Rect& bounds) const = 0;
-   * virtual  GHOST_TSuccess setClientWidth(GHOST_TUns32 width) = 0;
-   * virtual  GHOST_TSuccess setClientHeight(GHOST_TUns32 height) = 0;
-   * virtual  GHOST_TSuccess setClientSize(GHOST_TUns32 width, GHOST_TUns32 height) = 0;
+   * virtual  GHOST_TSuccess setClientWidth(uint32_t width) = 0;
+   * virtual  GHOST_TSuccess setClientHeight(uint32_t height) = 0;
+   * virtual  GHOST_TSuccess setClientSize(uint32_t width, uint32_t height) = 0;
    * virtual void screenToClient(
-   *     GHOST_TInt32 inX, GHOST_TInt32 inY, GHOST_TInt32& outX, GHOST_TInt32& outY) const = 0;
+   *     int32_t inX, int32_t inY, int32_t& outX, int32_t& outY) const = 0;
    * virtual void clientToScreen(
-   *     GHOST_TInt32 inX, GHOST_TInt32 inY, GHOST_TInt32& outX, GHOST_TInt32& outY) const = 0;
+   *     int32_t inX, int32_t inY, int32_t& outX, int32_t& outY) const = 0;
    * virtual GHOST_TWindowState getState() const = 0;
    * virtual GHOST_TSuccess setState(GHOST_TWindowState state) = 0;
    * virtual GHOST_TSuccess setOrder(GHOST_TWindowOrder order) = 0;
@@ -89,24 +72,24 @@ class GHOST_Window : public GHOST_IWindow {
    * Returns indication as to whether the window is valid.
    * \return The validity of the window.
    */
-  virtual bool getValid() const
+  virtual bool getValid() const override
   {
-    return m_context != NULL;
+    return m_context != nullptr;
   }
 
   /**
    * Returns the associated OS object/handle
    * \return The associated OS object/handle
    */
-  virtual void *getOSWindow() const;
+  virtual void *getOSWindow() const override;
 
   /**
    * Returns the current cursor shape.
    * \return The current cursor shape.
    */
-  inline GHOST_TStandardCursor getCursorShape() const;
+  inline GHOST_TStandardCursor getCursorShape() const override;
 
-  inline bool isDialog() const
+  inline bool isDialog() const override
   {
     return false;
   }
@@ -116,7 +99,7 @@ class GHOST_Window : public GHOST_IWindow {
    * \param cursorShape: The new cursor shape type id.
    * \return Indication of success.
    */
-  GHOST_TSuccess setCursorShape(GHOST_TStandardCursor cursorShape);
+  GHOST_TSuccess setCursorShape(GHOST_TStandardCursor cursorShape) override;
 
   /**
    * Set the shape of the cursor to a custom cursor.
@@ -126,32 +109,34 @@ class GHOST_Window : public GHOST_IWindow {
    * \param hotY: The Y coordinate of the cursor hot-spot.
    * \return Indication of success.
    */
-  GHOST_TSuccess setCustomCursorShape(GHOST_TUns8 *bitmap,
-                                      GHOST_TUns8 *mask,
+  GHOST_TSuccess setCustomCursorShape(uint8_t *bitmap,
+                                      uint8_t *mask,
                                       int sizex,
                                       int sizey,
                                       int hotX,
                                       int hotY,
-                                      bool canInvertColor);
+                                      bool canInvertColor) override;
+
+  GHOST_TSuccess getCursorBitmap(GHOST_CursorBitmapRef *bitmap) override;
 
   /**
    * Returns the visibility state of the cursor.
    * \return The visibility state of the cursor.
    */
-  inline bool getCursorVisibility() const;
+  inline bool getCursorVisibility() const override;
   inline GHOST_TGrabCursorMode getCursorGrabMode() const;
   inline bool getCursorGrabModeIsWarp() const;
   inline GHOST_TAxisFlag getCursorGrabAxis() const;
-  inline void getCursorGrabInitPos(GHOST_TInt32 &x, GHOST_TInt32 &y) const;
-  inline void getCursorGrabAccum(GHOST_TInt32 &x, GHOST_TInt32 &y) const;
-  inline void setCursorGrabAccum(GHOST_TInt32 x, GHOST_TInt32 y);
+  inline void getCursorGrabInitPos(int32_t &x, int32_t &y) const;
+  inline void getCursorGrabAccum(int32_t &x, int32_t &y) const;
+  inline void setCursorGrabAccum(int32_t x, int32_t y);
 
   /**
    * Shows or hides the cursor.
    * \param visible: The new visibility state of the cursor.
    * \return Indication of success.
    */
-  GHOST_TSuccess setCursorVisibility(bool visible);
+  GHOST_TSuccess setCursorVisibility(bool visible) override;
 
   /**
    * Sets the cursor grab.
@@ -161,19 +146,28 @@ class GHOST_Window : public GHOST_IWindow {
   GHOST_TSuccess setCursorGrab(GHOST_TGrabCursorMode mode,
                                GHOST_TAxisFlag wrap_axis,
                                GHOST_Rect *bounds,
-                               GHOST_TInt32 mouse_ungrab_xy[2]);
+                               int32_t mouse_ungrab_xy[2]) override;
 
   /**
    * Gets the cursor grab region, if unset the window is used.
    * reset when grab is disabled.
    */
-  GHOST_TSuccess getCursorGrabBounds(GHOST_Rect &bounds);
+  GHOST_TSuccess getCursorGrabBounds(GHOST_Rect &bounds) const override;
+
+  void getCursorGrabState(GHOST_TGrabCursorMode &mode,
+                          GHOST_TAxisFlag &axis_flag,
+                          GHOST_Rect &bounds,
+                          bool &use_software_cursor) override;
+  /**
+   * Return true when a software cursor should be used.
+   */
+  bool getCursorGrabUseSoftwareDisplay() override;
 
   /**
    * Sets the progress bar value displayed in the window/application icon
    * \param progress: The progress percentage (0.0 to 1.0).
    */
-  virtual GHOST_TSuccess setProgressBar(float /*progress*/)
+  virtual GHOST_TSuccess setProgressBar(float /*progress*/) override
   {
     return GHOST_kFailure;
   }
@@ -181,7 +175,7 @@ class GHOST_Window : public GHOST_IWindow {
   /**
    * Hides the progress bar in the icon
    */
-  virtual GHOST_TSuccess endProgressBar()
+  virtual GHOST_TSuccess endProgressBar() override
   {
     return GHOST_kFailure;
   }
@@ -191,43 +185,43 @@ class GHOST_Window : public GHOST_IWindow {
    * \param interval: The swap interval to use.
    * \return A boolean success indicator.
    */
-  GHOST_TSuccess setSwapInterval(int interval);
+  GHOST_TSuccess setSwapInterval(int interval) override;
 
   /**
    * Gets the current swap interval for #swapBuffers.
    * \return An integer.
    */
-  GHOST_TSuccess getSwapInterval(int &intervalOut);
+  GHOST_TSuccess getSwapInterval(int &intervalOut) override;
 
   /**
    * Tells if the ongoing drag'n'drop object can be accepted upon mouse drop
    */
-  void setAcceptDragOperation(bool canAccept);
+  void setAcceptDragOperation(bool canAccept) override;
 
   /**
    * Returns acceptance of the dropped object
    * Usually called by the "object dropped" event handling function
    */
-  bool canAcceptDragOperation() const;
+  bool canAcceptDragOperation() const override;
 
   /**
    * Sets the window "modified" status, indicating unsaved changes
    * \param isUnsavedChanges: Unsaved changes or not.
    * \return Indication of success.
    */
-  virtual GHOST_TSuccess setModifiedState(bool isUnsavedChanges);
+  virtual GHOST_TSuccess setModifiedState(bool isUnsavedChanges) override;
 
   /**
    * Gets the window "modified" status, indicating unsaved changes
    * \return True if there are unsaved changes
    */
-  virtual bool getModifiedState();
+  virtual bool getModifiedState() override;
 
   /**
    * Returns the type of drawing context used in this window.
    * \return The current type of drawing context.
    */
-  inline GHOST_TDrawingContextType getDrawingContextType();
+  inline GHOST_TDrawingContextType getDrawingContextType() override;
 
   /**
    * Tries to install a rendering context in this window.
@@ -236,19 +230,19 @@ class GHOST_Window : public GHOST_IWindow {
    * \param type: The type of rendering context installed.
    * \return Indication as to whether installation has succeeded.
    */
-  GHOST_TSuccess setDrawingContextType(GHOST_TDrawingContextType type);
+  GHOST_TSuccess setDrawingContextType(GHOST_TDrawingContextType type) override;
 
   /**
    * Swaps front and back buffers of a window.
    * \return A boolean success indicator.
    */
-  virtual GHOST_TSuccess swapBuffers();
+  virtual GHOST_TSuccess swapBuffers() override;
 
   /**
    * Activates the drawing context of this window.
    * \return A boolean success indicator.
    */
-  virtual GHOST_TSuccess activateDrawingContext();
+  virtual GHOST_TSuccess activateDrawingContext() override;
 
   /**
    * Updates the drawing context of this window. Needed
@@ -258,16 +252,22 @@ class GHOST_Window : public GHOST_IWindow {
   GHOST_TSuccess updateDrawingContext();
 
   /**
+   * Get the drawing context associated with this window.
+   *\return Pointer to the context object.
+   */
+  GHOST_Context *getContext();
+
+  /**
    * Gets the OpenGL frame-buffer associated with the window's contents.
    * \return The ID of an OpenGL frame-buffer object.
    */
-  virtual unsigned int getDefaultFramebuffer();
+  virtual unsigned int getDefaultFramebuffer() override;
 
   /**
    * Returns the window user data.
    * \return The window user data.
    */
-  inline GHOST_TUserDataPtr getUserData() const
+  inline GHOST_TUserDataPtr getUserData() const override
   {
     return m_userData;
   }
@@ -276,15 +276,16 @@ class GHOST_Window : public GHOST_IWindow {
    * Changes the window user data.
    * \param userData: The window user data.
    */
-  void setUserData(const GHOST_TUserDataPtr userData)
+  void setUserData(const GHOST_TUserDataPtr userData) override
   {
     m_userData = userData;
   }
 
-  float getNativePixelSize(void)
+  float getNativePixelSize(void) override
   {
-    if (m_nativePixelSize > 0.0f)
+    if (m_nativePixelSize > 0.0f) {
       return m_nativePixelSize;
+    }
     return 1.0f;
   }
 
@@ -292,19 +293,19 @@ class GHOST_Window : public GHOST_IWindow {
    * Returns the recommended DPI for this window.
    * \return The recommended DPI for this window.
    */
-  virtual inline GHOST_TUns16 getDPIHint()
+  virtual inline uint16_t getDPIHint() override
   {
     return 96;
   }
 
 #ifdef WITH_INPUT_IME
   virtual void beginIME(
-      GHOST_TInt32 x, GHOST_TInt32 y, GHOST_TInt32 w, GHOST_TInt32 h, int completed)
+      int32_t /*x*/, int32_t /*y*/, int32_t /*w*/, int32_t /*h*/, bool /*completed*/) override
   {
     /* do nothing temporarily if not in windows */
   }
 
-  virtual void endIME()
+  virtual void endIME() override
   {
     /* do nothing temporarily if not in windows */
   }
@@ -343,8 +344,8 @@ class GHOST_Window : public GHOST_IWindow {
    * Sets the cursor shape on the window using
    * native window system calls.
    */
-  virtual GHOST_TSuccess setWindowCustomCursorShape(GHOST_TUns8 *bitmap,
-                                                    GHOST_TUns8 *mask,
+  virtual GHOST_TSuccess setWindowCustomCursorShape(uint8_t *bitmap,
+                                                    uint8_t *mask,
                                                     int szx,
                                                     int szy,
                                                     int hotX,
@@ -365,14 +366,14 @@ class GHOST_Window : public GHOST_IWindow {
   /** The current grabbed state of the cursor */
   GHOST_TGrabCursorMode m_cursorGrab;
 
-  /** Grab cursor axis.*/
+  /** Grab cursor axis. */
   GHOST_TAxisFlag m_cursorGrabAxis;
 
   /** Initial grab location. */
-  GHOST_TInt32 m_cursorGrabInitPos[2];
+  int32_t m_cursorGrabInitPos[2];
 
   /** Accumulated offset from m_cursorGrabInitPos. */
-  GHOST_TInt32 m_cursorGrabAccumPos[2];
+  int32_t m_cursorGrabAccumPos[2];
 
   /** Wrap the cursor within this region. */
   GHOST_Rect m_cursorGrabBounds;
@@ -396,9 +397,9 @@ class GHOST_Window : public GHOST_IWindow {
   bool m_wantStereoVisual;
 
   /** Full-screen width */
-  GHOST_TUns32 m_fullScreenWidth;
+  uint32_t m_fullScreenWidth;
   /** Full-screen height */
-  GHOST_TUns32 m_fullScreenHeight;
+  uint32_t m_fullScreenHeight;
 
   /* OSX only, retina screens */
   float m_nativePixelSize;
@@ -432,19 +433,19 @@ inline GHOST_TAxisFlag GHOST_Window::getCursorGrabAxis() const
   return m_cursorGrabAxis;
 }
 
-inline void GHOST_Window::getCursorGrabInitPos(GHOST_TInt32 &x, GHOST_TInt32 &y) const
+inline void GHOST_Window::getCursorGrabInitPos(int32_t &x, int32_t &y) const
 {
   x = m_cursorGrabInitPos[0];
   y = m_cursorGrabInitPos[1];
 }
 
-inline void GHOST_Window::getCursorGrabAccum(GHOST_TInt32 &x, GHOST_TInt32 &y) const
+inline void GHOST_Window::getCursorGrabAccum(int32_t &x, int32_t &y) const
 {
   x = m_cursorGrabAccumPos[0];
   y = m_cursorGrabAccumPos[1];
 }
 
-inline void GHOST_Window::setCursorGrabAccum(GHOST_TInt32 x, GHOST_TInt32 y)
+inline void GHOST_Window::setCursorGrabAccum(int32_t x, int32_t y)
 {
   m_cursorGrabAccumPos[0] = x;
   m_cursorGrabAccumPos[1] = y;

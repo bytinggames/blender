@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -35,6 +21,8 @@
 #include "../system/TimeStamp.h"
 
 #include "../view_map/SteerableViewMap.h"
+
+#include "BLI_sys_types.h"
 
 #include "BKE_global.h"
 
@@ -105,7 +93,7 @@ void Canvas::Draw()
   preDraw();
   TimeStamp *timestamp = TimeStamp::instance();
 
-  for (unsigned int i = 0; i < _StyleModules.size(); ++i) {
+  for (uint i = 0; i < _StyleModules.size(); ++i) {
     _current_sm = _StyleModules[i];
 
     if (i < _Layers.size() && _Layers[i]) {
@@ -183,11 +171,11 @@ void Canvas::PushBackStyleModule(StyleModule *iStyleModule)
   _Layers.push_back(layer);
 }
 
-void Canvas::InsertStyleModule(unsigned index, StyleModule *iStyleModule)
+void Canvas::InsertStyleModule(uint index, StyleModule *iStyleModule)
 {
-  unsigned size = _StyleModules.size();
+  uint size = _StyleModules.size();
   StrokeLayer *layer = new StrokeLayer();
-  if ((_StyleModules.empty()) || (index == size)) {
+  if (_StyleModules.empty() || (index == size)) {
     _StyleModules.push_back(iStyleModule);
     _Layers.push_back(layer);
     return;
@@ -196,9 +184,9 @@ void Canvas::InsertStyleModule(unsigned index, StyleModule *iStyleModule)
   _Layers.insert(_Layers.begin() + index, layer);
 }
 
-void Canvas::RemoveStyleModule(unsigned index)
+void Canvas::RemoveStyleModule(uint index)
 {
-  unsigned int i = 0;
+  uint i = 0;
   if (!_StyleModules.empty()) {
     for (deque<StyleModule *>::iterator s = _StyleModules.begin(), send = _StyleModules.end();
          s != send;
@@ -230,7 +218,7 @@ void Canvas::RemoveStyleModule(unsigned index)
   }
 }
 
-void Canvas::SwapStyleModules(unsigned i1, unsigned i2)
+void Canvas::SwapStyleModules(uint i1, uint i2)
 {
   StyleModule *tmp;
   tmp = _StyleModules[i1];
@@ -243,9 +231,9 @@ void Canvas::SwapStyleModules(unsigned i1, unsigned i2)
   _Layers[i2] = tmp2;
 }
 
-void Canvas::ReplaceStyleModule(unsigned index, StyleModule *iStyleModule)
+void Canvas::ReplaceStyleModule(uint index, StyleModule *iStyleModule)
 {
-  unsigned i = 0;
+  uint i = 0;
   for (deque<StyleModule *>::iterator s = _StyleModules.begin(), send = _StyleModules.end();
        s != send;
        ++s, ++i) {
@@ -259,29 +247,29 @@ void Canvas::ReplaceStyleModule(unsigned index, StyleModule *iStyleModule)
   }
 }
 
-void Canvas::setVisible(unsigned index, bool iVisible)
+void Canvas::setVisible(uint index, bool iVisible)
 {
   _StyleModules[index]->setDisplayed(iVisible);
 }
 
-void Canvas::setModified(unsigned index, bool iMod)
+void Canvas::setModified(uint index, bool iMod)
 {
   _StyleModules[index]->setModified(iMod);
 }
 
 void Canvas::resetModified(bool iMod /* = false */)
 {
-  unsigned int size = _StyleModules.size();
-  for (unsigned int i = 0; i < size; ++i) {
+  uint size = _StyleModules.size();
+  for (uint i = 0; i < size; ++i) {
     setModified(i, iMod);
   }
 }
 
-void Canvas::causalStyleModules(vector<unsigned> &vec, unsigned index)
+void Canvas::causalStyleModules(vector<uint> &vec, uint index)
 {
-  unsigned int size = _StyleModules.size();
+  uint size = _StyleModules.size();
 
-  for (unsigned int i = index; i < size; ++i) {
+  for (uint i = index; i < size; ++i) {
     if (_StyleModules[i]->getCausal()) {
       vec.push_back(i);
     }
@@ -290,7 +278,7 @@ void Canvas::causalStyleModules(vector<unsigned> &vec, unsigned index)
 
 void Canvas::Render(const StrokeRenderer *iRenderer)
 {
-  for (unsigned int i = 0; i < _StyleModules.size(); ++i) {
+  for (uint i = 0; i < _StyleModules.size(); ++i) {
     if (!_StyleModules[i]->getDisplayed() || !_Layers[i]) {
       continue;
     }
@@ -300,7 +288,7 @@ void Canvas::Render(const StrokeRenderer *iRenderer)
 
 void Canvas::RenderBasic(const StrokeRenderer *iRenderer)
 {
-  for (unsigned int i = 0; i < _StyleModules.size(); ++i) {
+  for (uint i = 0; i < _StyleModules.size(); ++i) {
     if (!_StyleModules[i]->getDisplayed() || !_Layers[i]) {
       continue;
     }
@@ -308,10 +296,7 @@ void Canvas::RenderBasic(const StrokeRenderer *iRenderer)
   }
 }
 
-void Canvas::loadMap(const char *iFileName,
-                     const char *iMapName,
-                     unsigned int iNbLevels,
-                     float iSigma)
+void Canvas::loadMap(const char *iFileName, const char *iMapName, uint iNbLevels, float iSigma)
 {
   // check whether this map was already loaded:
   if (!_maps.empty()) {

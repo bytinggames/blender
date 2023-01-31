@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # semi-useful script, runs all operators in a number of different
 # contexts, cheap way to find misc small bugs but is in no way a complete test.
@@ -89,7 +71,7 @@ op_blacklist = (
     "wm.memory_statistics",     # another annoying one
     "wm.dependency_relations",  # another annoying one
     "wm.keymap_restore",        # another annoying one
-    "wm.addon_*",               # harmless, but dont change state
+    "wm.addon_*",               # harmless, but don't change state
     "console.*",                # just annoying - but harmless
     "wm.url_open_preset",       # Annoying but harmless (opens web pages).
 
@@ -101,7 +83,7 @@ op_blacklist = (
     "object.voxel_remesh",
     "mesh.paint_mask_slice",
     "paint.mask_flood_fill",
-    "sculpt.dirty_mask",
+    "sculpt.mask_from_cavity",
     # TODO: use empty temp dir to avoid behavior depending on local setup.
     "view3d.pastebuffer",
     # Needs active window.
@@ -178,7 +160,7 @@ if USE_ATTRSET:
             if issubclass(cls, skip_classes):
                 continue
 
-            # # to support skip-save we cant get all props
+            # # to support skip-save we can't get all props
             # properties = cls.bl_rna.properties.keys()
             properties = []
             for prop_id, prop in cls.bl_rna.properties.items():
@@ -335,7 +317,6 @@ def ctx_editmode_mesh_extra():
     bpy.ops.object.shape_key_add(from_mix=False)
     bpy.ops.object.shape_key_add(from_mix=True)
     bpy.ops.mesh.uv_texture_add()
-    bpy.ops.mesh.vertex_color_add()
     bpy.ops.object.material_slot_add()
     # editmode last!
     bpy.ops.object.mode_set(mode='EDIT')

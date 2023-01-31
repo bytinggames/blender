@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -29,17 +15,18 @@ extern "C" {
  * \ingroup bli
  */
 
-/* note: using a temp char to switch endian is a lot slower,
+/* NOTE: using a temp char to switch endian is a lot slower,
  * use bit shifting instead. */
 
 /* *** 16 *** */
+
 BLI_INLINE void BLI_endian_switch_int16(short *val)
 {
   BLI_endian_switch_uint16((unsigned short *)val);
 }
 BLI_INLINE void BLI_endian_switch_uint16(unsigned short *val)
 {
-#if (defined(__GNUC__) && ((__GNUC__ * 100 + __GNUC_MINOR__) >= 408)) /* gcc4.8+ only */
+#ifdef __GNUC__
   *val = __builtin_bswap16(*val);
 #else
   unsigned short tval = *val;
@@ -48,6 +35,7 @@ BLI_INLINE void BLI_endian_switch_uint16(unsigned short *val)
 }
 
 /* *** 32 *** */
+
 BLI_INLINE void BLI_endian_switch_int32(int *val)
 {
   BLI_endian_switch_uint32((unsigned int *)val);
@@ -67,6 +55,7 @@ BLI_INLINE void BLI_endian_switch_float(float *val)
 }
 
 /* *** 64 *** */
+
 BLI_INLINE void BLI_endian_switch_int64(int64_t *val)
 {
   BLI_endian_switch_uint64((uint64_t *)val);

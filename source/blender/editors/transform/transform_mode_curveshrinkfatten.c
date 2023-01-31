@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -24,6 +8,7 @@
 #include <stdlib.h>
 
 #include "BLI_math.h"
+#include "BLI_math_bits.h"
 #include "BLI_string.h"
 
 #include "BKE_context.h"
@@ -36,8 +21,10 @@
 #include "BLT_translation.h"
 
 #include "transform.h"
-#include "transform_mode.h"
+#include "transform_convert.h"
 #include "transform_snap.h"
+
+#include "transform_mode.h"
 
 /* -------------------------------------------------------------------- */
 /** \name Transform (Curve Shrink/Fatten)
@@ -49,7 +36,7 @@ static void applyCurveShrinkFatten(TransInfo *t, const int UNUSED(mval[2]))
   int i;
   char str[UI_MAX_DRAW_STR];
 
-  ratio = t->values[0];
+  ratio = t->values[0] + t->values_modal_offset[0];
 
   transform_snap_increment(t, &ratio);
 
@@ -76,12 +63,17 @@ static void applyCurveShrinkFatten(TransInfo *t, const int UNUSED(mval[2]))
       }
 
       if (td->val) {
-        *td->val = td->ival * ratio;
-        /* apply PET */
-        *td->val = (*td->val * td->factor) + ((1.0f - td->factor) * td->ival);
-        if (*td->val <= 0.0f) {
-          *td->val = 0.001f;
+        if (td->ival == 0.0f && ratio > 1.0f) {
+          /* Allow Shrink/Fatten for zero radius. */
+          *td->val = (ratio - 1.0f) * uint_as_float(POINTER_AS_UINT(t->custom.mode.data));
         }
+        else {
+          *td->val = td->ival * ratio;
+        }
+
+        /* apply PET */
+        *td->val = interpf(*td->val, td->ival, td->factor);
+        CLAMP_MIN(*td->val, 0.0f);
       }
     }
   }
@@ -107,10 +99,19 @@ void initCurveShrinkFatten(TransInfo *t)
   t->num.unit_sys = t->scene->unit.system;
   t->num.unit_type[0] = B_UNIT_NONE;
 
-#ifdef USE_NUM_NO_ZERO
-  t->num.val_flag[0] |= NUM_NO_ZERO;
-#endif
-
   t->flag |= T_NO_CONSTRAINT;
+
+  float scale_factor = 0.0f;
+  if (((t->spacetype == SPACE_VIEW3D) && (t->region->regiontype == RGN_TYPE_WINDOW) &&
+       (t->data_len_all == 1)) ||
+      (t->data_len_all == 3 && TRANS_DATA_CONTAINER_FIRST_OK(t)->data[0].val == NULL)) {
+    /* For cases where only one point on the curve is being transformed and the radius of that
+     * point is zero, use the factor to multiply the offset of the ratio and allow scaling.
+     * Note that for bezier curves, 3 TransData equals 1 point in most cases. */
+    RegionView3D *rv3d = t->region->regiondata;
+    scale_factor = rv3d->pixsize * t->mouse.factor * t->zfac;
+  }
+  t->custom.mode.data = POINTER_FROM_UINT(float_as_uint(scale_factor));
 }
+
 /** \} */

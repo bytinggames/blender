@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2020 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2020 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -69,10 +53,6 @@ bool multiresModifier_reshapeFromVertcos(struct Depsgraph *depsgraph,
   return true;
 }
 
-/* Returns truth on success, false otherwise.
- *
- * This function might fail in cases like source and destination not having
- * matched amount of vertices. */
 bool multiresModifier_reshapeFromObject(struct Depsgraph *depsgraph,
                                         struct MultiresModifierData *mmd,
                                         struct Object *dst,
@@ -201,7 +181,8 @@ void multiresModifier_subdivide_to_level(struct Object *object,
    * are allocated at a proper level and return. */
   const bool has_mdisps = CustomData_has_layer(&coarse_mesh->ldata, CD_MDISPS);
   if (!has_mdisps) {
-    CustomData_add_layer(&coarse_mesh->ldata, CD_MDISPS, CD_CALLOC, NULL, coarse_mesh->totloop);
+    CustomData_add_layer(
+        &coarse_mesh->ldata, CD_MDISPS, CD_SET_DEFAULT, NULL, coarse_mesh->totloop);
   }
 
   /* NOTE: Subdivision happens from the top level of the existing multires modifier. If it is set
@@ -235,7 +216,7 @@ void multiresModifier_subdivide_to_level(struct Object *object,
 
   /* Free original grids which makes it so smoothing with details thinks all the details were
    * added against base mesh's limit surface. This is similar behavior to as if we've done all
-   * displacement in sculpt mode at the old top level and then propagated to the new top level.*/
+   * displacement in sculpt mode at the old top level and then propagated to the new top level. */
   multires_reshape_free_original_grids(&reshape_context);
 
   if (ELEM(mode, MULTIRES_SUBDIVIDE_LINEAR, MULTIRES_SUBDIVIDE_SIMPLE)) {

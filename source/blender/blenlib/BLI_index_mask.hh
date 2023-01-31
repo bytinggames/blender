@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -39,16 +25,17 @@
 
 #include "BLI_index_range.hh"
 #include "BLI_span.hh"
+#include "BLI_vector.hh"
 
 namespace blender {
 
 class IndexMask {
  private:
-  /* The underlying reference to sorted integers. */
+  /** The underlying reference to sorted integers. */
   Span<int64_t> indices_;
 
  public:
-  /* Creates an IndexMask that contains no indices. */
+  /** Creates an IndexMask that contains no indices. */
   IndexMask() = default;
 
   /**
@@ -58,11 +45,7 @@ class IndexMask {
    */
   IndexMask(Span<int64_t> indices) : indices_(indices)
   {
-#ifdef DEBUG
-    for (int64_t i = 1; i < indices.size(); i++) {
-      BLI_assert(indices[i - 1] < indices[i]);
-    }
-#endif
+    BLI_assert(IndexMask::indices_are_valid_index_mask(indices));
   }
 
   /**
@@ -94,6 +77,22 @@ class IndexMask {
   {
   }
 
+  /** Checks that the indices are non-negative and in ascending order. */
+  static bool indices_are_valid_index_mask(Span<int64_t> indices)
+  {
+    if (!indices.is_empty()) {
+      if (indices.first() < 0) {
+        return false;
+      }
+    }
+    for (int64_t i = 1; i < indices.size(); i++) {
+      if (indices[i - 1] >= indices[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   operator Span<int64_t>() const
   {
     return indices_;
@@ -110,7 +109,7 @@ class IndexMask {
   }
 
   /**
-   * Returns the n-th index referenced by this IndexMask. The `index_mask` method returns an
+   * Returns the n-th index referenced by this IndexMask. The `index_range` method returns an
    * IndexRange containing all indices that can be used as parameter here.
    */
   int64_t operator[](int64_t n) const
@@ -164,16 +163,30 @@ class IndexMask {
    */
   template<typename CallbackT> void foreach_index(const CallbackT &callback) const
   {
-    if (this->is_range()) {
-      IndexRange range = this->as_range();
-      for (int64_t i : range) {
+    this->to_best_mask_type([&](const auto &mask) {
+      for (const int64_t i : mask) {
         callback(i);
       }
+    });
+  }
+
+  /**
+   * Often an #IndexMask wraps a range of indices without any gaps. In this case, it is more
+   * efficient to compute the indices in a loop on-the-fly instead of reading them from memory.
+   * This method makes it easy to generate code for both cases.
+   *
+   * The given function is expected to take one parameter that can either be of type #IndexRange or
+   * #Span<int64_t>.
+   */
+  template<typename Fn> void to_best_mask_type(const Fn &fn) const
+  {
+    if (this->is_range()) {
+      const IndexRange masked_range = this->as_range();
+      fn(masked_range);
     }
     else {
-      for (int64_t i : indices_) {
-        callback(i);
-      }
+      const Span<int64_t> masked_indices = indices_;
+      fn(masked_indices);
     }
   }
 
@@ -204,6 +217,68 @@ class IndexMask {
   {
     return indices_.size();
   }
+
+  bool is_empty() const
+  {
+    return indices_.is_empty();
+  }
+
+  bool contained_in(const IndexRange range) const
+  {
+    if (indices_.is_empty()) {
+      return true;
+    }
+    if (range.size() < indices_.size()) {
+      return false;
+    }
+    return indices_.first() >= range.first() && indices_.last() <= range.last();
+  }
+
+  IndexMask slice(int64_t start, int64_t size) const;
+  IndexMask slice(IndexRange slice) const;
+  /**
+   * Create a sub-mask that is also shifted to the beginning.
+   * The shifting to the beginning allows code to work with smaller indices,
+   * which is more memory efficient.
+   *
+   * \return New index mask with the size of #slice. It is either empty or starts with 0.
+   * It might reference indices that have been appended to #r_new_indices.
+   *
+   * Example:
+   * \code{.unparsed}
+   * this:   [2, 3, 5, 7, 8, 9, 10]
+   * slice:      ^--------^
+   * output: [0, 2, 4, 5]
+   * \endcode
+   *
+   * All the indices in the sub-mask are shifted by 3 towards zero,
+   * so that the first index in the output is zero.
+   */
+  IndexMask slice_and_offset(IndexRange slice, Vector<int64_t> &r_new_indices) const;
+
+  /**
+   * Get a new mask that contains all the indices that are not in the current mask.
+   * If necessary, the indices referenced by the new mask are inserted in #r_new_indices.
+   */
+  IndexMask invert(const IndexRange full_range, Vector<int64_t> &r_new_indices) const;
+
+  /**
+   * Get all contiguous index ranges within the mask.
+   */
+  Vector<IndexRange> extract_ranges() const;
+
+  /**
+   * Similar to #extract ranges, but works on the inverted mask. So the returned ranges are
+   * in-between the indices in the mask.
+   *
+   * Using this method is generally more efficient than first inverting the index mask and then
+   * extracting the ranges.
+   *
+   * If #r_skip_amounts is passed in, it will contain the number of indices that have been skipped
+   * before each range in the return value starts.
+   */
+  Vector<IndexRange> extract_ranges_invert(const IndexRange full_range,
+                                           Vector<int64_t> *r_skip_amounts = nullptr) const;
 };
 
 }  // namespace blender

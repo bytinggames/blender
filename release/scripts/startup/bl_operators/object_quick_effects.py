@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8-80 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 from mathutils import Vector
 import bpy
@@ -27,6 +9,7 @@ from bpy.props import (
     FloatProperty,
     IntProperty,
 )
+from bpy.app.translations import pgettext_tip as tip_
 
 
 def object_ensure_material(obj, mat_name):
@@ -194,8 +177,8 @@ class QuickExplode(ObjectModeOperator, Operator):
         for obj in mesh_objects:
             if obj.particle_systems:
                 self.report({'ERROR'},
-                            "Object %r already has a "
-                            "particle system" % obj.name)
+                            tip_("Object %r already has a "
+                                 "particle system") % obj.name)
 
                 return {'CANCELLED'}
 

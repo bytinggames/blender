@@ -1,23 +1,16 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 #pragma once
 
 /** \file
- * \ingroup bli
+ * \ingroup bke
+ *
+ * \note on naming: typical _get() suffix is omitted here,
+ * since its the main purpose of the API.
  */
+
+#include <stddef.h>
+
+#include "BLI_compiler_attrs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,51 +18,140 @@ extern "C" {
 
 struct ListBase;
 
+/**
+ * Sanity check to ensure correct API use in debug mode.
+ *
+ * Run this once the first level of arguments has been passed so we can be sure
+ * `--env-system-datafiles`, and other `--env-*` arguments has been passed.
+ *
+ * Without this any callers to this module that run early on,
+ * will miss out on changes from parsing arguments.
+ */
 void BKE_appdir_init(void);
 void BKE_appdir_exit(void);
 
-/* note on naming: typical _get() suffix is omitted here,
- * since its the main purpose of the API. */
-const char *BKE_appdir_folder_default(void);
+/**
+ * Get the folder that's the "natural" starting point for browsing files on an OS.
+ * - Unix: `$HOME`
+ * - Windows: `%userprofile%/Documents`
+ *
+ * \note On Windows `Users/{MyUserName}/Documents` is used as it's the default location to save
+ * documents.
+ */
+const char *BKE_appdir_folder_default(void) ATTR_WARN_UNUSED_RESULT;
+const char *BKE_appdir_folder_root(void) ATTR_WARN_UNUSED_RESULT ATTR_RETURNS_NONNULL;
+const char *BKE_appdir_folder_default_or_root(void) ATTR_WARN_UNUSED_RESULT ATTR_RETURNS_NONNULL;
+/**
+ * Get the user's home directory, i.e.
+ * - Unix: `$HOME`
+ * - Windows: `%userprofile%`
+ */
 const char *BKE_appdir_folder_home(void);
-bool BKE_appdir_folder_documents(char *dir);
-bool BKE_appdir_folder_id_ex(const int folder_id,
-                             const char *subfolder,
-                             char *path,
-                             size_t path_len);
-const char *BKE_appdir_folder_id(const int folder_id, const char *subfolder);
-const char *BKE_appdir_folder_id_create(const int folder_id, const char *subfolder);
-const char *BKE_appdir_folder_id_user_notest(const int folder_id, const char *subfolder);
-const char *BKE_appdir_folder_id_version(const int folder_id,
-                                         const int version,
-                                         const bool check_is_dir);
+/**
+ * Get the user's document directory, i.e.
+ * - Linux: `$HOME/Documents`
+ * - Windows: `%userprofile%/Documents`
+ *
+ * If this can't be found using OS queries (via Ghost), try manually finding it.
+ *
+ * \returns True if the path is valid and points to an existing directory.
+ */
+bool BKE_appdir_folder_documents(char *dir) ATTR_NONNULL(1) ATTR_WARN_UNUSED_RESULT;
+/**
+ * Get the user's cache directory, i.e.
+ * - Linux: `$HOME/.cache/blender/`
+ * - Windows: `%USERPROFILE%\AppData\Local\Blender Foundation\Blender\`
+ * - MacOS: `/Library/Caches/Blender`
+ *
+ * \returns True if the path is valid. It doesn't create or checks format
+ * if the `blender` folder exists. It does check if the parent of the path exists.
+ */
+bool BKE_appdir_folder_caches(char *r_path, size_t path_len) ATTR_NONNULL(1);
+/**
+ * Get a folder out of the \a folder_id presets for paths.
+ *
+ * \param subfolder: The name of a directory to check for,
+ * this may contain path separators but must resolve to a directory, checked with #BLI_is_dir.
+ * \return The path if found, NULL string if not.
+ */
+bool BKE_appdir_folder_id_ex(int folder_id, const char *subfolder, char *path, size_t path_len);
+const char *BKE_appdir_folder_id(int folder_id, const char *subfolder) ATTR_WARN_UNUSED_RESULT;
+/**
+ * Returns the path to a folder in the user area, creating it if it doesn't exist.
+ */
+const char *BKE_appdir_folder_id_create(int folder_id,
+                                        const char *subfolder) ATTR_WARN_UNUSED_RESULT;
+/**
+ * Returns the path to a folder in the user area without checking that it actually exists first.
+ */
+const char *BKE_appdir_folder_id_user_notest(int folder_id,
+                                             const char *subfolder) ATTR_WARN_UNUSED_RESULT;
+/**
+ * Returns the path of the top-level version-specific local, user or system directory.
+ * If check_is_dir, then the result will be NULL if the directory doesn't exist.
+ */
+const char *BKE_appdir_resource_path_id_with_version(int folder_id,
+                                                     bool check_is_dir,
+                                                     int version);
+const char *BKE_appdir_resource_path_id(int folder_id, bool check_is_dir);
 
+/**
+ * Check if this is an install with user files kept together
+ * with the Blender executable and its installation files.
+ */
 bool BKE_appdir_app_is_portable_install(void);
+/**
+ * Return true if templates exist
+ */
 bool BKE_appdir_app_template_any(void);
-bool BKE_appdir_app_template_id_search(const char *app_template, char *path, size_t path_len);
-bool BKE_appdir_app_template_has_userpref(const char *app_template);
-void BKE_appdir_app_templates(struct ListBase *templates);
+bool BKE_appdir_app_template_id_search(const char *app_template, char *path, size_t path_len)
+    ATTR_NONNULL(1);
+bool BKE_appdir_app_template_has_userpref(const char *app_template) ATTR_NONNULL(1);
+void BKE_appdir_app_templates(struct ListBase *templates) ATTR_NONNULL(1);
 
-/* Initialize path to program executable */
-void BKE_appdir_program_path_init(const char *argv0);
+/**
+ * Initialize path to program executable.
+ */
+void BKE_appdir_program_path_init(const char *argv0) ATTR_NONNULL(1);
 
-const char *BKE_appdir_program_path(void);
-const char *BKE_appdir_program_dir(void);
+/**
+ * Path to executable
+ */
+const char *BKE_appdir_program_path(void) ATTR_WARN_UNUSED_RESULT ATTR_RETURNS_NONNULL;
+/**
+ * Path to directory of executable
+ */
+const char *BKE_appdir_program_dir(void) ATTR_WARN_UNUSED_RESULT ATTR_RETURNS_NONNULL;
 
-/* Return OS fonts directory. */
+/**
+ * Gets a good default directory for fonts.
+ */
 bool BKE_appdir_font_folder_default(char *dir);
 
-/* find python executable */
+/**
+ * Find Python executable.
+ */
 bool BKE_appdir_program_python_search(char *fullpath,
-                                      const size_t fullpath_len,
-                                      const int version_major,
-                                      const int version_minor);
+                                      size_t fullpath_len,
+                                      int version_major,
+                                      int version_minor) ATTR_NONNULL(1);
 
-/* Initialize path to temporary directory. */
+/**
+ * Initialize path to temporary directory.
+ */
 void BKE_tempdir_init(const char *userdir);
 
-const char *BKE_tempdir_base(void);
-const char *BKE_tempdir_session(void);
+/**
+ * Path to persistent temporary directory (with trailing slash)
+ */
+const char *BKE_tempdir_base(void) ATTR_WARN_UNUSED_RESULT ATTR_RETURNS_NONNULL;
+/**
+ * Path to temporary directory (with trailing slash)
+ */
+const char *BKE_tempdir_session(void) ATTR_WARN_UNUSED_RESULT ATTR_RETURNS_NONNULL;
+/**
+ * Delete content of this instance's temp dir.
+ */
 void BKE_tempdir_session_purge(void);
 
 /* folder_id */

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup GHOST
@@ -27,7 +11,7 @@
 #include "GHOST_Window.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-// For tablets
+/* For tablets. */
 #ifdef WITH_X11_XINPUT
 #  include <X11/extensions/XInput.h>
 #endif
@@ -63,22 +47,20 @@ class GHOST_WindowX11 : public GHOST_Window {
    * \param parentWindow: Parent (embedder) window.
    * \param type: The type of drawing context installed in this window.
    * \param stereoVisual: Stereo visual for quad buffered stereo.
-   * \param alphaBackground: Enable alpha blending of window with display background.
    */
   GHOST_WindowX11(GHOST_SystemX11 *system,
                   Display *display,
                   const char *title,
-                  GHOST_TInt32 left,
-                  GHOST_TInt32 top,
-                  GHOST_TUns32 width,
-                  GHOST_TUns32 height,
+                  int32_t left,
+                  int32_t top,
+                  uint32_t width,
+                  uint32_t height,
                   GHOST_TWindowState state,
                   GHOST_WindowX11 *parentWindow,
                   GHOST_TDrawingContextType type = GHOST_kDrawingContextTypeNone,
                   const bool is_dialog = false,
                   const bool stereoVisual = false,
                   const bool exclusive = false,
-                  const bool alphaBackground = false,
                   const bool is_debug = false);
 
   bool getValid() const;
@@ -93,21 +75,15 @@ class GHOST_WindowX11 : public GHOST_Window {
 
   bool isDialog() const;
 
-  GHOST_TSuccess setClientWidth(GHOST_TUns32 width);
+  GHOST_TSuccess setClientWidth(uint32_t width);
 
-  GHOST_TSuccess setClientHeight(GHOST_TUns32 height);
+  GHOST_TSuccess setClientHeight(uint32_t height);
 
-  GHOST_TSuccess setClientSize(GHOST_TUns32 width, GHOST_TUns32 height);
+  GHOST_TSuccess setClientSize(uint32_t width, uint32_t height);
 
-  void screenToClient(GHOST_TInt32 inX,
-                      GHOST_TInt32 inY,
-                      GHOST_TInt32 &outX,
-                      GHOST_TInt32 &outY) const;
+  void screenToClient(int32_t inX, int32_t inY, int32_t &outX, int32_t &outY) const;
 
-  void clientToScreen(GHOST_TInt32 inX,
-                      GHOST_TInt32 inY,
-                      GHOST_TInt32 &outX,
-                      GHOST_TInt32 &outY) const;
+  void clientToScreen(int32_t inX, int32_t inY, int32_t &outX, int32_t &outY) const;
 
   GHOST_TWindowState getState() const;
 
@@ -182,7 +158,7 @@ class GHOST_WindowX11 : public GHOST_Window {
 
   GHOST_TSuccess setDialogHints(GHOST_WindowX11 *parentWindow);
 
-  GHOST_TUns16 getDPIHint();
+  uint16_t getDPIHint();
 
  protected:
   /**
@@ -216,8 +192,8 @@ class GHOST_WindowX11 : public GHOST_Window {
    * Sets the cursor shape on the window using
    * native window system calls (Arbitrary size/color).
    */
-  GHOST_TSuccess setWindowCustomCursorShape(GHOST_TUns8 *bitmap,
-                                            GHOST_TUns8 *mask,
+  GHOST_TSuccess setWindowCustomCursorShape(uint8_t *bitmap,
+                                            uint8_t *mask,
                                             int sizex,
                                             int sizey,
                                             int hotX,
@@ -258,7 +234,7 @@ class GHOST_WindowX11 : public GHOST_Window {
   Cursor m_visible_cursor;
 
   /** Cache of XC_* ID's to XCursor structures */
-  std::map<unsigned int, Cursor> m_standard_cursors;
+  std::map<uint, Cursor> m_standard_cursors;
 
   GHOST_TaskBarX11 m_taskbar;
 

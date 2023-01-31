@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup collada
@@ -35,6 +19,7 @@
 
 #  include "DEG_depsgraph.h"
 
+#  include "ED_fileselect.h"
 #  include "ED_object.h"
 
 #  include "RNA_access.h"
@@ -52,22 +37,7 @@
 
 static int wm_collada_export_invoke(bContext *C, wmOperator *op, const wmEvent *UNUSED(event))
 {
-  Main *bmain = CTX_data_main(C);
-
-  if (!RNA_struct_property_is_set(op->ptr, "filepath")) {
-    char filepath[FILE_MAX];
-    const char *blendfile_path = BKE_main_blendfile_path(bmain);
-
-    if (blendfile_path[0] == '\0') {
-      BLI_strncpy(filepath, "untitled", sizeof(filepath));
-    }
-    else {
-      BLI_strncpy(filepath, blendfile_path, sizeof(filepath));
-    }
-
-    BLI_path_extension_replace(filepath, sizeof(filepath), ".dae");
-    RNA_string_set(op->ptr, "filepath", filepath);
-  }
+  ED_fileselect_ensure_default_filepath(C, op, ".dae");
 
   WM_event_add_fileselect(C, op);
 
@@ -114,7 +84,7 @@ static int wm_collada_export_exec(bContext *C, wmOperator *op)
   int export_count;
   int sample_animations;
 
-  if (!RNA_struct_property_is_set(op->ptr, "filepath")) {
+  if (!RNA_struct_property_is_set_ex(op->ptr, "filepath", false)) {
     BKE_report(op->reports, RPT_ERROR, "No filename given");
     return OPERATOR_CANCELLED;
   }
@@ -237,14 +207,6 @@ static int wm_collada_export_exec(bContext *C, wmOperator *op)
   export_settings.limit_precision = limit_precision != 0;
   export_settings.keep_bind_info = keep_bind_info != 0;
 
-  int includeFilter = OB_REL_NONE;
-  if (export_settings.include_armatures) {
-    includeFilter |= OB_REL_MOD_ARMATURE;
-  }
-  if (export_settings.include_children) {
-    includeFilter |= OB_REL_CHILDREN_RECURSIVE;
-  }
-
   export_count = collada_export(C, &export_settings);
 
   if (export_count == 0) {
@@ -257,7 +219,7 @@ static int wm_collada_export_exec(bContext *C, wmOperator *op)
   }
 
   char buff[100];
-  sprintf(buff, "Exported %d Objects", export_count);
+  BLI_snprintf(buff, sizeof(buff), "Exported %d Objects", export_count);
   BKE_report(op->reports, RPT_INFO, buff);
   return OPERATOR_FINISHED;
 }
@@ -492,7 +454,7 @@ void WM_OT_collada_export(wmOperatorType *ot)
   ot->poll = WM_operator_winactive;
   ot->check = wm_collada_export_check;
 
-  ot->flag |= OPTYPE_PRESET;
+  ot->flag = OPTYPE_PRESET;
 
   ot->ui = wm_collada_export_draw;
 
@@ -731,15 +693,17 @@ static int wm_collada_import_exec(bContext *C, wmOperator *op)
   int min_chain_length;
 
   int keep_bind_info;
+  int custom_normals;
   ImportSettings import_settings;
 
-  if (!RNA_struct_property_is_set(op->ptr, "filepath")) {
+  if (!RNA_struct_property_is_set_ex(op->ptr, "filepath", false)) {
     BKE_report(op->reports, RPT_ERROR, "No filename given");
     return OPERATOR_CANCELLED;
   }
 
   /* Options panel */
   import_units = RNA_boolean_get(op->ptr, "import_units");
+  custom_normals = RNA_boolean_get(op->ptr, "custom_normals");
   find_chains = RNA_boolean_get(op->ptr, "find_chains");
   auto_connect = RNA_boolean_get(op->ptr, "auto_connect");
   fix_orientation = RNA_boolean_get(op->ptr, "fix_orientation");
@@ -752,6 +716,7 @@ static int wm_collada_import_exec(bContext *C, wmOperator *op)
 
   import_settings.filepath = filename;
   import_settings.import_units = import_units != 0;
+  import_settings.custom_normals = custom_normals != 0;
   import_settings.auto_connect = auto_connect != 0;
   import_settings.find_chains = find_chains != 0;
   import_settings.fix_orientation = fix_orientation != 0;
@@ -779,6 +744,7 @@ static void uiCollada_importSettings(uiLayout *layout, PointerRNA *imfptr)
   uiItemL(box, IFACE_("Import Data Options"), ICON_MESH_DATA);
 
   uiItemR(box, imfptr, "import_units", 0, NULL, ICON_NONE);
+  uiItemR(box, imfptr, "custom_normals", 0, NULL, ICON_NONE);
 
   box = uiLayoutBox(layout);
   uiItemL(box, IFACE_("Armature Options"), ICON_ARMATURE_DATA);
@@ -804,13 +770,11 @@ void WM_OT_collada_import(wmOperatorType *ot)
   ot->name = "Import COLLADA";
   ot->description = "Load a Collada file";
   ot->idname = "WM_OT_collada_import";
-  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+  ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO | OPTYPE_PRESET;
 
   ot->invoke = WM_operator_filesel;
   ot->exec = wm_collada_import_exec;
   ot->poll = WM_operator_winactive;
-
-  // ot->flag |= OPTYPE_PRESET;
 
   ot->ui = wm_collada_import_draw;
 
@@ -828,6 +792,12 @@ void WM_OT_collada_import(wmOperatorType *ot)
                   "Import Units",
                   "If disabled match import to Blender's current Unit settings, "
                   "otherwise use the settings from the Imported scene");
+
+  RNA_def_boolean(ot->srna,
+                  "custom_normals",
+                  1,
+                  "Custom Normals",
+                  "Import custom normals, if available (otherwise Blender will compute them)");
 
   RNA_def_boolean(ot->srna,
                   "fix_orientation",

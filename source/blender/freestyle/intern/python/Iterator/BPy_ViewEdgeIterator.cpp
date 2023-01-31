@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -118,7 +104,7 @@ PyDoc_STRVAR(ViewEdgeIterator_object_doc,
              "\n"
              ":type: :class:`ViewEdge`");
 
-static PyObject *ViewEdgeIterator_object_get(BPy_ViewEdgeIterator *self, void *UNUSED(closure))
+static PyObject *ViewEdgeIterator_object_get(BPy_ViewEdgeIterator *self, void * /*closure*/)
 {
   if (!self->ve_it->isEnd()) {
     PyErr_SetString(PyExc_RuntimeError, "iteration has stopped");
@@ -136,8 +122,7 @@ PyDoc_STRVAR(ViewEdgeIterator_current_edge_doc,
              "\n"
              ":type: :class:`ViewEdge`");
 
-static PyObject *ViewEdgeIterator_current_edge_get(BPy_ViewEdgeIterator *self,
-                                                   void *UNUSED(closure))
+static PyObject *ViewEdgeIterator_current_edge_get(BPy_ViewEdgeIterator *self, void * /*closure*/)
 {
   ViewEdge *ve = self->ve_it->getCurrentEdge();
   if (ve) {
@@ -148,7 +133,7 @@ static PyObject *ViewEdgeIterator_current_edge_get(BPy_ViewEdgeIterator *self,
 
 static int ViewEdgeIterator_current_edge_set(BPy_ViewEdgeIterator *self,
                                              PyObject *value,
-                                             void *UNUSED(closure))
+                                             void * /*closure*/)
 {
   if (!BPy_ViewEdge_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be a ViewEdge");
@@ -167,15 +152,14 @@ PyDoc_STRVAR(ViewEdgeIterator_orientation_doc,
              "\n"
              ":type: bool");
 
-static PyObject *ViewEdgeIterator_orientation_get(BPy_ViewEdgeIterator *self,
-                                                  void *UNUSED(closure))
+static PyObject *ViewEdgeIterator_orientation_get(BPy_ViewEdgeIterator *self, void * /*closure*/)
 {
   return PyBool_from_bool(self->ve_it->getOrientation());
 }
 
 static int ViewEdgeIterator_orientation_set(BPy_ViewEdgeIterator *self,
                                             PyObject *value,
-                                            void *UNUSED(closure))
+                                            void * /*closure*/)
 {
   if (!PyBool_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be a boolean");
@@ -190,7 +174,7 @@ PyDoc_STRVAR(ViewEdgeIterator_begin_doc,
              "\n"
              ":type: :class:`ViewEdge`");
 
-static PyObject *ViewEdgeIterator_begin_get(BPy_ViewEdgeIterator *self, void *UNUSED(closure))
+static PyObject *ViewEdgeIterator_begin_get(BPy_ViewEdgeIterator *self, void * /*closure*/)
 {
   ViewEdge *ve = self->ve_it->getBegin();
   if (ve) {
@@ -201,7 +185,7 @@ static PyObject *ViewEdgeIterator_begin_get(BPy_ViewEdgeIterator *self, void *UN
 
 static int ViewEdgeIterator_begin_set(BPy_ViewEdgeIterator *self,
                                       PyObject *value,
-                                      void *UNUSED(closure))
+                                      void * /*closure*/)
 {
   if (!BPy_ViewEdge_Check(value)) {
     PyErr_SetString(PyExc_TypeError, "value must be a ViewEdge");
@@ -250,7 +234,7 @@ PyTypeObject ViewEdgeIterator_Type = {
     nullptr,                                              /* tp_as_number */
     nullptr,                                              /* tp_as_sequence */
     nullptr,                                              /* tp_as_mapping */
-    nullptr,                                              /* tp_hash  */
+    nullptr,                                              /* tp_hash */
     nullptr,                                              /* tp_call */
     nullptr,                                              /* tp_str */
     nullptr,                                              /* tp_getattro */

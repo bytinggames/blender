@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2008 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2008 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spuserpref
@@ -42,6 +26,8 @@
 #include "WM_types.h"
 
 #include "UI_interface.h"
+
+#include "BLO_read_write.h"
 
 /* ******************** default callbacks for userpref space ***************** */
 
@@ -113,9 +99,9 @@ static SpaceLink *userpref_duplicate(SpaceLink *sl)
 /* add handlers, stuff you only do once or on area/region changes */
 static void userpref_main_region_init(wmWindowManager *wm, ARegion *region)
 {
-  /* do not use here, the properties changed in userprefs do a system-wide refresh,
+  /* do not use here, the properties changed in user-preferences do a system-wide refresh,
    * then scroller jumps back */
-  /*  region->v2d.flag &= ~V2D_IS_INIT; */
+  // region->v2d.flag &= ~V2D_IS_INIT;
 
   region->v2d.scroll = V2D_SCROLL_RIGHT | V2D_SCROLL_VERTICAL_HIDE;
 
@@ -199,14 +185,18 @@ static void userpref_execute_region_listener(const wmRegionListenerParams *UNUSE
 {
 }
 
-/* only called once, from space/spacetypes.c */
+static void userpref_blend_write(BlendWriter *writer, SpaceLink *sl)
+{
+  BLO_write_struct(writer, SpaceUserPref, sl);
+}
+
 void ED_spacetype_userpref(void)
 {
   SpaceType *st = MEM_callocN(sizeof(SpaceType), "spacetype userpref");
   ARegionType *art;
 
   st->spaceid = SPACE_USERPREF;
-  strncpy(st->name, "Userpref", BKE_ST_MAXNAME);
+  STRNCPY(st->name, "Userpref");
 
   st->create = userpref_create;
   st->free = userpref_free;
@@ -214,6 +204,7 @@ void ED_spacetype_userpref(void)
   st->duplicate = userpref_duplicate;
   st->operatortypes = userpref_operatortypes;
   st->keymap = userpref_keymap;
+  st->blend_write = userpref_blend_write;
 
   /* regions: main window */
   art = MEM_callocN(sizeof(ARegionType), "spacetype userpref region");

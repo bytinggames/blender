@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup wm
@@ -132,7 +118,7 @@ static void gizmo_axis_draw(const bContext *C, wmGizmo *gz)
   font.id = BLF_default();
   BLF_disable(font.id, BLF_ROTATION | BLF_SHADOW | BLF_MATRIX | BLF_ASPECT | BLF_WORD_WRAP);
   BLF_enable(font.id, BLF_BOLD);
-  BLF_size(font.id, AXIS_TEXT_SIZE, 72);
+  BLF_size(font.id, AXIS_TEXT_SIZE);
   BLF_position(font.id, 0, 0, 0);
 
   /* Calculate the inverse of the (matrix_final * matrix_offset).
@@ -300,7 +286,7 @@ static void gizmo_axis_draw(const bContext *C, wmGizmo *gz)
         text_color[3] = is_active ? 1.0f : 0.9f;
       }
       BLF_color4fv(font.id, text_color);
-      BLF_draw_ascii(font.id, axis_str, 2);
+      BLF_draw(font.id, axis_str, 2);
       GPU_matrix_pop();
     }
   }

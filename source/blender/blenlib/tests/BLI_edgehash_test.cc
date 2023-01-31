@@ -1,4 +1,4 @@
-/* Apache License, Version 2.0 */
+/* SPDX-License-Identifier: Apache-2.0 */
 
 #include "testing/testing.h"
 #include <algorithm>
@@ -308,7 +308,7 @@ TEST(edgehash, StressTest)
 
   std::vector<Edge> edges;
   for (int i = 0; i < amount; i++) {
-    edges.push_back({(uint)i, amount + (uint)std::rand() % 12345});
+    edges.push_back({uint(i), amount + uint(std::rand()) % 12345});
   }
 
   EdgeHash *eh = BLI_edgehash_new(__func__);

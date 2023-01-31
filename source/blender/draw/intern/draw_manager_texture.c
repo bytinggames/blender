@@ -1,26 +1,12 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * Copyright 2016, Blender Foundation.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Blender Foundation. */
 
 /** \file
  * \ingroup draw
  */
 
 #include "draw_manager.h"
+#include "draw_texture_pool.h"
 
 #ifndef NDEBUG
 /* Maybe gpu_texture.c is a better place for this. */
@@ -83,8 +69,8 @@ GPUTexture *DRW_texture_create_1d(int w,
                                   DRWTextureFlag flags,
                                   const float *fpixels)
 {
-  int mips = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
-  GPUTexture *tex = GPU_texture_create_1d(__func__, w, mips, format, fpixels);
+  int mip_len = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
+  GPUTexture *tex = GPU_texture_create_1d(__func__, w, mip_len, format, fpixels);
   drw_texture_set_parameters(tex, flags);
 
   return tex;
@@ -93,8 +79,8 @@ GPUTexture *DRW_texture_create_1d(int w,
 GPUTexture *DRW_texture_create_2d(
     int w, int h, eGPUTextureFormat format, DRWTextureFlag flags, const float *fpixels)
 {
-  int mips = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
-  GPUTexture *tex = GPU_texture_create_2d(__func__, w, h, mips, format, fpixels);
+  int mip_len = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
+  GPUTexture *tex = GPU_texture_create_2d(__func__, w, h, mip_len, format, fpixels);
   drw_texture_set_parameters(tex, flags);
 
   return tex;
@@ -103,8 +89,8 @@ GPUTexture *DRW_texture_create_2d(
 GPUTexture *DRW_texture_create_2d_array(
     int w, int h, int d, eGPUTextureFormat format, DRWTextureFlag flags, const float *fpixels)
 {
-  int mips = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
-  GPUTexture *tex = GPU_texture_create_2d_array(__func__, w, h, d, mips, format, fpixels);
+  int mip_len = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
+  GPUTexture *tex = GPU_texture_create_2d_array(__func__, w, h, d, mip_len, format, fpixels);
   drw_texture_set_parameters(tex, flags);
 
   return tex;
@@ -113,9 +99,9 @@ GPUTexture *DRW_texture_create_2d_array(
 GPUTexture *DRW_texture_create_3d(
     int w, int h, int d, eGPUTextureFormat format, DRWTextureFlag flags, const float *fpixels)
 {
-  int mips = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
+  int mip_len = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
   GPUTexture *tex = GPU_texture_create_3d(
-      __func__, w, h, d, mips, format, GPU_DATA_FLOAT, fpixels);
+      __func__, w, h, d, mip_len, format, GPU_DATA_FLOAT, fpixels);
   drw_texture_set_parameters(tex, flags);
 
   return tex;
@@ -126,8 +112,8 @@ GPUTexture *DRW_texture_create_cube(int w,
                                     DRWTextureFlag flags,
                                     const float *fpixels)
 {
-  int mips = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
-  GPUTexture *tex = GPU_texture_create_cube(__func__, w, mips, format, fpixels);
+  int mip_len = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
+  GPUTexture *tex = GPU_texture_create_cube(__func__, w, mip_len, format, fpixels);
   drw_texture_set_parameters(tex, flags);
   return tex;
 }
@@ -135,8 +121,8 @@ GPUTexture *DRW_texture_create_cube(int w,
 GPUTexture *DRW_texture_create_cube_array(
     int w, int d, eGPUTextureFormat format, DRWTextureFlag flags, const float *fpixels)
 {
-  int mips = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
-  GPUTexture *tex = GPU_texture_create_cube_array(__func__, w, d, mips, format, fpixels);
+  int mip_len = (flags & DRW_TEX_MIPMAP) ? 9999 : 1;
+  GPUTexture *tex = GPU_texture_create_cube_array(__func__, w, d, mip_len, format, fpixels);
   drw_texture_set_parameters(tex, flags);
   return tex;
 }
@@ -147,7 +133,7 @@ GPUTexture *DRW_texture_pool_query_2d(int w,
                                       DrawEngineType *engine_type)
 {
   BLI_assert(drw_texture_format_supports_framebuffer(format));
-  GPUTexture *tex = GPU_viewport_texture_pool_query(DST.viewport, engine_type, w, h, format);
+  GPUTexture *tex = DRW_texture_pool_query(DST.vmempool->texture_pool, w, h, format, engine_type);
 
   return tex;
 }

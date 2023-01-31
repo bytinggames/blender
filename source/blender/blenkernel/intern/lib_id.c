@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup bke
@@ -69,10 +53,13 @@
 #include "BKE_lib_query.h"
 #include "BKE_lib_remap.h"
 #include "BKE_main.h"
+#include "BKE_main_namemap.h"
 #include "BKE_node.h"
 #include "BKE_rigidbody.h"
 
 #include "DEG_depsgraph.h"
+#include "DEG_depsgraph_build.h"
+#include "DEG_depsgraph_query.h"
 
 #include "RNA_access.h"
 
@@ -88,7 +75,6 @@
 
 static CLG_LogRef LOG = {.identifier = "bke.lib_id"};
 
-/* Empty shell mostly, but needed for read code. */
 IDTypeInfo IDType_ID_LINK_PLACEHOLDER = {
     .id_code = ID_LINK_PLACEHOLDER,
     .id_filter = 0,
@@ -97,7 +83,8 @@ IDTypeInfo IDType_ID_LINK_PLACEHOLDER = {
     .name = "LinkPlaceholder",
     .name_plural = "link_placeholders",
     .translation_context = BLT_I18NCONTEXT_ID_ID,
-    .flags = IDTYPE_FLAGS_NO_COPY | IDTYPE_FLAGS_NO_LIBLINKING | IDTYPE_FLAGS_NO_MAKELOCAL,
+    .flags = IDTYPE_FLAGS_NO_COPY | IDTYPE_FLAGS_NO_LIBLINKING,
+    .asset_type_info = NULL,
 
     .init_data = NULL,
     .copy_data = NULL,
@@ -105,6 +92,8 @@ IDTypeInfo IDType_ID_LINK_PLACEHOLDER = {
     .make_local = NULL,
     .foreach_id = NULL,
     .foreach_cache = NULL,
+    .foreach_path = NULL,
+    .owner_pointer_get = NULL,
 
     .blend_write = NULL,
     .blend_read_data = NULL,
@@ -123,38 +112,77 @@ IDTypeInfo IDType_ID_LINK_PLACEHOLDER = {
 /* ************* general ************************ */
 
 /**
+ * Rewrites a relative path to be relative to the main file - unless the path is
+ * absolute, in which case it is not altered.
+ */
+static bool lib_id_library_local_paths_callback(BPathForeachPathData *bpath_data,
+                                                char *r_path_dst,
+                                                const char *path_src)
+{
+  const char **data = bpath_data->user_data;
+  /* be sure there is low chance of the path being too short */
+  char filepath[(FILE_MAXDIR * 2) + FILE_MAXFILE];
+  const char *base_new = data[0];
+  const char *base_old = data[1];
+
+  if (BLI_path_is_rel(base_old)) {
+    CLOG_ERROR(&LOG, "old base path '%s' is not absolute.", base_old);
+    return false;
+  }
+
+  /* Make referenced file absolute. This would be a side-effect of
+   * BLI_path_normalize, but we do it explicitly so we know if it changed. */
+  BLI_strncpy(filepath, path_src, FILE_MAX);
+  if (BLI_path_abs(filepath, base_old)) {
+    /* Path was relative and is now absolute. Remap.
+     * Important BLI_path_normalize runs before the path is made relative
+     * because it won't work for paths that start with "//../" */
+    BLI_path_normalize(base_new, filepath);
+    BLI_path_rel(filepath, base_new);
+    BLI_strncpy(r_path_dst, filepath, FILE_MAX);
+    return true;
+  }
+
+  /* Path was not relative to begin with. */
+  return false;
+}
+
+/**
  * This has to be called from each make_local_* func, we could call from BKE_lib_id_make_local()
  * but then the make local functions would not be self contained.
  * Also note that the id _must_ have a library - campbell */
+/* TODO: This can probably be replaced by an ID-level version of #BKE_bpath_relative_rebase. */
 static void lib_id_library_local_paths(Main *bmain, Library *lib, ID *id)
 {
   const char *bpath_user_data[2] = {BKE_main_blendfile_path(bmain), lib->filepath_abs};
 
-  BKE_bpath_traverse_id(bmain,
-                        id,
-                        BKE_bpath_relocate_visitor,
-                        BKE_BPATH_TRAVERSE_SKIP_MULTIFILE,
-                        (void *)bpath_user_data);
+  BKE_bpath_foreach_path_id(
+      &(BPathForeachPathData){.bmain = bmain,
+                              .callback_function = lib_id_library_local_paths_callback,
+                              .flag = BKE_BPATH_FOREACH_PATH_SKIP_MULTIFILE,
+                              .user_data = (void *)bpath_user_data},
+      id);
 }
 
 static int lib_id_clear_library_data_users_update_cb(LibraryIDLinkCallbackData *cb_data)
 {
   ID *id = cb_data->user_data;
   if (*cb_data->id_pointer == id) {
-    DEG_id_tag_update_ex(cb_data->bmain, cb_data->id_owner, ID_RECALC_TAG_FOR_UNDO);
+    DEG_id_tag_update_ex(
+        cb_data->bmain, cb_data->id_owner, ID_RECALC_TAG_FOR_UNDO | ID_RECALC_COPY_ON_WRITE);
     return IDWALK_RET_STOP_ITER;
   }
   return IDWALK_RET_NOP;
 }
 
-/**
- * Pull an ID out of a library (make it local). Only call this for IDs that
- * don't have other library users.
- */
-static void lib_id_clear_library_data_ex(Main *bmain, ID *id)
+void BKE_lib_id_clear_library_data(Main *bmain, ID *id, const int flags)
 {
   const bool id_in_mainlist = (id->tag & LIB_TAG_NO_MAIN) == 0 &&
                               (id->flag & LIB_EMBEDDED_DATA) == 0;
+
+  if (id_in_mainlist) {
+    BKE_main_namemap_remove_name(bmain, id, id->name + 2);
+  }
 
   lib_id_library_local_paths(bmain, id->lib, id);
 
@@ -164,7 +192,7 @@ static void lib_id_clear_library_data_ex(Main *bmain, ID *id)
   id->tag &= ~(LIB_TAG_INDIRECT | LIB_TAG_EXTERN);
   id->flag &= ~LIB_INDIRECT_WEAK_LINK;
   if (id_in_mainlist) {
-    if (BKE_id_new_name_validate(which_libbase(bmain, GS(id->name)), id, NULL)) {
+    if (BKE_id_new_name_validate(bmain, which_libbase(bmain, GS(id->name)), id, NULL, false)) {
       bmain->is_memfile_undo_written = false;
     }
   }
@@ -173,6 +201,16 @@ static void lib_id_clear_library_data_ex(Main *bmain, ID *id)
    * regenerating its session UUID. */
   if ((id->tag & LIB_TAG_TEMP_MAIN) == 0) {
     BKE_lib_libblock_session_uuid_renew(id);
+  }
+
+  if (ID_IS_ASSET(id)) {
+    if ((flags & LIB_ID_MAKELOCAL_ASSET_DATA_CLEAR) != 0) {
+      BKE_asset_metadata_free(&id->asset_data);
+    }
+    else {
+      /* Assets should always have a fake user. Ensure this is the case after "Make Local". */
+      id_fake_user_set(id);
+    }
   }
 
   /* We need to tag this IDs and all of its users, conceptually new local ID and original linked
@@ -191,13 +229,10 @@ static void lib_id_clear_library_data_ex(Main *bmain, ID *id)
    * IDs here, this is down automatically in `lib_id_expand_local_cb()`. */
   Key *key = BKE_key_from_id(id);
   if (key != NULL) {
-    lib_id_clear_library_data_ex(bmain, &key->id);
+    BKE_lib_id_clear_library_data(bmain, &key->id, flags);
   }
-}
 
-void BKE_lib_id_clear_library_data(Main *bmain, ID *id)
-{
-  lib_id_clear_library_data_ex(bmain, id);
+  DEG_relations_tag_update(bmain);
 }
 
 void id_lib_extern(ID *id)
@@ -223,14 +258,6 @@ void id_lib_indirect_weak_link(ID *id)
   }
 }
 
-/**
- * Ensure we have a real user
- *
- * \note Now that we have flags, we could get rid of the 'fake_user' special case,
- * flags are enough to ensure we always have a real user.
- * However, #ID_REAL_USERS is used in several places outside of core lib.c,
- * so think we can wait later to make this change.
- */
 void id_us_ensure_real(ID *id)
 {
   if (id) {
@@ -242,7 +269,6 @@ void id_us_ensure_real(ID *id)
                    "ID user count error: %s (from '%s')",
                    id->name,
                    id->lib ? id->lib->filepath_abs : "[Main]");
-        BLI_assert(0);
       }
       id->us = limit + 1;
       id->tag |= LIB_TAG_EXTRAUSER_SET;
@@ -261,10 +287,6 @@ void id_us_clear_real(ID *id)
   }
 }
 
-/**
- * Same as \a id_us_plus, but does not handle lib indirect -> extern.
- * Only used by readfile.c so far, but simpler/safer to keep it here nonetheless.
- */
 void id_us_plus_no_lib(ID *id)
 {
   if (id) {
@@ -289,14 +311,13 @@ void id_us_plus(ID *id)
   }
 }
 
-/* decrements the user count for *id. */
 void id_us_min(ID *id)
 {
   if (id) {
     const int limit = ID_FAKE_USERS(id);
 
     if (id->us <= limit) {
-      if (GS(id->name) != ID_IP) {
+      if (!ID_TYPE_IS_DEPRECATED(GS(id->name))) {
         /* Do not assert on deprecated ID types, we cannot really ensure that their ID refcounting
          * is valid... */
         CLOG_ERROR(&LOG,
@@ -305,7 +326,6 @@ void id_us_min(ID *id)
                    id->lib ? id->lib->filepath_abs : "[Main]",
                    id->us,
                    limit);
-        BLI_assert(0);
       }
       id->us = limit;
     }
@@ -337,12 +357,34 @@ void id_fake_user_clear(ID *id)
   }
 }
 
-void BKE_id_clear_newpoin(ID *id)
+void BKE_id_newptr_and_tag_clear(ID *id)
 {
-  if (id->newid) {
-    id->newid->tag &= ~LIB_TAG_NEW;
+  /* We assume that if this ID has no new ID, its embedded data has not either. */
+  if (id->newid == NULL) {
+    return;
   }
+
+  id->newid->tag &= ~LIB_TAG_NEW;
   id->newid = NULL;
+
+  /* Deal with embedded data too. */
+  /* NOTE: even though ShapeKeys are not technically embedded data currently, they behave as such
+   * in most cases, so for sake of consistency treat them as such here. Also mirrors the behavior
+   * in `BKE_lib_id_make_local`. */
+  Key *key = BKE_key_from_id(id);
+  if (key != NULL) {
+    BKE_id_newptr_and_tag_clear(&key->id);
+  }
+  bNodeTree *ntree = ntreeFromID(id);
+  if (ntree != NULL) {
+    BKE_id_newptr_and_tag_clear(&ntree->id);
+  }
+  if (GS(id->name) == ID_SCE) {
+    Collection *master_collection = ((Scene *)id)->master_collection;
+    if (master_collection != NULL) {
+      BKE_id_newptr_and_tag_clear(&master_collection->id);
+    }
+  }
 }
 
 static int lib_id_expand_local_cb(LibraryIDLinkCallbackData *cb_data)
@@ -351,6 +393,7 @@ static int lib_id_expand_local_cb(LibraryIDLinkCallbackData *cb_data)
   ID *id_self = cb_data->id_self;
   ID **id_pointer = cb_data->id_pointer;
   int const cb_flag = cb_data->cb_flag;
+  const int flags = POINTER_AS_INT(cb_data->user_data);
 
   if (cb_flag & IDWALK_CB_LOOPBACK) {
     /* We should never have anything to do with loop-back pointers here. */
@@ -365,7 +408,7 @@ static int lib_id_expand_local_cb(LibraryIDLinkCallbackData *cb_data)
     if (*id_pointer != NULL && ID_IS_LINKED(*id_pointer)) {
       BLI_assert(*id_pointer != id_self);
 
-      lib_id_clear_library_data_ex(bmain, *id_pointer);
+      BKE_lib_id_clear_library_data(bmain, *id_pointer, flags);
     }
     return IDWALK_RET_NOP;
   }
@@ -373,7 +416,7 @@ static int lib_id_expand_local_cb(LibraryIDLinkCallbackData *cb_data)
   /* Can happen that we get un-linkable ID here, e.g. with shape-key referring to itself
    * (through drivers)...
    * Just skip it, shape key can only be either indirectly linked, or fully local, period.
-   * And let's curse one more time that stupid useless shapekey ID type! */
+   * And let's curse one more time that stupid useless shape-key ID type! */
   if (*id_pointer && *id_pointer != id_self &&
       BKE_idtype_idcode_is_linkable(GS((*id_pointer)->name))) {
     id_lib_extern(*id_pointer);
@@ -382,97 +425,113 @@ static int lib_id_expand_local_cb(LibraryIDLinkCallbackData *cb_data)
   return IDWALK_RET_NOP;
 }
 
-/**
- * Expand ID usages of given id as 'extern' (and no more indirect) linked data.
- * Used by ID copy/make_local functions.
- */
-void BKE_lib_id_expand_local(Main *bmain, ID *id)
+void BKE_lib_id_expand_local(Main *bmain, ID *id, const int flags)
 {
-  BKE_library_foreach_ID_link(bmain, id, lib_id_expand_local_cb, bmain, IDWALK_READONLY);
+  BKE_library_foreach_ID_link(
+      bmain, id, lib_id_expand_local_cb, POINTER_FROM_INT(flags), IDWALK_READONLY);
 }
 
 /**
  * Ensure new (copied) ID is fully made local.
  */
-static void lib_id_copy_ensure_local(Main *bmain, const ID *old_id, ID *new_id)
+static void lib_id_copy_ensure_local(Main *bmain, const ID *old_id, ID *new_id, const int flags)
 {
   if (ID_IS_LINKED(old_id)) {
-    BKE_lib_id_expand_local(bmain, new_id);
+    BKE_lib_id_expand_local(bmain, new_id, flags);
     lib_id_library_local_paths(bmain, old_id->lib, new_id);
   }
 }
 
-/**
- * Generic 'make local' function, works for most of data-block types...
- */
-void BKE_lib_id_make_local_generic(Main *bmain, ID *id, const int flags)
+void BKE_lib_id_make_local_generic_action_define(
+    struct Main *bmain, struct ID *id, int flags, bool *r_force_local, bool *r_force_copy)
 {
+  bool force_local = (flags & LIB_ID_MAKELOCAL_FORCE_LOCAL) != 0;
+  bool force_copy = (flags & LIB_ID_MAKELOCAL_FORCE_COPY) != 0;
+  BLI_assert(force_copy == false || force_copy != force_local);
+
+  if (force_local || force_copy) {
+    /* Already set by caller code, nothing to do here. */
+    *r_force_local = force_local;
+    *r_force_copy = force_copy;
+    return;
+  }
+
   const bool lib_local = (flags & LIB_ID_MAKELOCAL_FULL_LIBRARY) != 0;
   bool is_local = false, is_lib = false;
 
-  /* - only lib users: do nothing (unless force_local is set)
-   * - only local users: set flag
+  /* - no user (neither lib nor local): make local (happens e.g. with UI-used only data).
+   * - only lib users: do nothing (unless force_local is set)
+   * - only local users: make local
    * - mixed: make copy
    * In case we make a whole lib's content local,
    * we always want to localize, and we skip remapping (done later).
    */
 
+  BKE_library_ID_test_usages(bmain, id, &is_local, &is_lib);
+  if (!lib_local && !is_local && !is_lib) {
+    force_local = true;
+  }
+  else if (lib_local || is_local) {
+    if (!is_lib) {
+      force_local = true;
+    }
+    else {
+      force_copy = true;
+    }
+  }
+
+  *r_force_local = force_local;
+  *r_force_copy = force_copy;
+}
+
+void BKE_lib_id_make_local_generic(Main *bmain, ID *id, const int flags)
+{
   if (!ID_IS_LINKED(id)) {
     return;
   }
 
-  BKE_library_ID_test_usages(bmain, id, &is_local, &is_lib);
+  bool force_local, force_copy;
+  BKE_lib_id_make_local_generic_action_define(bmain, id, flags, &force_local, &force_copy);
 
-  if (lib_local || is_local) {
-    if (!is_lib) {
-      lib_id_clear_library_data_ex(bmain, id);
-      BKE_lib_id_expand_local(bmain, id);
-    }
-    else {
-      ID *id_new = BKE_id_copy(bmain, id);
+  if (force_local) {
+    BKE_lib_id_clear_library_data(bmain, id, flags);
+    BKE_lib_id_expand_local(bmain, id, flags);
+  }
+  else if (force_copy) {
+    ID *id_new = BKE_id_copy(bmain, id);
 
-      /* Should not fail in expected use cases,
-       * but a few ID types cannot be copied (LIB, WM, SCR...). */
-      if (id_new != NULL) {
-        id_new->us = 0;
+    /* Should not fail in expected use cases,
+     * but a few ID types cannot be copied (LIB, WM, SCR...). */
+    if (id_new != NULL) {
+      id_new->us = 0;
 
-        /* setting newid is mandatory for complex make_lib_local logic... */
-        ID_NEW_SET(id, id_new);
-        Key *key = BKE_key_from_id(id), *key_new = BKE_key_from_id(id);
-        if (key && key_new) {
-          ID_NEW_SET(key, key_new);
+      /* setting newid is mandatory for complex make_lib_local logic... */
+      ID_NEW_SET(id, id_new);
+      Key *key = BKE_key_from_id(id), *key_new = BKE_key_from_id(id);
+      if (key && key_new) {
+        ID_NEW_SET(key, key_new);
+      }
+      bNodeTree *ntree = ntreeFromID(id), *ntree_new = ntreeFromID(id_new);
+      if (ntree && ntree_new) {
+        ID_NEW_SET(ntree, ntree_new);
+      }
+      if (GS(id->name) == ID_SCE) {
+        Collection *master_collection = ((Scene *)id)->master_collection,
+                   *master_collection_new = ((Scene *)id_new)->master_collection;
+        if (master_collection && master_collection_new) {
+          ID_NEW_SET(master_collection, master_collection_new);
         }
-        bNodeTree *ntree = ntreeFromID(id), *ntree_new = ntreeFromID(id_new);
-        if (ntree && ntree_new) {
-          ID_NEW_SET(ntree, ntree_new);
-        }
-        if (GS(id->name) == ID_SCE) {
-          Collection *master_collection = ((Scene *)id)->master_collection,
-                     *master_collection_new = ((Scene *)id_new)->master_collection;
-          if (master_collection && master_collection_new) {
-            ID_NEW_SET(master_collection, master_collection_new);
-          }
-        }
+      }
 
-        if (!lib_local) {
-          BKE_libblock_remap(bmain, id, id_new, ID_REMAP_SKIP_INDIRECT_USAGE);
-        }
+      const bool lib_local = (flags & LIB_ID_MAKELOCAL_FULL_LIBRARY) != 0;
+      if (!lib_local) {
+        BKE_libblock_remap(bmain, id, id_new, ID_REMAP_SKIP_INDIRECT_USAGE);
       }
     }
   }
 }
 
-/**
- * Calls the appropriate make_local method for the block, unless test is set.
- *
- * \note Always set #ID.newid pointer in case it gets duplicated.
- *
- * \param flags: Special flag used when making a whole library's content local,
- * it needs specific handling.
- *
- * \return true if the block can be made local.
- */
-bool BKE_lib_id_make_local(Main *bmain, ID *id, const bool test, const int flags)
+bool BKE_lib_id_make_local(Main *bmain, ID *id, const int flags)
 {
   const bool lib_local = (flags & LIB_ID_MAKELOCAL_FULL_LIBRARY) != 0;
 
@@ -484,23 +543,21 @@ bool BKE_lib_id_make_local(Main *bmain, ID *id, const bool test, const int flags
 
   const IDTypeInfo *idtype_info = BKE_idtype_get_info_from_id(id);
 
-  if (idtype_info != NULL) {
-    if ((idtype_info->flags & IDTYPE_FLAGS_NO_MAKELOCAL) == 0) {
-      if (!test) {
-        if (idtype_info->make_local != NULL) {
-          idtype_info->make_local(bmain, id, flags);
-        }
-        else {
-          BKE_lib_id_make_local_generic(bmain, id, flags);
-        }
-      }
-      return true;
-    }
+  if (idtype_info == NULL) {
+    BLI_assert_msg(0, "IDType Missing IDTypeInfo");
     return false;
   }
 
-  BLI_assert(!"IDType Missing IDTypeInfo");
-  return false;
+  BLI_assert((idtype_info->flags & IDTYPE_FLAGS_NO_LIBLINKING) == 0);
+
+  if (idtype_info->make_local != NULL) {
+    idtype_info->make_local(bmain, id, flags);
+  }
+  else {
+    BKE_lib_id_make_local_generic(bmain, id, flags);
+  }
+
+  return true;
 }
 
 struct IDCopyLibManagementData {
@@ -509,7 +566,7 @@ struct IDCopyLibManagementData {
   int flag;
 };
 
-/* Increases usercount as required, and remap self ID pointers. */
+/** Increases user-count as required, and remap self ID pointers. */
 static int id_copy_libmanagement_cb(LibraryIDLinkCallbackData *cb_data)
 {
   ID **id_pointer = cb_data->id_pointer;
@@ -525,7 +582,13 @@ static int id_copy_libmanagement_cb(LibraryIDLinkCallbackData *cb_data)
 
   /* Increase used IDs refcount if needed and required. */
   if ((data->flag & LIB_ID_CREATE_NO_USER_REFCOUNT) == 0 && (cb_flag & IDWALK_CB_USER)) {
-    id_us_plus(id);
+    if ((data->flag & LIB_ID_CREATE_NO_MAIN) != 0) {
+      BLI_assert(cb_data->id_self->tag & LIB_TAG_NO_MAIN);
+      id_us_plus_no_lib(id);
+    }
+    else {
+      id_us_plus(id);
+    }
   }
 
   return IDWALK_RET_NOP;
@@ -533,36 +596,13 @@ static int id_copy_libmanagement_cb(LibraryIDLinkCallbackData *cb_data)
 
 bool BKE_id_copy_is_allowed(const ID *id)
 {
-#define LIB_ID_TYPES_NOCOPY \
-  ID_LI, ID_SCR, ID_WM, ID_WS, /* Not supported */ \
-      ID_IP                    /* Deprecated */
+#define LIB_ID_TYPES_NOCOPY ID_LI, ID_SCR, ID_WM, ID_WS /* Not supported */
 
-  return !ELEM(GS(id->name), LIB_ID_TYPES_NOCOPY);
+  return !ID_TYPE_IS_DEPRECATED(GS(id->name)) && !ELEM(GS(id->name), LIB_ID_TYPES_NOCOPY);
 
 #undef LIB_ID_TYPES_NOCOPY
 }
 
-/**
- * Generic entry point for copying a data-block (new API).
- *
- * \note Copy is generally only affecting the given data-block
- * (no ID used by copied one will be affected, besides usercount).
- * There are exceptions though:
- *  - Embedded IDs (root node trees and master collections) are always copied with their owner.
- *  - If #LIB_ID_COPY_ACTIONS is defined, actions used by animdata will be duplicated.
- *  - If #LIB_ID_COPY_SHAPEKEY is defined, shapekeys will be duplicated.
- *  - If #LIB_ID_CREATE_LOCAL is defined, root node trees will be deep-duplicated recursively.
- *
- * \note Usercount of new copy is always set to 1.
- *
- * \param bmain: Main database, may be NULL only if LIB_ID_CREATE_NO_MAIN is specified.
- * \param id: Source data-block.
- * \param r_newid: Pointer to new (copied) ID pointer, may be NULL. Used to allow copying into
- *                 already allocated memory.
- * \param flag: Set of copy options, see DNA_ID.h enum for details (leave to zero for default,
- *              full copy).
- * \return NULL when copying that ID type is not supported, the new copy otherwise.
- */
 ID *BKE_id_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int flag)
 {
   ID *newid = (r_newid != NULL) ? *r_newid : NULL;
@@ -578,7 +618,7 @@ ID *BKE_id_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int flag)
     }
   }
 
-  /* Early output is source is NULL. */
+  /* Early output if source is NULL. */
   if (id == NULL) {
     return NULL;
   }
@@ -597,7 +637,7 @@ ID *BKE_id_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int flag)
     }
   }
   else {
-    BLI_assert(!"IDType Missing IDTypeInfo");
+    BLI_assert_msg(0, "IDType Missing IDTypeInfo");
   }
 
   /* Update ID refcount, remap pointers to self in new ID. */
@@ -612,7 +652,7 @@ ID *BKE_id_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int flag)
    * XXX TODO: is this behavior OK, or should we need own flag to control that? */
   if ((flag & LIB_ID_CREATE_NO_MAIN) == 0) {
     BLI_assert((flag & LIB_ID_COPY_KEEP_LIB) == 0);
-    lib_id_copy_ensure_local(bmain, id, newid);
+    lib_id_copy_ensure_local(bmain, id, newid, 0);
   }
   else {
     newid->lib = id->lib;
@@ -625,20 +665,15 @@ ID *BKE_id_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int flag)
   return newid;
 }
 
-/**
- * Invokes the appropriate copy method for the block and returns the result in
- * newid, unless test. Returns true if the block can be copied.
- */
 ID *BKE_id_copy(Main *bmain, const ID *id)
 {
   return BKE_id_copy_ex(bmain, id, NULL, LIB_ID_COPY_DEFAULT);
 }
 
-/**
- * Invokes the appropriate copy method for the block and returns the result in
- * newid, unless test. Returns true if the block can be copied.
- */
-ID *BKE_id_copy_for_duplicate(Main *bmain, ID *id, const eDupli_ID_Flags duplicate_flags)
+ID *BKE_id_copy_for_duplicate(Main *bmain,
+                              ID *id,
+                              const eDupli_ID_Flags duplicate_flags,
+                              const int copy_flags)
 {
   if (id == NULL) {
     return id;
@@ -649,7 +684,7 @@ ID *BKE_id_copy_for_duplicate(Main *bmain, ID *id, const eDupli_ID_Flags duplica
       return id;
     }
 
-    ID *id_new = BKE_id_copy(bmain, id);
+    ID *id_new = BKE_id_copy_ex(bmain, id, NULL, copy_flags);
     /* Copying add one user by default, need to get rid of that one. */
     id_us_min(id_new);
     ID_NEW_SET(id, id_new);
@@ -661,7 +696,7 @@ ID *BKE_id_copy_for_duplicate(Main *bmain, ID *id, const eDupli_ID_Flags duplica
       ID_NEW_SET(key, key_new);
     }
 
-    /* Note: embedded data (root nodetrees and master collections) should never be referenced by
+    /* NOTE: embedded data (root nodetrees and master collections) should never be referenced by
      * anything else, so we do not need to set their newid pointer and flag. */
 
     BKE_animdata_duplicate_id_action(bmain, id_new, duplicate_flags);
@@ -672,6 +707,58 @@ ID *BKE_id_copy_for_duplicate(Main *bmain, ID *id, const eDupli_ID_Flags duplica
      * by `BKE_animdata_duplicate_id_action` as well. */
   }
   return id->newid;
+}
+
+static int foreach_assign_id_to_orig_callback(LibraryIDLinkCallbackData *cb_data)
+{
+  ID **id_p = cb_data->id_pointer;
+
+  if (*id_p) {
+    ID *id = *id_p;
+    *id_p = DEG_get_original_id(id);
+
+    /* If the ID changes increase the user count.
+     *
+     * This means that the reference to evaluated ID has been changed with a reference to the
+     * original ID which implies that the user count of the original ID is increased.
+     *
+     * The evaluated IDs do not maintain their user counter, so do not change it to avoid issues
+     * with the user counter going negative. */
+    if (*id_p != id) {
+      if ((cb_data->cb_flag & IDWALK_CB_USER) != 0) {
+        id_us_plus(*id_p);
+      }
+    }
+  }
+
+  return IDWALK_RET_NOP;
+}
+
+ID *BKE_id_copy_for_use_in_bmain(Main *bmain, const ID *id)
+{
+  ID *newid = BKE_id_copy(bmain, id);
+
+  if (newid == NULL) {
+    return newid;
+  }
+
+  /* Assign ID references directly used by the given ID to their original complementary parts.
+   *
+   * For example, when is called on an evaluated object will assign object->data to its original
+   * pointer, the evaluated object->data will be kept unchanged. */
+  BKE_library_foreach_ID_link(NULL, newid, foreach_assign_id_to_orig_callback, NULL, IDWALK_NOP);
+
+  /* Shape keys reference on evaluated ID is preserved to keep driver paths available, but the key
+   * data is likely to be invalid now due to modifiers, so clear the shape key reference avoiding
+   * any possible shape corruption. */
+  if (DEG_is_evaluated_id(id)) {
+    Key **key_p = BKE_key_from_id_p(newid);
+    if (key_p) {
+      *key_p = NULL;
+    }
+  }
+
+  return newid;
 }
 
 /**
@@ -715,31 +802,16 @@ static void id_swap(Main *bmain, ID *id_a, ID *id_b, const bool do_full_id)
   }
 }
 
-/**
- * Does a mere memory swap over the whole IDs data (including type-specific memory).
- * \note Most internal ID data itself is not swapped (only IDProperties are).
- *
- * \param bmain: May be NULL, in which case there will be no remapping of internal pointers to
- * itself.
- */
 void BKE_lib_id_swap(Main *bmain, ID *id_a, ID *id_b)
 {
   id_swap(bmain, id_a, id_b, false);
 }
 
-/**
- * Does a mere memory swap over the whole IDs data (including type-specific memory).
- * \note All internal ID data itself is also swapped.
- *
- * \param bmain: May be NULL, in which case there will be no remapping of internal pointers to
- * itself.
- */
 void BKE_lib_id_swap_full(Main *bmain, ID *id_a, ID *id_b)
 {
   id_swap(bmain, id_a, id_b, true);
 }
 
-/** Does *not* set ID->newid pointer. */
 bool id_single_user(bContext *C, ID *id, PointerRNA *ptr, PropertyRNA *prop)
 {
   ID *newid = NULL;
@@ -804,7 +876,6 @@ static int libblock_management_us_min(LibraryIDLinkCallbackData *cb_data)
   return IDWALK_RET_NOP;
 }
 
-/** Add a 'NO_MAIN' data-block to given main (also sets usercounts of its IDs if needed). */
 void BKE_libblock_management_main_add(Main *bmain, void *idv)
 {
   ID *id = idv;
@@ -827,7 +898,9 @@ void BKE_libblock_management_main_add(Main *bmain, void *idv)
   ListBase *lb = which_libbase(bmain, GS(id->name));
   BKE_main_lock(bmain);
   BLI_addtail(lb, id);
-  BKE_id_new_name_validate(lb, id, NULL);
+  /* We need to allow adding extra datablocks into libraries too, e.g. to support generating new
+   * overrides for recursive resync. */
+  BKE_id_new_name_validate(bmain, lb, id, NULL, true);
   /* alphabetic insertion: is in new_id */
   id->tag &= ~(LIB_TAG_NO_MAIN | LIB_TAG_NO_USER_REFCOUNT);
   bmain->is_memfile_undo_written = false;
@@ -836,7 +909,6 @@ void BKE_libblock_management_main_add(Main *bmain, void *idv)
   BKE_lib_libblock_session_uuid_ensure(id);
 }
 
-/** Remove a data-block from given main (set it to 'NO_MAIN' status). */
 void BKE_libblock_management_main_remove(Main *bmain, void *idv)
 {
   ID *id = idv;
@@ -851,6 +923,7 @@ void BKE_libblock_management_main_remove(Main *bmain, void *idv)
   ListBase *lb = which_libbase(bmain, GS(id->name));
   BKE_main_lock(bmain);
   BLI_remlink(lb, id);
+  BKE_main_namemap_remove_name(bmain, id, id->name + 2);
   id->tag |= LIB_TAG_NO_MAIN;
   bmain->is_memfile_undo_written = false;
   BKE_main_unlock(bmain);
@@ -881,9 +954,6 @@ void BKE_libblock_management_usercounts_clear(Main *bmain, void *idv)
   id->tag |= LIB_TAG_NO_USER_REFCOUNT;
 }
 
-/**
- * Clear or set given tags for all ids in listbase (runtime tags).
- */
 void BKE_main_id_tag_listbase(ListBase *lb, const int tag, const bool value)
 {
   ID *id;
@@ -900,9 +970,6 @@ void BKE_main_id_tag_listbase(ListBase *lb, const int tag, const bool value)
   }
 }
 
-/**
- * Clear or set given tags for all ids of given type in bmain (runtime tags).
- */
 void BKE_main_id_tag_idcode(struct Main *mainvar,
                             const short type,
                             const int tag,
@@ -913,9 +980,6 @@ void BKE_main_id_tag_idcode(struct Main *mainvar,
   BKE_main_id_tag_listbase(lb, tag, value);
 }
 
-/**
- * Clear or set given tags for all ids in bmain (runtime tags).
- */
 void BKE_main_id_tag_all(struct Main *mainvar, const int tag, const bool value)
 {
   ListBase *lbarray[INDEX_ID_MAX];
@@ -927,9 +991,6 @@ void BKE_main_id_tag_all(struct Main *mainvar, const int tag, const bool value)
   }
 }
 
-/**
- * Clear or set given flags for all ids in listbase (persistent flags).
- */
 void BKE_main_id_flag_listbase(ListBase *lb, const int flag, const bool value)
 {
   ID *id;
@@ -946,9 +1007,6 @@ void BKE_main_id_flag_listbase(ListBase *lb, const int flag, const bool value)
   }
 }
 
-/**
- * Clear or set given flags for all ids in bmain (persistent flags).
- */
 void BKE_main_id_flag_all(Main *bmain, const int flag, const bool value)
 {
   ListBase *lbarray[INDEX_ID_MAX];
@@ -959,11 +1017,11 @@ void BKE_main_id_flag_all(Main *bmain, const int flag, const bool value)
   }
 }
 
-void BKE_main_id_repair_duplicate_names_listbase(ListBase *lb)
+void BKE_main_id_repair_duplicate_names_listbase(Main *bmain, ListBase *lb)
 {
   int lb_len = 0;
   LISTBASE_FOREACH (ID *, id, lb) {
-    if (id->lib == NULL) {
+    if (!ID_IS_LINKED(id)) {
       lb_len += 1;
     }
   }
@@ -976,14 +1034,14 @@ void BKE_main_id_repair_duplicate_names_listbase(ListBase *lb)
   GSet *gset = BLI_gset_str_new_ex(__func__, lb_len);
   int i = 0;
   LISTBASE_FOREACH (ID *, id, lb) {
-    if (id->lib == NULL) {
+    if (!ID_IS_LINKED(id)) {
       id_array[i] = id;
       i++;
     }
   }
   for (i = 0; i < lb_len; i++) {
     if (!BLI_gset_add(gset, id_array[i]->name + 2)) {
-      BKE_id_new_name_validate(lb, id_array[i], NULL);
+      BKE_id_new_name_validate(bmain, lb, id_array[i], NULL, false);
     }
   }
   BLI_gset_free(gset, NULL);
@@ -1014,9 +1072,6 @@ void BKE_main_lib_objects_recalc_all(Main *bmain)
  *
  * **************************** */
 
-/**
- * Get allocation size of a given data-block type and optionally allocation name.
- */
 size_t BKE_libblock_get_alloc_info(short type, const char **name)
 {
   const IDTypeInfo *id_type = BKE_idtype_get_info_from_idcode(type);
@@ -1034,10 +1089,6 @@ size_t BKE_libblock_get_alloc_info(short type, const char **name)
   return id_type->struct_size;
 }
 
-/**
- * Allocates and returns memory of the right size for the specified block type,
- * initialized to zero.
- */
 void *BKE_libblock_alloc_notest(short type)
 {
   const char *name;
@@ -1045,16 +1096,10 @@ void *BKE_libblock_alloc_notest(short type)
   if (size != 0) {
     return MEM_callocN(size, name);
   }
-  BLI_assert(!"Request to allocate unknown data type");
+  BLI_assert_msg(0, "Request to allocate unknown data type");
   return NULL;
 }
 
-/**
- * Allocates and returns a block of the specified type, with the specified name
- * (adjusted as necessary to ensure uniqueness), and appended to the specified list.
- * The user count is set to 1, all other content (apart from name and links) being
- * initialized to zero.
- */
 void *BKE_libblock_alloc(Main *bmain, short type, const char *name, const int flag)
 {
   BLI_assert((flag & LIB_ID_CREATE_NO_ALLOCATE) == 0);
@@ -1080,18 +1125,27 @@ void *BKE_libblock_alloc(Main *bmain, short type, const char *name, const int fl
       id->us = 1;
     }
     if ((flag & LIB_ID_CREATE_NO_MAIN) == 0) {
-      /* Note that 2.8x versioning has tested not to cause conflicts. */
-      BLI_assert(bmain->is_locked_for_linking == false || ELEM(type, ID_WS, ID_GR));
+      /* Note that 2.8x versioning has tested not to cause conflicts. Node trees are
+       * skipped in this check to allow adding a geometry node tree for versioning. */
+      BLI_assert(bmain->is_locked_for_linking == false || ELEM(type, ID_WS, ID_GR, ID_NT));
       ListBase *lb = which_libbase(bmain, type);
 
       BKE_main_lock(bmain);
       BLI_addtail(lb, id);
-      BKE_id_new_name_validate(lb, id, name);
+      BKE_id_new_name_validate(bmain, lb, id, name, false);
       bmain->is_memfile_undo_written = false;
       /* alphabetic insertion: is in new_id */
       BKE_main_unlock(bmain);
 
-      /* TODO to be removed from here! */
+      /* This assert avoids having to keep name_map consistency when changing the library of an ID,
+       * if this check is not true anymore it will have to be done here too. */
+      BLI_assert(bmain->curlib == NULL || bmain->curlib->runtime.name_map == NULL);
+      /* This is important in 'readfile doversion after liblink' context mainly, but is a good
+       * consistency change in general: ID created for a Main should get that main's current
+       * library pointer. */
+      id->lib = bmain->curlib;
+
+      /* TODO: to be removed from here! */
       if ((flag & LIB_ID_CREATE_NO_DEG_TAG) == 0) {
         DEG_id_type_tag(bmain, type);
       }
@@ -1111,10 +1165,6 @@ void *BKE_libblock_alloc(Main *bmain, short type, const char *name, const int fl
   return id;
 }
 
-/**
- * Initialize an ID of given type, such that it has valid 'empty' data.
- * ID is assumed to be just calloc'ed.
- */
 void BKE_libblock_init_empty(ID *id)
 {
   const IDTypeInfo *idtype_info = BKE_idtype_get_info_from_id(id);
@@ -1126,18 +1176,20 @@ void BKE_libblock_init_empty(ID *id)
     return;
   }
 
-  BLI_assert(!"IDType Missing IDTypeInfo");
+  BLI_assert_msg(0, "IDType Missing IDTypeInfo");
+}
+
+void BKE_libblock_runtime_reset_remapping_status(ID *id)
+{
+  id->runtime.remap.status = 0;
+  id->runtime.remap.skipped_refcounted = 0;
+  id->runtime.remap.skipped_direct = 0;
+  id->runtime.remap.skipped_indirect = 0;
 }
 
 /* ********** ID session-wise UUID management. ********** */
 static uint global_session_uuid = 0;
 
-/**
- * Generate a session-wise uuid for the given \a id.
- *
- * \note "session-wise" here means while editing a given .blend file. Once a new .blend file is
- * loaded or created, undo history is cleared/reset, and so is the uuid counter.
- */
 void BKE_lib_libblock_session_uuid_ensure(ID *id)
 {
   if (id->session_uuid == MAIN_ID_SESSION_UUID_UNSET) {
@@ -1151,25 +1203,12 @@ void BKE_lib_libblock_session_uuid_ensure(ID *id)
   }
 }
 
-/**
- * Re-generate a new session-wise uuid for the given \a id.
- *
- * \warning This has a few very specific use-cases, no other usage is expected currently:
- *   - To handle UI-related data-blocks that are kept across new file reading, when we do keep
- * existing UI.
- *   - For IDs that are made local without needing any copying.
- */
 void BKE_lib_libblock_session_uuid_renew(ID *id)
 {
   id->session_uuid = MAIN_ID_SESSION_UUID_UNSET;
   BKE_lib_libblock_session_uuid_ensure(id);
 }
 
-/**
- * Generic helper to create a new empty data-block of given type in given \a bmain database.
- *
- * \param name: can be NULL, in which case we get default name for this ID type.
- */
 void *BKE_id_new(Main *bmain, const short type, const char *name)
 {
   BLI_assert(bmain != NULL);
@@ -1184,11 +1223,6 @@ void *BKE_id_new(Main *bmain, const short type, const char *name)
   return id;
 }
 
-/**
- * Generic helper to create a new temporary empty data-block of given type,
- * *outside* of any Main database.
- *
- * \param name: can be NULL, in which case we get default name for this ID type. */
 void *BKE_id_new_nomain(const short type, const char *name)
 {
   if (name == NULL) {
@@ -1215,14 +1249,6 @@ void BKE_libblock_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int ori
   BLI_assert((flag & LIB_ID_CREATE_NO_MAIN) != 0 || bmain != NULL);
   BLI_assert((flag & LIB_ID_CREATE_NO_MAIN) != 0 || (flag & LIB_ID_CREATE_NO_ALLOCATE) == 0);
   BLI_assert((flag & LIB_ID_CREATE_NO_MAIN) != 0 || (flag & LIB_ID_CREATE_LOCAL) == 0);
-  if (!is_private_id_data) {
-    /* When we are handling private ID data, we might still want to manage usercounts, even
-     * though that ID data-block is actually outside of Main... */
-    BLI_assert((flag & LIB_ID_CREATE_NO_MAIN) == 0 ||
-               (flag & LIB_ID_CREATE_NO_USER_REFCOUNT) != 0);
-  }
-  /* Never implicitly copy shapekeys when generating temp data outside of Main database. */
-  BLI_assert((flag & LIB_ID_CREATE_NO_MAIN) == 0 || (flag & LIB_ID_COPY_SHAPEKEY) == 0);
 
   /* 'Private ID' data handling. */
   if ((bmain != NULL) && is_private_id_data) {
@@ -1234,16 +1260,23 @@ void BKE_libblock_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int ori
 
   if ((flag & LIB_ID_CREATE_NO_ALLOCATE) != 0) {
     /* r_newid already contains pointer to allocated memory. */
-    /* TODO do we want to memset(0) whole mem before filling it? */
+    /* TODO: do we want to memset(0) whole mem before filling it? */
     BLI_strncpy(new_id->name, id->name, sizeof(new_id->name));
     new_id->us = 0;
     new_id->tag |= LIB_TAG_NOT_ALLOCATED | LIB_TAG_NO_MAIN | LIB_TAG_NO_USER_REFCOUNT;
-    /* TODO Do we want/need to copy more from ID struct itself? */
+    /* TODO: Do we want/need to copy more from ID struct itself? */
   }
   else {
     new_id = BKE_libblock_alloc(bmain, GS(id->name), id->name + 2, flag);
   }
   BLI_assert(new_id != NULL);
+
+  if ((flag & LIB_ID_COPY_SET_COPIED_ON_WRITE) != 0) {
+    new_id->tag |= LIB_TAG_COPIED_ON_WRITE;
+  }
+  else {
+    new_id->tag &= ~LIB_TAG_COPIED_ON_WRITE;
+  }
 
   const size_t id_len = BKE_libblock_get_alloc_info(GS(new_id->name), NULL);
   const size_t id_offset = sizeof(ID);
@@ -1256,13 +1289,16 @@ void BKE_libblock_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int ori
 
   new_id->flag = (new_id->flag & ~copy_idflag_mask) | (id->flag & copy_idflag_mask);
 
-  /* We do not want any handling of usercount in code duplicating the data here, we do that all
+  /* We do not want any handling of user-count in code duplicating the data here, we do that all
    * at once in id_copy_libmanagement_cb() at the end. */
   const int copy_data_flag = orig_flag | LIB_ID_CREATE_NO_USER_REFCOUNT;
 
   if (id->properties) {
     new_id->properties = IDP_CopyProperty_ex(id->properties, copy_data_flag);
   }
+
+  /* This is never duplicated, only one existing ID should have a given weak ref to library/ID. */
+  new_id->library_weak_reference = NULL;
 
   if ((orig_flag & LIB_ID_COPY_NO_LIB_OVERRIDE) == 0) {
     if (ID_IS_OVERRIDE_LIBRARY_REAL(id)) {
@@ -1300,7 +1336,6 @@ void BKE_libblock_copy_ex(Main *bmain, const ID *id, ID **r_newid, const int ori
   *r_newid = new_id;
 }
 
-/* used everywhere in blenkernel */
 void *BKE_libblock_copy(Main *bmain, const ID *id)
 {
   ID *idn;
@@ -1310,15 +1345,8 @@ void *BKE_libblock_copy(Main *bmain, const ID *id)
   return idn;
 }
 
-/* XXX TODO: get rid of this useless wrapper at some point... */
-void *BKE_libblock_copy_for_localize(const ID *id)
-{
-  ID *idn;
-  BKE_libblock_copy_ex(NULL, id, &idn, LIB_ID_COPY_LOCALIZE | LIB_ID_COPY_NO_ANIMDATA);
-  return idn;
-}
-
 /* ***************** ID ************************ */
+
 ID *BKE_libblock_find_name(struct Main *bmain, const short type, const char *name)
 {
   ListBase *lb = which_libbase(bmain, type);
@@ -1326,14 +1354,20 @@ ID *BKE_libblock_find_name(struct Main *bmain, const short type, const char *nam
   return BLI_findstring(lb, name, offsetof(ID, name) + 2);
 }
 
-/**
- * Sort given \a id into given \a lb list, using case-insensitive comparison of the id names.
- *
- * \note All other IDs beside given one are assumed already properly sorted in the list.
- *
- * \param id_sorting_hint: Ignored if NULL. Otherwise, used to check if we can insert \a id
- * immediately before or after that pointer. It must always be into given \a lb list.
- */
+struct ID *BKE_libblock_find_session_uuid(Main *bmain,
+                                          const short type,
+                                          const uint32_t session_uuid)
+{
+  ListBase *lb = which_libbase(bmain, type);
+  BLI_assert(lb != NULL);
+  LISTBASE_FOREACH (ID *, id, lb) {
+    if (id->session_uuid == session_uuid) {
+      return id;
+    }
+  }
+  return NULL;
+}
+
 void id_sort_by_name(ListBase *lb, ID *id, ID *id_sorting_hint)
 {
 #define ID_SORT_STEP_SIZE 512
@@ -1348,12 +1382,12 @@ void id_sort_by_name(ListBase *lb, ID *id, ID *id_sorting_hint)
   BLI_remlink(lb, id);
 
   /* Check if we can actually insert id before or after id_sorting_hint, if given. */
-  if (!ELEM(id_sorting_hint, NULL, id)) {
+  if (!ELEM(id_sorting_hint, NULL, id) && id_sorting_hint->lib == id->lib) {
     BLI_assert(BLI_findindex(lb, id_sorting_hint) >= 0);
 
     ID *id_sorting_hint_next = id_sorting_hint->next;
     if (BLI_strcasecmp(id_sorting_hint->name, id->name) < 0 &&
-        (id_sorting_hint_next == NULL ||
+        (id_sorting_hint_next == NULL || id_sorting_hint_next->lib != id->lib ||
          BLI_strcasecmp(id_sorting_hint_next->name, id->name) > 0)) {
       BLI_insertlinkafter(lb, id_sorting_hint, id);
       return;
@@ -1361,7 +1395,7 @@ void id_sort_by_name(ListBase *lb, ID *id, ID *id_sorting_hint)
 
     ID *id_sorting_hint_prev = id_sorting_hint->prev;
     if (BLI_strcasecmp(id_sorting_hint->name, id->name) > 0 &&
-        (id_sorting_hint_prev == NULL ||
+        (id_sorting_hint_prev == NULL || id_sorting_hint_prev->lib != id->lib ||
          BLI_strcasecmp(id_sorting_hint_prev->name, id->name) < 0)) {
       BLI_insertlinkbefore(lb, id_sorting_hint, id);
       return;
@@ -1373,19 +1407,36 @@ void id_sort_by_name(ListBase *lb, ID *id, ID *id_sorting_hint)
 
   /* Step one: We go backward over a whole chunk of items at once, until we find a limit item
    * that is lower than, or equal (should never happen!) to the one we want to insert. */
-  /* Note: We start from the end, because in typical 'heavy' case (insertion of lots of IDs at
+  /* NOTE: We start from the end, because in typical 'heavy' case (insertion of lots of IDs at
    * once using the same base name), newly inserted items will generally be towards the end
    * (higher extension numbers). */
-  for (idtest = lb->last, item_array_index = ID_SORT_STEP_SIZE - 1; idtest != NULL;
-       idtest = idtest->prev, item_array_index--) {
+  bool is_in_library = false;
+  item_array_index = ID_SORT_STEP_SIZE - 1;
+  for (idtest = lb->last; idtest != NULL; idtest = idtest->prev) {
+    if (is_in_library) {
+      if (idtest->lib != id->lib) {
+        /* We got out of expected library 'range' in the list, so we are done here and can move on
+         * to the next step. */
+        break;
+      }
+    }
+    else if (idtest->lib == id->lib) {
+      /* We are entering the expected library 'range' of IDs in the list. */
+      is_in_library = true;
+    }
+
+    if (!is_in_library) {
+      continue;
+    }
+
     item_array[item_array_index] = idtest;
     if (item_array_index == 0) {
-      if ((idtest->lib == NULL && id->lib != NULL) ||
-          BLI_strcasecmp(idtest->name, id->name) <= 0) {
+      if (BLI_strcasecmp(idtest->name, id->name) <= 0) {
         break;
       }
       item_array_index = ID_SORT_STEP_SIZE;
     }
+    item_array_index--;
   }
 
   /* Step two: we go forward in the selected chunk of items and check all of them, as we know
@@ -1397,7 +1448,7 @@ void id_sort_by_name(ListBase *lb, ID *id, ID *id_sorting_hint)
    * So we can increment that index in any case. */
   for (item_array_index++; item_array_index < ID_SORT_STEP_SIZE; item_array_index++) {
     idtest = item_array[item_array_index];
-    if ((idtest->lib != NULL && id->lib == NULL) || BLI_strcasecmp(idtest->name, id->name) > 0) {
+    if (BLI_strcasecmp(idtest->name, id->name) > 0) {
       BLI_insertlinkbefore(lb, idtest, id);
       break;
     }
@@ -1405,12 +1456,18 @@ void id_sort_by_name(ListBase *lb, ID *id, ID *id_sorting_hint)
   if (item_array_index == ID_SORT_STEP_SIZE) {
     if (idtest == NULL) {
       /* If idtest is NULL here, it means that in the first loop, the last comparison was
-       * performed exactly on the first item of the list, and that it also failed. In other
-       * words, all items in the list are greater than inserted one, so we can put it at the
-       * start of the list. */
-      /* Note that BLI_insertlinkafter() would have same behavior in that case, but better be
-       * explicit here. */
-      BLI_addhead(lb, id);
+       * performed exactly on the first item of the list, and that it also failed. And that the
+       * second loop was not walked at all.
+       *
+       * In other words, if `id` is local, all the items in the list are greater than the inserted
+       * one, so we can put it at the start of the list. Or, if `id` is linked, it is the first one
+       * of its library, and we can put it at the very end of the list. */
+      if (ID_IS_LINKED(id)) {
+        BLI_addtail(lb, id);
+      }
+      else {
+        BLI_addhead(lb, id);
+      }
     }
     else {
       BLI_insertlinkafter(lb, idtest, id);
@@ -1420,270 +1477,17 @@ void id_sort_by_name(ListBase *lb, ID *id, ID *id_sorting_hint)
 #undef ID_SORT_STEP_SIZE
 }
 
-/* Note: this code assumes and ensures that the suffix number can never go beyond 1 billion. */
-#define MAX_NUMBER 1000000000
-/* We do not want to get "name.000", so minimal number is 1. */
-#define MIN_NUMBER 1
-/* The maximum value up to which we search for the actual smallest unused number. Beyond that
- * value, we will only use the first biggest unused number, without trying to 'fill the gaps'
- * in-between already used numbers... */
-#define MAX_NUMBERS_IN_USE 1024
-
-/**
- * Helper building final ID name from given base_name and number.
- *
- * If everything goes well and we do generate a valid final ID name in given name, we return
- * true. In case the final name would overflow the allowed ID name length, or given number is
- * bigger than maximum allowed value, we truncate further the base_name (and given name, which is
- * assumed to have the same 'base_name' part), and return false.
- */
-static bool id_name_final_build(char *name, char *base_name, size_t base_name_len, int number)
+bool BKE_id_new_name_validate(
+    struct Main *bmain, ListBase *lb, ID *id, const char *tname, const bool do_linked_data)
 {
-  char number_str[11]; /* Dot + nine digits + NULL terminator. */
-  size_t number_str_len = BLI_snprintf_rlen(number_str, ARRAY_SIZE(number_str), ".%.3d", number);
-
-  /* If the number would lead to an overflow of the maximum ID name length, we need to truncate
-   * the base name part and do all the number checks again. */
-  if (base_name_len + number_str_len >= MAX_ID_NAME - 2 || number >= MAX_NUMBER) {
-    if (base_name_len + number_str_len >= MAX_ID_NAME - 2) {
-      base_name_len = MAX_ID_NAME - 2 - number_str_len - 1;
-    }
-    else {
-      base_name_len--;
-    }
-    base_name[base_name_len] = '\0';
-
-    /* Code above may have generated invalid utf-8 string, due to raw truncation.
-     * Ensure we get a valid one now. */
-    base_name_len -= (size_t)BLI_utf8_invalid_strip(base_name, base_name_len);
-
-    /* Also truncate orig name, and start the whole check again. */
-    name[base_name_len] = '\0';
-    return false;
-  }
-
-  /* We have our final number, we can put it in name and exit the function. */
-  BLI_strncpy(name + base_name_len, number_str, number_str_len + 1);
-  return true;
-}
-
-/**
- * Check to see if an ID name is already used, and find a new one if so.
- * Return true if a new name was created (returned in name).
- *
- * Normally the ID that's being checked is already in the ListBase, so ID *id points at the new
- * entry. The Python Library module needs to know what the name of a data-block will be before it
- * is appended, in this case ID *id is NULL.
- */
-static bool check_for_dupid(ListBase *lb, ID *id, char *name, ID **r_id_sorting_hint)
-{
-  BLI_assert(strlen(name) < MAX_ID_NAME - 2);
-
-  *r_id_sorting_hint = NULL;
-
-  ID *id_test = lb->first;
-  bool is_name_changed = false;
-
-  if (id_test == NULL) {
-    return is_name_changed;
-  }
-
-  const short id_type = (short)GS(id_test->name);
-
-  /* Static storage of previous handled ID/name info, used to perform a quicker test and optimize
-   * creation of huge number of IDs using the same given base name. */
-  static char prev_orig_base_name[MAX_ID_NAME - 2] = {0};
-  static char prev_final_base_name[MAX_ID_NAME - 2] = {0};
-  static short prev_id_type = ID_LINK_PLACEHOLDER; /* Should never exist in actual ID list. */
-  static int prev_number = MIN_NUMBER - 1;
-
-  /* Initial test to check whether we can 'shortcut' the more complex loop of the main code
-   * below. Note that we do not do that for low numbers, as that would prevent using actual
-   * smallest available number in some cases, and benefits of this special case handling mostly
-   * show up with high numbers anyway. */
-  if (id_type == prev_id_type && prev_number >= MAX_NUMBERS_IN_USE &&
-      prev_number < MAX_NUMBER - 1 && name[0] == prev_final_base_name[0]) {
-
-    /* Get the name and number parts ("name.number"). */
-    char base_name[MAX_ID_NAME - 2];
-    int number = MIN_NUMBER;
-    size_t base_name_len = BLI_split_name_num(base_name, &number, name, '.');
-    size_t prev_final_base_name_len = strlen(prev_final_base_name);
-    size_t prev_orig_base_name_len = strlen(prev_orig_base_name);
-
-    if (base_name_len == prev_orig_base_name_len &&
-        STREQLEN(base_name, prev_orig_base_name, prev_orig_base_name_len)) {
-      /* Once we have ensured given base_name and original previous one are the same, we can
-       * check that previously used number is actually used, and that next one is free. */
-      /* Note that from now on, we only used previous final base name, as it might have been
-       * truncated from original one due to number suffix length. */
-      char final_name[MAX_ID_NAME - 2];
-      char prev_final_name[MAX_ID_NAME - 2];
-      BLI_strncpy(final_name, prev_final_base_name, prev_final_base_name_len + 1);
-      BLI_strncpy(prev_final_name, prev_final_base_name, prev_final_base_name_len + 1);
-
-      if (id_name_final_build(final_name, base_name, prev_final_base_name_len, prev_number + 1) &&
-          id_name_final_build(prev_final_name, base_name, prev_final_base_name_len, prev_number)) {
-        /* We successfully built valid final names of previous and current iterations,
-         * now we have to ensure that previous final name is indeed used in current ID list,
-         * and that current one is not. */
-        bool is_valid = false;
-        for (id_test = lb->first; id_test; id_test = id_test->next) {
-          if (id != id_test && !ID_IS_LINKED(id_test)) {
-            if (id_test->name[2] == final_name[0] && STREQ(final_name, id_test->name + 2)) {
-              /* We expect final_name to not be already used, so this is a failure. */
-              is_valid = false;
-              break;
-            }
-            /* Previous final name should only be found once in the list, so if it was found
-             * already, no need to do a string comparison again. */
-            if (!is_valid && id_test->name[2] == prev_final_name[0] &&
-                STREQ(prev_final_name, id_test->name + 2)) {
-              is_valid = true;
-              *r_id_sorting_hint = id_test;
-            }
-          }
-        }
-
-        if (is_valid) {
-          /* Only the number changed, prev_orig_base_name, prev_final_base_name and prev_id_type
-           * remain the same. */
-          prev_number++;
-
-          strcpy(name, final_name);
-          return true;
-        }
-      }
-    }
-  }
-
-  /* To speed up finding smallest unused number within [0 .. MAX_NUMBERS_IN_USE - 1].
-   * We do not bother beyond that point. */
-  ID *ids_in_use[MAX_NUMBERS_IN_USE] = {NULL};
-
-  bool is_first_run = true;
-  while (true) {
-    /* Get the name and number parts ("name.number"). */
-    char base_name[MAX_ID_NAME - 2];
-    int number = MIN_NUMBER;
-    size_t base_name_len = BLI_split_name_num(base_name, &number, name, '.');
-
-    /* Store previous original given base name now, as we might alter it later in code below. */
-    if (is_first_run) {
-      strcpy(prev_orig_base_name, base_name);
-      is_first_run = false;
-    }
-
-    /* In case we get an insane initial number suffix in given name. */
-    /* Note: BLI_split_name_num() cannot return negative numbers, so we do not have to check for
-     * that here. */
-    if (number >= MAX_NUMBER || number < MIN_NUMBER) {
-      number = MIN_NUMBER;
-    }
-
-    bool is_orig_name_used = false;
-    for (id_test = lb->first; id_test; id_test = id_test->next) {
-      char base_name_test[MAX_ID_NAME - 2];
-      int number_test;
-      if ((id != id_test) && !ID_IS_LINKED(id_test) && (name[0] == id_test->name[2]) &&
-          (ELEM(id_test->name[base_name_len + 2], '.', '\0')) &&
-          STREQLEN(name, id_test->name + 2, base_name_len) &&
-          (BLI_split_name_num(base_name_test, &number_test, id_test->name + 2, '.') ==
-           base_name_len)) {
-        /* If we did not yet encounter exact same name as the given one, check the remaining
-         * parts of the strings. */
-        if (!is_orig_name_used) {
-          is_orig_name_used = STREQ(name + base_name_len, id_test->name + 2 + base_name_len);
-        }
-        /* Mark number of current id_test name as used, if possible. */
-        if (number_test < MAX_NUMBERS_IN_USE) {
-          ids_in_use[number_test] = id_test;
-        }
-        /* Keep track of first largest unused number. */
-        if (number <= number_test) {
-          *r_id_sorting_hint = id_test;
-          number = number_test + 1;
-        }
-      }
-    }
-
-    /* If there is no double, we are done.
-     * Note however that name might have been changed (truncated) in a previous iteration
-     * already.
-     */
-    if (!is_orig_name_used) {
-      /* Don't bother updating prev_ static variables here, this case is not supposed to happen
-       * that often, and is not straight-forward here, so just ignore and reset them to default.
-       */
-      prev_id_type = ID_LINK_PLACEHOLDER;
-      prev_final_base_name[0] = '\0';
-      prev_number = MIN_NUMBER - 1;
-
-      /* Value set previously is meaningless in that case. */
-      *r_id_sorting_hint = NULL;
-
-      return is_name_changed;
-    }
-
-    /* Decide which value of number to use, either the smallest unused one if possible, or
-     * default to the first largest unused one we got from previous loop. */
-    for (int i = MIN_NUMBER; i < MAX_NUMBERS_IN_USE; i++) {
-      if (ids_in_use[i] == NULL) {
-        number = i;
-        if (i > 0) {
-          *r_id_sorting_hint = ids_in_use[i - 1];
-        }
-        break;
-      }
-    }
-    /* At this point, number is either the lowest unused number within
-     * [MIN_NUMBER .. MAX_NUMBERS_IN_USE - 1], or 1 greater than the largest used number if all
-     * those low ones are taken.
-     * We can't be bothered to look for the lowest unused number beyond
-     * (MAX_NUMBERS_IN_USE - 1).
-     */
-    /* We know for wure that name will be changed. */
-    is_name_changed = true;
-
-    /* If id_name_final_build helper returns false, it had to truncate further given name, hence
-     * we have to go over the whole check again. */
-    if (!id_name_final_build(name, base_name, base_name_len, number)) {
-      /* We have to clear our list of small used numbers before we do the whole check again. */
-      memset(ids_in_use, 0, sizeof(ids_in_use));
-
-      continue;
-    }
-
-    /* Update prev_ static variables, in case next call is for the same type of IDs and with the
-     * same initial base name, we can skip a lot of above process. */
-    prev_id_type = id_type;
-    strcpy(prev_final_base_name, base_name);
-    prev_number = number;
-
-    return is_name_changed;
-  }
-
-#undef MAX_NUMBERS_IN_USE
-}
-
-#undef MIN_NUMBER
-#undef MAX_NUMBER
-
-/**
- * Ensures given ID has a unique name in given listbase.
- *
- * Only for local IDs (linked ones already have a unique ID in their library).
- *
- * \return true if a new name had to be created.
- */
-bool BKE_id_new_name_validate(ListBase *lb, ID *id, const char *tname)
-{
-  bool result;
+  bool result = false;
   char name[MAX_ID_NAME - 2];
 
-  /* if library, don't rename */
-  if (ID_IS_LINKED(id)) {
-    return false;
+  /* If library, don't rename (unless explicitly required), but do ensure proper sorting. */
+  if (!do_linked_data && ID_IS_LINKED(id)) {
+    id_sort_by_name(lb, id, NULL);
+
+    return result;
   }
 
   /* if no name given, use name of current ID
@@ -1701,36 +1505,22 @@ bool BKE_id_new_name_validate(ListBase *lb, ID *id, const char *tname)
   else {
     /* disallow non utf8 chars,
      * the interface checks for this but new ID's based on file names don't */
-    BLI_utf8_invalid_strip(name, strlen(name));
+    BLI_str_utf8_invalid_strip(name, strlen(name));
   }
 
-  ID *id_sorting_hint = NULL;
-  result = check_for_dupid(lb, id, name, &id_sorting_hint);
+  result = BKE_main_namemap_get_name(bmain, id, name);
+
   strcpy(id->name + 2, name);
-
-  /* This was in 2.43 and previous releases
-   * however all data in blender should be sorted, not just duplicate names
-   * sorting should not hurt, but noting just in case it alters the way other
-   * functions work, so sort every time. */
-#if 0
-  if (result) {
-    id_sort_by_name(lb, id, id_sorting_hint);
-  }
-#endif
-
-  id_sort_by_name(lb, id, id_sorting_hint);
-
+  id_sort_by_name(lb, id, NULL);
   return result;
 }
 
-/* next to indirect usage in read/writefile also in editobject.c scene.c */
-void BKE_main_id_clear_newpoins(Main *bmain)
+void BKE_main_id_newptr_and_tag_clear(Main *bmain)
 {
   ID *id;
 
   FOREACH_MAIN_ID_BEGIN (bmain, id) {
-    id->newid = NULL;
-    id->tag &= ~LIB_TAG_NEW;
+    BKE_id_newptr_and_tag_clear(id);
   }
   FOREACH_MAIN_ID_END;
 }
@@ -1776,7 +1566,7 @@ void BKE_main_id_refcount_recompute(struct Main *bmain, const bool do_linked_onl
   }
   FOREACH_MAIN_ID_END;
 
-  /* Go over whole Main database to re-generate proper usercounts... */
+  /* Go over whole Main database to re-generate proper user-counts. */
   FOREACH_MAIN_ID_BEGIN (bmain, id) {
     BKE_library_foreach_ID_link(bmain,
                                 id,
@@ -1815,14 +1605,14 @@ static void library_make_local_copying_check(ID *id,
       from_id = ((Key *)from_id)->from;
     }
 
-    if (from_id->lib == NULL) {
+    if (!ID_IS_LINKED(from_id)) {
       /* Local user, early out to avoid some gset querying... */
       continue;
     }
     if (!BLI_gset_haskey(done_ids, from_id)) {
       if (BLI_gset_haskey(loop_tags, from_id)) {
         /* We are in a 'dependency loop' of IDs, this does not say us anything, skip it.
-         * Note that this is the situation that can lead to archipelagoes of linked data-blocks
+         * Note that this is the situation that can lead to archipelagos of linked data-blocks
          * (since all of them have non-local users, they would all be duplicated,
          * leading to a loop of unused linked data-blocks that cannot be freed since they all use
          * each other...). */
@@ -1847,30 +1637,20 @@ static void library_make_local_copying_check(ID *id,
   BLI_gset_remove(loop_tags, id, NULL);
 }
 
-/**
- * Make linked data-blocks local.
- *
- * \param bmain: Almost certainly global main.
- * \param lib: If not NULL, only make local data-blocks from this library.
- * \param untagged_only: If true, only make local data-blocks not tagged with
- * LIB_TAG_PRE_EXISTING.
- * \param set_fake: If true, set fake user on all localized data-blocks
- * (except group and objects ones).
- */
-/* Note: Old (2.77) version was simply making (tagging) data-blocks as local,
+/* NOTE: Old (2.77) version was simply making (tagging) data-blocks as local,
  * without actually making any check whether they were also indirectly used or not...
  *
  * Current version uses regular id_make_local callback, with advanced pre-processing step to
  * detect all cases of IDs currently indirectly used, but which will be used by local data only
  * once this function is finished.  This allows to avoid any unneeded duplication of IDs, and
- * hence all time lost afterwards to remove orphaned linked data-blocks...
- */
+ * hence all time lost afterwards to remove orphaned linked data-blocks. */
 void BKE_library_make_local(Main *bmain,
                             const Library *lib,
                             GHash *old_to_new_ids,
                             const bool untagged_only,
                             const bool set_fake)
 {
+
   ListBase *lbarray[INDEX_ID_MAX];
 
   LinkNode *todo_ids = NULL;
@@ -1894,7 +1674,7 @@ void BKE_library_make_local(Main *bmain,
   for (int a = set_listbasepointers(bmain, lbarray); a--;) {
     ID *id = lbarray[a]->first;
 
-    /* Do not explicitly make local non-linkable IDs (shapekeys, in fact),
+    /* Do not explicitly make local non-linkable IDs (shape-keys, in fact),
      * they are assumed to be handled by real data-blocks responsible of them. */
     const bool do_skip = (id && !BKE_idtype_idcode_is_linkable(GS(id->name)));
 
@@ -1906,30 +1686,29 @@ void BKE_library_make_local(Main *bmain,
         ntree->tag &= ~LIB_TAG_DOIT;
       }
 
-      if (id->lib == NULL) {
+      if (!ID_IS_LINKED(id)) {
         id->tag &= ~(LIB_TAG_EXTERN | LIB_TAG_INDIRECT | LIB_TAG_NEW);
         id->flag &= ~LIB_INDIRECT_WEAK_LINK;
         if (ID_IS_OVERRIDE_LIBRARY_REAL(id) &&
             ELEM(lib, NULL, id->override_library->reference->lib) &&
             ((untagged_only == false) || !(id->tag & LIB_TAG_PRE_EXISTING))) {
-          BKE_lib_override_library_free(&id->override_library, true);
+          BKE_lib_override_library_make_local(id);
         }
       }
       /* The check on the fourth line (LIB_TAG_PRE_EXISTING) is done so it's possible to tag data
        * you don't want to be made local, used for appending data,
-       * so any libdata already linked wont become local (very nasty
+       * so any libdata already linked won't become local (very nasty
        * to discover all your links are lost after appending).
        * Also, never ever make proxified objects local, would not make any sense. */
       /* Some more notes:
-       *   - Shapekeys are never tagged here (since they are not linkable).
-       *   - Nodetrees used in materials etc. have to be tagged manually,
+       *   - Shape-keys are never tagged here (since they are not linkable).
+       *   - Node-trees used in materials etc. have to be tagged manually,
        *     since they do not exist in Main (!).
        * This is ok-ish on 'make local' side of things
        * (since those are handled by their 'owner' IDs),
        * but complicates slightly the pre-processing of relations between IDs at step 2... */
       else if (!do_skip && id->tag & (LIB_TAG_EXTERN | LIB_TAG_INDIRECT | LIB_TAG_NEW) &&
                ELEM(lib, NULL, id->lib) &&
-               !(GS(id->name) == ID_OB && ((Object *)id)->proxy_from != NULL) &&
                ((untagged_only == false) || !(id->tag & LIB_TAG_PRE_EXISTING))) {
         BLI_linklist_prepend_arena(&todo_ids, id, linklist_mem);
         id->tag |= LIB_TAG_DOIT;
@@ -1984,8 +1763,8 @@ void BKE_library_make_local(Main *bmain,
        * currently there are some indirect usages. So instead of making a copy that we'll likely
        * get rid of later, directly make that data block local.
        * Saves a tremendous amount of time with complex scenes... */
-      lib_id_clear_library_data_ex(bmain, id);
-      BKE_lib_id_expand_local(bmain, id);
+      BKE_lib_id_clear_library_data(bmain, id, 0);
+      BKE_lib_id_expand_local(bmain, id, 0);
       id->tag &= ~LIB_TAG_DOIT;
 
       if (GS(id->name) == ID_OB) {
@@ -1993,15 +1772,8 @@ void BKE_library_make_local(Main *bmain,
       }
     }
     else {
-      /* In this specific case, we do want to make ID local even if it has no local usage yet...
-       * Note that for objects, we don't want proxy pointers to be cleared yet. This will happen
-       * down the road in this function.
-       */
-      BKE_lib_id_make_local(bmain,
-                            id,
-                            false,
-                            LIB_ID_MAKELOCAL_FULL_LIBRARY |
-                                LIB_ID_MAKELOCAL_OBJECT_NO_PROXY_CLEARING);
+      /* In this specific case, we do want to make ID local even if it has no local usage yet... */
+      BKE_lib_id_make_local(bmain, id, LIB_ID_MAKELOCAL_FULL_LIBRARY);
 
       if (id->newid) {
         if (GS(id->newid->name) == ID_OB) {
@@ -2035,7 +1807,7 @@ void BKE_library_make_local(Main *bmain,
    * ID in a separated loop,
    * as lbarray ordering is not enough to ensure us we did catch all dependencies
    * (e.g. if making local a parent object before its child...). See T48907. */
-  /* TODO This is now the biggest step by far (in term of processing time).
+  /* TODO: This is now the biggest step by far (in term of processing time).
    * We may be able to gain here by using again main->relations mapping, but...
    * this implies BKE_libblock_remap & co to be able to update main->relations on the fly.
    * Have to think about it a bit more, and see whether new code is OK first, anyway. */
@@ -2043,7 +1815,7 @@ void BKE_library_make_local(Main *bmain,
     ID *id = it->link;
 
     BLI_assert(id->newid != NULL);
-    BLI_assert(id->lib != NULL);
+    BLI_assert(ID_IS_LINKED(id));
 
     BKE_libblock_remap(bmain, id, id->newid, ID_REMAP_SKIP_INDIRECT_USAGE);
     if (old_to_new_ids) {
@@ -2060,62 +1832,6 @@ void BKE_library_make_local(Main *bmain,
 
 #ifdef DEBUG_TIME
   printf("Step 4: Remap local usages of old (linked) ID to new (local) ID: Done.\n");
-  TIMEIT_VALUE_PRINT(make_local);
-#endif
-
-  /* Step 5: proxy 'remapping' hack. */
-  for (LinkNode *it = copied_ids; it; it = it->next) {
-    ID *id = it->link;
-
-    /* Attempt to re-link copied proxy objects. This allows appending of an entire scene
-     * from another blend file into this one, even when that blend file contains proxified
-     * armatures that have local references. Since the proxified object needs to be linked
-     * (not local), this will only work when the "Localize all" checkbox is disabled.
-     * TL;DR: this is a dirty hack on top of an already weak feature (proxies). */
-    if (GS(id->name) == ID_OB && ((Object *)id)->proxy != NULL) {
-      Object *ob = (Object *)id;
-      Object *ob_new = (Object *)id->newid;
-      bool is_local = false, is_lib = false;
-
-      /* Proxies only work when the proxified object is linked-in from a library. */
-      if (ob->proxy->id.lib == NULL) {
-        CLOG_WARN(&LOG,
-                  "proxy object %s will lose its link to %s, because the "
-                  "proxified object is local.",
-                  id->newid->name,
-                  ob->proxy->id.name);
-        continue;
-      }
-
-      BKE_library_ID_test_usages(bmain, id, &is_local, &is_lib);
-
-      /* We can only switch the proxy'ing to a made-local proxy if it is no longer
-       * referred to from a library. Not checking for local use; if new local proxy
-       * was not used locally would be a nasty bug! */
-      if (is_local || is_lib) {
-        CLOG_WARN(&LOG,
-                  "made-local proxy object %s will lose its link to %s, "
-                  "because the linked-in proxy is referenced (is_local=%i, is_lib=%i).",
-                  id->newid->name,
-                  ob->proxy->id.name,
-                  is_local,
-                  is_lib);
-      }
-      else {
-        /* we can switch the proxy'ing from the linked-in to the made-local proxy.
-         * BKE_object_make_proxy() shouldn't be used here, as it allocates memory that
-         * was already allocated by object_make_local() (which called BKE_object_copy). */
-        ob_new->proxy = ob->proxy;
-        ob_new->proxy_group = ob->proxy_group;
-        ob_new->proxy_from = ob->proxy_from;
-        ob_new->proxy->proxy_from = ob_new;
-        ob->proxy = ob->proxy_from = ob->proxy_group = NULL;
-      }
-    }
-  }
-
-#ifdef DEBUG_TIME
-  printf("Step 5: Proxy 'remapping' hack: Done.\n");
   TIMEIT_VALUE_PRINT(make_local);
 #endif
 
@@ -2138,7 +1854,7 @@ void BKE_library_make_local(Main *bmain,
   TIMEIT_VALUE_PRINT(make_local);
 #endif
 
-  BKE_main_id_clear_newpoins(bmain);
+  BKE_main_id_newptr_and_tag_clear(bmain);
   BLI_memarena_free(linklist_mem);
 
 #ifdef DEBUG_TIME
@@ -2147,10 +1863,6 @@ void BKE_library_make_local(Main *bmain,
 #endif
 }
 
-/**
- * Use after setting the ID's name
- * When name exists: call 'new_id'
- */
 void BLI_libblock_ensure_unique_name(Main *bmain, const char *name)
 {
   ListBase *lb;
@@ -2163,39 +1875,28 @@ void BLI_libblock_ensure_unique_name(Main *bmain, const char *name)
 
   /* search for id */
   idtest = BLI_findstring(lb, name + 2, offsetof(ID, name) + 2);
-  if (idtest != NULL) {
+  if (idtest != NULL && !ID_IS_LINKED(idtest)) {
     /* BKE_id_new_name_validate also takes care of sorting. */
-    BKE_id_new_name_validate(lb, idtest, NULL);
+    BKE_id_new_name_validate(bmain, lb, idtest, NULL, false);
     bmain->is_memfile_undo_written = false;
   }
 }
 
-/**
- * Sets the name of a block to name, suitably adjusted for uniqueness.
- */
 void BKE_libblock_rename(Main *bmain, ID *id, const char *name)
 {
+  BLI_assert(!ID_IS_LINKED(id));
+  BKE_main_namemap_remove_name(bmain, id, id->name + 2);
   ListBase *lb = which_libbase(bmain, GS(id->name));
-  if (BKE_id_new_name_validate(lb, id, name)) {
+  if (BKE_id_new_name_validate(bmain, lb, id, name, false)) {
     bmain->is_memfile_undo_written = false;
   }
 }
 
-/**
- * Generate full name of the data-block (without ID code, but with library if any).
- *
- * \note Result is unique to a given ID type in a given Main database.
- *
- * \param name: An allocated string of minimal length #MAX_ID_FULL_NAME,
- *              will be filled with generated string.
- * \param separator_char: Character to use for separating name and library name. Can be 0 to use
- *                        default (' ').
- */
 void BKE_id_full_name_get(char name[MAX_ID_FULL_NAME], const ID *id, char separator_char)
 {
   strcpy(name, id->name + 2);
 
-  if (id->lib != NULL) {
+  if (ID_IS_LINKED(id)) {
     const size_t idname_len = strlen(id->name + 2);
     const size_t libname_len = strlen(id->lib->id.name + 2);
 
@@ -2207,19 +1908,6 @@ void BKE_id_full_name_get(char name[MAX_ID_FULL_NAME], const ID *id, char separa
   }
 }
 
-/**
- * Generate full name of the data-block (without ID code, but with library if any),
- * with a 2 to 3 character prefix prepended indicating whether it comes from a library,
- * is overriding, has a fake or no user, etc.
- *
- * \note Result is unique to a given ID type in a given Main database.
- *
- * \param name: An allocated string of minimal length #MAX_ID_FULL_NAME_UI,
- *              will be filled with generated string.
- * \param separator_char: Character to use for separating name and library name. Can be 0 to use
- *                        default (' ').
- * \param r_prefix_len: The length of the prefix added.
- */
 void BKE_id_full_name_ui_prefix_get(char name[MAX_ID_FULL_NAME_UI],
                                     const ID *id,
                                     const bool add_lib_hint,
@@ -2241,14 +1929,9 @@ void BKE_id_full_name_ui_prefix_get(char name[MAX_ID_FULL_NAME_UI],
   }
 }
 
-/**
- * Generate a concatenation of ID name (including two-chars type code) and its lib name, if any.
- *
- * \return A unique allocated string key for any ID in the whole Main database.
- */
 char *BKE_id_to_unique_string_key(const struct ID *id)
 {
-  if (id->lib == NULL) {
+  if (!ID_IS_LINKED(id)) {
     return BLI_strdup(id->name);
   }
 
@@ -2269,10 +1952,6 @@ void BKE_id_tag_clear_atomic(ID *id, int tag)
   atomic_fetch_and_and_int32(&id->tag, ~tag);
 }
 
-/**
- * Check that given ID pointer actually is in G_MAIN.
- * Main intended use is for debug asserts in places we cannot easily get rid of G_Main...
- */
 bool BKE_id_is_in_global_main(ID *id)
 {
   /* We do not want to fail when id is NULL here, even though this is a bit strange behavior...
@@ -2284,6 +1963,23 @@ bool BKE_id_can_be_asset(const ID *id)
 {
   return !ID_IS_LINKED(id) && !ID_IS_OVERRIDE_LIBRARY(id) &&
          BKE_idtype_idcode_is_linkable(GS(id->name));
+}
+
+ID *BKE_id_owner_get(ID *id)
+{
+  const IDTypeInfo *idtype = BKE_idtype_get_info_from_id(id);
+  if (idtype->owner_pointer_get != NULL) {
+    ID **owner_id_pointer = idtype->owner_pointer_get(id);
+    if (owner_id_pointer != NULL) {
+      return *owner_id_pointer;
+    }
+  }
+  return NULL;
+}
+
+bool BKE_id_is_editable(const Main *bmain, const ID *id)
+{
+  return !(ID_IS_LINKED(id) || BKE_lib_override_library_is_system_defined(bmain, id));
 }
 
 /************************* Datablock order in UI **************************/
@@ -2319,10 +2015,6 @@ static int id_order_compare(const void *a, const void *b)
   return strcmp(id_a->name, id_b->name);
 }
 
-/**
- * Returns ordered list of data-blocks for display in the UI.
- * Result is list of LinkData of IDs that must be freed.
- */
 void BKE_id_ordered_list(ListBase *ordered_lb, const ListBase *lb)
 {
   BLI_listbase_clear(ordered_lb);
@@ -2342,9 +2034,6 @@ void BKE_id_ordered_list(ListBase *ordered_lb, const ListBase *lb)
   }
 }
 
-/**
- * Reorder ID in the list, before or after the "relative" ID.
- */
 void BKE_id_reorder(const ListBase *lb, ID *id, ID *relative, bool after)
 {
   int *id_order = id_order_get(id);
@@ -2385,6 +2074,10 @@ void BKE_id_blend_write(BlendWriter *writer, ID *id)
 {
   if (id->asset_data) {
     BKE_asset_metadata_write(writer, id->asset_data);
+  }
+
+  if (id->library_weak_reference != NULL) {
+    BLO_write_struct(writer, LibraryWeakReference, id->library_weak_reference);
   }
 
   /* ID_WM's id->properties are considered runtime only, and never written in .blend file. */

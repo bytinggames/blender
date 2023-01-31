@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2013 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2013 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup depsgraph
@@ -34,8 +18,7 @@
 struct ID;
 struct Scene;
 
-namespace blender {
-namespace deg {
+namespace blender::deg {
 
 struct Depsgraph;
 struct OperationNode;
@@ -77,13 +60,11 @@ enum class NodeType {
   /* Parameters Component - Default when nothing else fits
    * (i.e. just SDNA property setting). */
   PARAMETERS,
-  /* Generic "Proxy-Inherit" Component. */
-  PROXY,
   /* Animation Component */
   ANIMATION,
   /* Transform Component (Parenting/Constraints) */
   TRANSFORM,
-  /* Geometry Component (Mesh/Displist) */
+  /* Geometry Component (#Mesh, #Curves, etc.) */
   GEOMETRY,
   /* Sequencer Component (Scene Only) */
   SEQUENCER,
@@ -100,8 +81,24 @@ enum class NodeType {
   AUDIO,
   ARMATURE,
   /* Un-interesting data-block, which is a part of dependency graph, but does
-   * not have very distinctive update procedure.  */
+   * not have very distinctive update procedure. */
   GENERIC_DATABLOCK,
+
+  /* Component which is used to define visibility relation between IDs, on the ID level.
+   *
+   * Consider two ID nodes NodeA and NodeB, with the relation between visibility components going
+   * as NodeA -> NodeB. If NodeB is considered visible on screen, then the relation will ensure
+   * that NodeA is also visible. The way how relation is oriented could be seen as a inverted from
+   * visibility dependency point of view, but it follows the same direction as data dependency
+   * which simplifies common algorithms which are dealing with relations and visibility.
+   *
+   * The fact that the visibility operates on the ID level basically means that all components in
+   * the NodeA will be considered as affecting directly visible when NodeB's visibility is
+   * affecting directly visible ID.
+   *
+   * This is the way to ensure objects needed for visualization without any actual data dependency
+   * properly evaluated. Example of this is custom shapes for bones. */
+  VISIBILITY,
 
   /* **** Evaluation-Related Outer Types (with Subdata) **** */
 
@@ -114,7 +111,6 @@ enum class NodeType {
   PARTICLE_SETTINGS,
   /* Material Shading Component */
   SHADING,
-  SHADING_PARAMETERS,
   /* Point cache Component */
   POINT_CACHE,
   /* Image Animation Component */
@@ -132,6 +128,10 @@ enum class NodeType {
   SYNCHRONIZATION,
   /* Simulation component. */
   SIMULATION,
+  /* Node tree output component. */
+  NTREE_OUTPUT,
+  /* Preprocessing for geometry node trees before they can be evaluated. */
+  NTREE_GEOMETRY_PREPROCESS,
 
   /* Total number of meaningful node types. */
   NUM_TYPES,
@@ -186,6 +186,7 @@ struct Node {
   Node();
   virtual ~Node();
 
+  /** Generic identifier for Depsgraph Nodes. */
   virtual string identifier() const;
 
   virtual void init(const ID * /*id*/, const char * /*subdata*/)
@@ -217,5 +218,4 @@ struct Node {
 
 void deg_register_base_depsnodes();
 
-}  // namespace deg
-}  // namespace blender
+}  // namespace blender::deg

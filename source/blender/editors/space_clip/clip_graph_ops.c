@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2011 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2011 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spclip
@@ -327,6 +311,8 @@ static int select_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
 void CLIP_OT_graph_select(wmOperatorType *ot)
 {
+  PropertyRNA *prop;
+
   /* identifiers */
   ot->name = "Select";
   ot->description = "Select graph curves";
@@ -351,11 +337,12 @@ void CLIP_OT_graph_select(wmOperatorType *ot)
                        "Mouse location to select nearest entity",
                        -100.0f,
                        100.0f);
-  RNA_def_boolean(ot->srna,
-                  "extend",
-                  0,
-                  "Extend",
-                  "Extend selection rather than clearing the existing selection");
+  prop = RNA_def_boolean(ot->srna,
+                         "extend",
+                         0,
+                         "Extend",
+                         "Extend selection rather than clearing the existing selection");
+  RNA_def_property_flag(prop, PROP_SKIP_SAVE);
 }
 
 /********************** box select operator *********************/
@@ -642,8 +629,8 @@ static int view_all_exec(bContext *C, wmOperator *UNUSED(op))
                                      NULL);
 
   /* set extents of view to start/end frames */
-  v2d->cur.xmin = (float)SFRA;
-  v2d->cur.xmax = (float)EFRA;
+  v2d->cur.xmin = (float)scene->r.sfra;
+  v2d->cur.xmax = (float)scene->r.efra;
 
   if (userdata.min < userdata.max) {
     v2d->cur.ymin = userdata.min;
@@ -688,8 +675,8 @@ void ED_clip_graph_center_current_frame(Scene *scene, ARegion *region)
   float extra = BLI_rctf_size_x(&v2d->cur) / 2.0f;
 
   /* set extents of view to start/end frames */
-  v2d->cur.xmin = (float)CFRA - extra;
-  v2d->cur.xmax = (float)CFRA + extra;
+  v2d->cur.xmin = (float)scene->r.cfra - extra;
+  v2d->cur.xmax = (float)scene->r.cfra + extra;
 }
 
 static int center_current_frame_exec(bContext *C, wmOperator *UNUSED(op))

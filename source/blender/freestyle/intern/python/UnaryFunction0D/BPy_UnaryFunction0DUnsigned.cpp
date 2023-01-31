@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -24,6 +10,8 @@
 #include "../Iterator/BPy_Interface0DIterator.h"
 
 #include "UnaryFunction0D_unsigned_int/BPy_QuantitativeInvisibilityF0D.h"
+
+#include "BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,7 +66,7 @@ static int UnaryFunction0DUnsigned___init__(BPy_UnaryFunction0DUnsigned *self,
   if (!PyArg_ParseTupleAndKeywords(args, kwds, "", (char **)kwlist)) {
     return -1;
   }
-  self->uf0D_unsigned = new UnaryFunction0D<unsigned int>();
+  self->uf0D_unsigned = new UnaryFunction0D<uint>();
   self->uf0D_unsigned->py_uf0D = (PyObject *)self;
   return 0;
 }
@@ -107,7 +95,7 @@ static PyObject *UnaryFunction0DUnsigned___call__(BPy_UnaryFunction0DUnsigned *s
     return nullptr;
   }
 
-  if (typeid(*(self->uf0D_unsigned)) == typeid(UnaryFunction0D<unsigned int>)) {
+  if (typeid(*(self->uf0D_unsigned)) == typeid(UnaryFunction0D<uint>)) {
     PyErr_SetString(PyExc_TypeError, "__call__ method not properly overridden");
     return nullptr;
   }
@@ -136,7 +124,7 @@ PyTypeObject UnaryFunction0DUnsigned_Type = {
     nullptr,                                                     /* tp_as_number */
     nullptr,                                                     /* tp_as_sequence */
     nullptr,                                                     /* tp_as_mapping */
-    nullptr,                                                     /* tp_hash  */
+    nullptr,                                                     /* tp_hash */
     (ternaryfunc)UnaryFunction0DUnsigned___call__,               /* tp_call */
     nullptr,                                                     /* tp_str */
     nullptr,                                                     /* tp_getattro */

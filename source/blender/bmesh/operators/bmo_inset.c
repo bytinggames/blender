@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -361,7 +347,7 @@ static void bmo_face_inset_individual(BMesh *bm,
 
     madd_v3_v3fl(v_new_co, tvec, thickness);
 
-    /* Set normal, add depth and write new vertex position*/
+    /* Set normal, add depth and write new vertex position. */
     copy_v3_v3(l_iter->v->no, f->no);
 
     if (depth != 0.0f) {
@@ -735,7 +721,7 @@ void bmo_inset_region_exec(BMesh *bm, BMOperator *op)
         (use_boundary && BM_edge_is_boundary(e) && BM_elem_flag_test(e->l->f, BM_ELEM_TAG)) ||
 
         /* tag if edge is an interior edge in between a tagged and untagged face */
-        (bm_edge_is_mixed_face_tag(e->l))) {
+        bm_edge_is_mixed_face_tag(e->l)) {
       /* tag */
       BM_elem_flag_enable(e->v1, BM_ELEM_TAG);
       BM_elem_flag_enable(e->v2, BM_ELEM_TAG);
@@ -822,7 +808,7 @@ void bmo_inset_region_exec(BMesh *bm, BMOperator *op)
     /* this could go in its own loop,
      * only use the 'es->l->f' so we don't store loops for faces which have no mixed selection
      *
-     * note: faces on the other side of the inset will be interpolated too since this is hard to
+     * NOTE: faces on the other side of the inset will be interpolated too since this is hard to
      * detect, just allow it even though it will cause some redundant interpolation */
     if (use_interpolate) {
       BMIter viter;
@@ -1016,8 +1002,8 @@ void bmo_inset_region_exec(BMesh *bm, BMOperator *op)
               if (use_even_boundary) {
 
                 /**
-                 * This case where only one edge attached to #v_split
-                 * is used - ei - the face to inset is on a boundary.
+                 * This case where only one edge attached to #v_split is used.
+                 * i.e. the face to inset is on a boundary.
                  *
                  * <pre>
                  *                  We want the inset to align flush with the

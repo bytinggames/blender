@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 string(TIMESTAMP CURRENT_YEAR "%Y")
 
 set(PROJECT_DESCRIPTION  "Blender is the free and open source 3D creation suite software.")
@@ -15,9 +17,9 @@ set(CPACK_PACKAGE_VENDOR ${PROJECT_VENDOR})
 set(CPACK_PACKAGE_CONTACT ${PROJECT_CONTACT})
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/COPYING")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
-SET(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
-SET(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
-SET(CPACK_PACKAGE_VERSION_PATCH "${PATCH_VERSION}")
+set(CPACK_PACKAGE_VERSION_MAJOR "${MAJOR_VERSION}")
+set(CPACK_PACKAGE_VERSION_MINOR "${MINOR_VERSION}")
+set(CPACK_PACKAGE_VERSION_PATCH "${PATCH_VERSION}")
 
 
 # Get the build revision, note that this can get out-of-sync, so for packaging run cmake first.
@@ -46,7 +48,7 @@ if(MSVC)
   else()
     set(PACKAGE_ARCH windows32)
   endif()
-else(MSVC)
+else()
   set(PACKAGE_ARCH ${CMAKE_SYSTEM_PROCESSOR})
 endif()
 
@@ -104,8 +106,8 @@ if(WIN32)
   set(CPACK_WIX_LIGHT_EXTRA_FLAGS -dcl:medium)
 endif()
 
-set(CPACK_PACKAGE_EXECUTABLES "blender" "blender")
-set(CPACK_CREATE_DESKTOP_LINKS "blender" "blender")
+set(CPACK_PACKAGE_EXECUTABLES "blender-launcher" "Blender ${MAJOR_VERSION}.${MINOR_VERSION}")
+set(CPACK_CREATE_DESKTOP_LINKS "blender-launcher" "Blender ${MAJOR_VERSION}.${MINOR_VERSION}")
 
 include(CPack)
 

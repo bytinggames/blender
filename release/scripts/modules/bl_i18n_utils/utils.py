@@ -1,22 +1,4 @@
-# ***** BEGIN GPL LICENSE BLOCK *****
-#
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software Foundation,
-# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ***** END GPL LICENSE BLOCK *****
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # Some misc utilities...
 
@@ -86,7 +68,7 @@ def locale_explode(locale):
 
     try:
         import bpy.app.translations as bpy_translations
-        assert(ret == bpy_translations.locale_explode(locale))
+        assert ret == bpy_translations.locale_explode(locale)
     except ModuleNotFoundError:
         pass
 
@@ -172,7 +154,7 @@ def get_po_files_from_dir(root_dir, langs=set()):
         else:
             continue
         if uid in found_uids:
-            printf("WARNING! {} id has been found more than once! only first one has been loaded!".format(uid))
+            print("WARNING! {} id has been found more than once! only first one has been loaded!".format(uid))
             continue
         found_uids.add(uid)
         yield uid, po_file
@@ -219,7 +201,7 @@ def enable_addons(addons=None, support=None, disable=False, check_only=False):
     try:
         import bpy
     except ModuleNotFoundError:
-        print("Could not import bpy, enable_addons must be run from whithin Blender.")
+        print("Could not import bpy, enable_addons must be run from within Blender.")
         return
 
     if addons is None:
@@ -778,9 +760,8 @@ class I18nMessages:
         try:
             import bpy
         except ModuleNotFoundError:
-            print("Could not import bpy, find_best_messages_matches must be run from whithin Blender.")
+            print("Could not import bpy, find_best_messages_matches must be run from within Blender.")
             return
-
 
         # Build helper mappings.
         # Note it's user responsibility to know when to invalidate (and hence force rebuild) this cache!
@@ -1136,6 +1117,7 @@ class I18nMessages:
         # XXX Temp solution, until I can make own mo generator working...
         import subprocess
         with tempfile.NamedTemporaryFile(mode='w+', encoding="utf-8") as tmp_po_f:
+            os.makedirs(os.path.dirname(fname), exist_ok=True)
             self.write_messages_to_po(tmp_po_f)
             cmd = (
                 self.settings.GETTEXT_MSGFMT_EXECUTABLE,
@@ -1258,8 +1240,8 @@ class I18n:
                     return os.path.join(os.path.dirname(path), uid + ".po")
             elif kind == 'PY':
                 if not path.endswith(".py"):
-                    if self.src.get(self.settings.PARSER_PY_ID):
-                        return self.src[self.settings.PARSER_PY_ID]
+                    if os.path.isdir(path):
+                        return os.path.join(path, "translations.py")
                     return os.path.join(os.path.dirname(path), "translations.py")
         return path
 
@@ -1356,7 +1338,7 @@ class I18n:
         print(prefix.join(lines))
 
     @classmethod
-    def check_py_module_has_translations(clss, src, settings=settings):
+    def check_py_module_has_translations(cls, src, settings=settings):
         """
         Check whether a given src (a py module, either a directory or a py file) has some i18n translation data,
         and returns a tuple (src_file, translations_tuple) if yes, else (None, None).
@@ -1368,11 +1350,11 @@ class I18n:
                     if not fname.endswith(".py"):
                         continue
                     path = os.path.join(root, fname)
-                    _1, txt, _2, has_trans = clss._parser_check_file(path)
+                    _1, txt, _2, has_trans = cls._parser_check_file(path)
                     if has_trans:
                         txts.append((path, txt))
         elif src.endswith(".py") and os.path.isfile(src):
-            _1, txt, _2, has_trans = clss._parser_check_file(src)
+            _1, txt, _2, has_trans = cls._parser_check_file(src)
             if has_trans:
                 txts.append((src, txt))
         for path, txt in txts:
@@ -1410,15 +1392,15 @@ class I18n:
         if langs set is void, all languages found are loaded.
         """
         default_context = self.settings.DEFAULT_CONTEXT
-        self.src[self.settings.PARSER_PY_ID], msgs = self.check_py_module_has_translations(src, self.settings)
+        self.py_file, msgs = self.check_py_module_has_translations(src, self.settings)
         if msgs is None:
-            self.src[self.settings.PARSER_PY_ID] = src
+            self.py_file = src
             msgs = ()
         for key, (sources, gen_comments), *translations in msgs:
             if self.settings.PARSER_TEMPLATE_ID not in self.trans:
                 self.trans[self.settings.PARSER_TEMPLATE_ID] = I18nMessages(self.settings.PARSER_TEMPLATE_ID,
                                                                             settings=self.settings)
-                self.src[self.settings.PARSER_TEMPLATE_ID] = self.src[self.settings.PARSER_PY_ID]
+                self.src[self.settings.PARSER_TEMPLATE_ID] = self.py_file
             if key in self.trans[self.settings.PARSER_TEMPLATE_ID].msgs:
                 print("ERROR! key {} is defined more than once! Skipping re-definitions!")
                 continue
@@ -1434,7 +1416,7 @@ class I18n:
             for uid, msgstr, (is_fuzzy, user_comments) in translations:
                 if uid not in self.trans:
                     self.trans[uid] = I18nMessages(uid, settings=self.settings)
-                    self.src[uid] = self.src[self.settings.PARSER_PY_ID]
+                    self.src[uid] = self.py_file
                 comment_lines = [self.settings.PO_COMMENT_PREFIX + c for c in user_comments] + common_comment_lines
                 self.trans[uid].msgs[key] = I18nMessage(ctxt, [key[1]], [msgstr], comment_lines, False, is_fuzzy,
                                                         settings=self.settings)
@@ -1497,7 +1479,7 @@ class I18n:
             if langs:
                 translations &= langs
             translations = [('"' + lng + '"', " " * (len(lng) + 6), self.trans[lng]) for lng in sorted(translations)]
-            print(k for k in keys.keys())
+            print(*(k for k in keys.keys()))
             for key in keys.keys():
                 if ref.msgs[key].is_commented:
                     continue
@@ -1572,7 +1554,7 @@ class I18n:
             if not os.path.isfile(dst):
                 print("WARNING: trying to write as python code into {}, which is not a file! Aborting.".format(dst))
                 return
-            prev, txt, nxt, has_trans = self._parser_check_file(dst)
+            prev, txt, nxt, _has_trans = self._parser_check_file(dst)
             if prev is None and nxt is None:
                 print("WARNING: Looks like given python file {} has no auto-generated translations yet, will be added "
                       "at the end of the file, you can move that section later if needed...".format(dst))
@@ -1583,25 +1565,9 @@ class I18n:
                 # We completely replace the text found between start and end markers...
                 txt = _gen_py(self, langs)
         else:
-            printf("Creating python file {} containing translations.".format(dst))
+            print("Creating python file {} containing translations.".format(dst))
             txt = [
-                "# ***** BEGIN GPL LICENSE BLOCK *****",
-                "#",
-                "# This program is free software; you can redistribute it and/or",
-                "# modify it under the terms of the GNU General Public License",
-                "# as published by the Free Software Foundation; either version 2",
-                "# of the License, or (at your option) any later version.",
-                "#",
-                "# This program is distributed in the hope that it will be useful,",
-                "# but WITHOUT ANY WARRANTY; without even the implied warranty of",
-                "# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the",
-                "# GNU General Public License for more details.",
-                "#",
-                "# You should have received a copy of the GNU General Public License",
-                "# along with this program; if not, write to the Free Software Foundation,",
-                "# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.",
-                "#",
-                "# ***** END GPL LICENSE BLOCK *****",
+                "# SPDX-License-Identifier: GPL-2.0-or-later",
                 "",
                 self.settings.PARSER_PY_MARKER_BEGIN,
                 "",

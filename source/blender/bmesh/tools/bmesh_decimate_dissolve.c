@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bmesh
@@ -55,7 +41,7 @@ static float bm_vert_edge_face_angle(BMVert *v,
 #define ANGLE_TO_UNIT (1.0f / UNIT_TO_ANGLE)
 
   const float angle = BM_vert_calc_edge_angle(v);
-  /* note: could be either edge, it doesn't matter */
+  /* NOTE: could be either edge, it doesn't matter. */
   if (v->e && BM_edge_is_manifold(v->e)) {
     /* Checking delimited is important here,
      * otherwise the boundary between two materials for e.g.
@@ -344,7 +330,7 @@ void BM_mesh_decimate_dissolve_ex(BMesh *bm,
     }
 
     while ((BLI_heap_is_empty(eheap) == false) &&
-           (BLI_heap_node_value((enode_top = BLI_heap_top(eheap))) < angle_limit_cos_neg)) {
+           (BLI_heap_node_value(enode_top = BLI_heap_top(eheap)) < angle_limit_cos_neg)) {
       BMFace *f_new = NULL;
       BMEdge *e;
 
@@ -375,9 +361,6 @@ void BM_mesh_decimate_dissolve_ex(BMesh *bm,
               BLI_heap_node_value_update(eheap, eheap_table[j], cost);
             }
           } while ((l_iter = l_iter->next) != l_first);
-        }
-        else {
-          BMO_error_clear(bm);
         }
       }
 
@@ -468,7 +451,7 @@ void BM_mesh_decimate_dissolve_ex(BMesh *bm,
     }
 
     while ((BLI_heap_is_empty(vheap) == false) &&
-           (BLI_heap_node_value((vnode_top = BLI_heap_top(vheap))) < angle_limit)) {
+           (BLI_heap_node_value(vnode_top = BLI_heap_top(vheap)) < angle_limit)) {
       BMEdge *e_new = NULL;
       BMVert *v;
 

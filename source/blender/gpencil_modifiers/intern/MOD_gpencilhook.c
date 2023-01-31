@@ -1,32 +1,18 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2017, Blender Foundation
- * This is a new part of Blender
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2017 Blender Foundation. */
 
 /** \file
  * \ingroup modifiers
  */
 
 #include <stdio.h>
+#include <string.h>
 
 #include "BLI_listbase.h"
+#include "BLI_math_base.h"
+#include "BLI_math_matrix.h"
+#include "BLI_math_vector.h"
 #include "BLI_utildefines.h"
-
-#include "BLI_math.h"
 
 #include "BLT_translation.h"
 
@@ -248,14 +234,14 @@ static void deformStroke(GpencilModifierData *md,
   /* get world-space matrix of target, corrected for the space the verts are in */
   if (mmd->subtarget[0] && pchan) {
     /* bone target if there's a matching pose-channel */
-    mul_m4_m4m4(dmat, mmd->object->obmat, pchan->pose_mat);
+    mul_m4_m4m4(dmat, mmd->object->object_to_world, pchan->pose_mat);
   }
   else {
     /* just object target */
-    copy_m4_m4(dmat, mmd->object->obmat);
+    copy_m4_m4(dmat, mmd->object->object_to_world);
   }
-  invert_m4_m4(ob->imat, ob->obmat);
-  mul_m4_series(tData.mat, ob->imat, dmat, mmd->parentinv);
+  invert_m4_m4(ob->world_to_object, ob->object_to_world);
+  mul_m4_series(tData.mat, ob->world_to_object, dmat, mmd->parentinv);
 
   /* loop points and apply deform */
   for (int i = 0; i < gps->totpoints; i++) {
@@ -283,32 +269,12 @@ static void bakeModifier(Main *UNUSED(bmain),
                          Object *ob)
 {
   HookGpencilModifierData *mmd = (HookGpencilModifierData *)md;
-  Scene *scene = DEG_get_evaluated_scene(depsgraph);
-  bGPdata *gpd = ob->data;
-  int oldframe = (int)DEG_get_ctime(depsgraph);
 
   if (mmd->object == NULL) {
     return;
   }
 
-  LISTBASE_FOREACH (bGPDlayer *, gpl, &gpd->layers) {
-    LISTBASE_FOREACH (bGPDframe *, gpf, &gpl->frames) {
-      /* apply hook effects on this frame
-       * NOTE: this assumes that we don't want hook animation on non-keyframed frames
-       */
-      CFRA = gpf->framenum;
-      BKE_scene_graph_update_for_newframe(depsgraph);
-
-      /* compute hook effects on this frame */
-      LISTBASE_FOREACH (bGPDstroke *, gps, &gpf->strokes) {
-        deformStroke(md, depsgraph, ob, gpl, gpf, gps);
-      }
-    }
-  }
-
-  /* return frame state and DB to original state */
-  CFRA = oldframe;
-  BKE_scene_graph_update_for_newframe(depsgraph);
+  generic_bake_deform_stroke(depsgraph, md, ob, true, deformStroke);
 }
 
 static void freeData(GpencilModifierData *md)
@@ -421,7 +387,7 @@ static void panelRegister(ARegionType *region_type)
 }
 
 GpencilModifierTypeInfo modifierType_Gpencil_Hook = {
-    /* name */ "Hook",
+    /* name */ N_("Hook"),
     /* structName */ "HookGpencilModifierData",
     /* structSize */ sizeof(HookGpencilModifierData),
     /* type */ eGpencilModifierTypeType_Gpencil,

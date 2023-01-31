@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -80,28 +66,28 @@ struct LoaderState {
 
 class BlenderFileLoader {
  public:
-  /*! Builds a MaxFileLoader */
+  /** Builds a MaxFileLoader */
   BlenderFileLoader(Render *re, ViewLayer *view_layer, Depsgraph *depsgraph);
   virtual ~BlenderFileLoader();
 
-  /*! Loads the 3D scene and returns a pointer to the scene root node */
+  /** Loads the 3D scene and returns a pointer to the scene root node */
   NodeGroup *Load();
 
-  /*! Gets the number of read faces */
+  /** Gets the number of read faces */
   inline unsigned int numFacesRead()
   {
     return _numFacesRead;
   }
 
 #if 0
-  /*! Gets the smallest edge size read */
+  /** Gets the smallest edge size read */
   inline real minEdgeSize()
   {
     return _minEdgeSize;
   }
 #endif
 
-  /*! Modifiers */
+  /** Modifiers */
   inline void setRenderMonitor(RenderMonitor *iRenderMonitor)
   {
     _pRenderMonitor = iRenderMonitor;

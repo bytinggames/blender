@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 import bpy
 import nodeitems_utils
 from nodeitems_utils import (
@@ -34,7 +16,7 @@ class SortedNodeCategory(NodeCategory):
         if isinstance(items, list):
             items = sorted(items, key=lambda item: item.label.lower())
 
-        super().__init__(identifier, name, description, items)
+        super().__init__(identifier, name, description=description, items=items)
 
 
 class CompositorNodeCategory(SortedNodeCategory):
@@ -58,21 +40,14 @@ class TextureNodeCategory(SortedNodeCategory):
                 context.space_data.tree_type == 'TextureNodeTree')
 
 
-class GeometryNodeCategory(SortedNodeCategory):
-    @classmethod
-    def poll(cls, context):
-        return (context.space_data.type == 'NODE_EDITOR' and
-                context.space_data.tree_type == 'GeometryNodeTree')
-
-
-# menu entry for node group tools
-def group_tools_draw(self, layout, context):
+# Menu entry for node group tools.
+def group_tools_draw(_self, layout, _context):
     layout.operator("node.group_make")
     layout.operator("node.group_ungroup")
     layout.separator()
 
 
-# maps node tree type to group node type
+# Maps node tree type to group node type.
 node_tree_group_type = {
     'CompositorNodeTree': 'CompositorNodeGroup',
     'ShaderNodeTree': 'ShaderNodeGroup',
@@ -81,21 +56,23 @@ node_tree_group_type = {
 }
 
 
-# generic node group items generator for shader, compositor, geometry and texture node groups
+# Generic node group items generator for shader, compositor, geometry and texture node groups.
 def node_group_items(context):
     if context is None:
         return
     space = context.space_data
     if not space:
         return
-    ntree = space.edit_tree
-    if not ntree:
-        return
 
     yield NodeItemCustom(draw=group_tools_draw)
 
-    yield NodeItem("NodeGroupInput", poll=group_input_output_item_poll)
-    yield NodeItem("NodeGroupOutput", poll=group_input_output_item_poll)
+    if group_input_output_item_poll(context):
+        yield NodeItem("NodeGroupInput")
+        yield NodeItem("NodeGroupOutput")
+
+    ntree = space.edit_tree
+    if not ntree:
+        return
 
     yield NodeItemCustom(draw=lambda self, layout, context: layout.separator())
 
@@ -119,8 +96,8 @@ def node_group_items(context):
         if group.name.startswith('.'):
             continue
         yield NodeItem(node_tree_group_type[group.bl_idname],
-                       group.name,
-                       {"node_tree": "bpy.data.node_groups[%r]" % group.name})
+                       label=group.name,
+                       settings={"node_tree": "bpy.data.node_groups[%r]" % group.name})
 
 
 # only show input/output nodes inside node groups
@@ -199,6 +176,7 @@ shader_node_categories = [
         NodeItem("ShaderNodeAmbientOcclusion"),
         NodeItem("ShaderNodeObjectInfo"),
         NodeItem("ShaderNodeHairInfo"),
+        NodeItem("ShaderNodePointInfo"),
         NodeItem("ShaderNodeVolumeInfo"),
         NodeItem("ShaderNodeParticleInfo"),
         NodeItem("ShaderNodeCameraData"),
@@ -254,7 +232,7 @@ shader_node_categories = [
         NodeItem("ShaderNodeTexWhiteNoise"),
     ]),
     ShaderNodeCategory("SH_NEW_OP_COLOR", "Color", items=[
-        NodeItem("ShaderNodeMixRGB"),
+        NodeItem("ShaderNodeMix", label="Mix Color", settings={"data_type": "'RGBA'"}),
         NodeItem("ShaderNodeRGBCurve"),
         NodeItem("ShaderNodeInvert"),
         NodeItem("ShaderNodeLightFalloff"),
@@ -275,18 +253,18 @@ shader_node_categories = [
     ]),
     ShaderNodeCategory("SH_NEW_CONVERTOR", "Converter", items=[
         NodeItem("ShaderNodeMapRange"),
+        NodeItem("ShaderNodeFloatCurve"),
         NodeItem("ShaderNodeClamp"),
         NodeItem("ShaderNodeMath"),
+        NodeItem("ShaderNodeMix"),
         NodeItem("ShaderNodeValToRGB"),
         NodeItem("ShaderNodeRGBToBW"),
         NodeItem("ShaderNodeShaderToRGB", poll=object_eevee_shader_nodes_poll),
         NodeItem("ShaderNodeVectorMath"),
-        NodeItem("ShaderNodeSeparateRGB"),
-        NodeItem("ShaderNodeCombineRGB"),
+        NodeItem("ShaderNodeSeparateColor"),
+        NodeItem("ShaderNodeCombineColor"),
         NodeItem("ShaderNodeSeparateXYZ"),
         NodeItem("ShaderNodeCombineXYZ"),
-        NodeItem("ShaderNodeSeparateHSV"),
-        NodeItem("ShaderNodeCombineHSV"),
         NodeItem("ShaderNodeWavelength"),
         NodeItem("ShaderNodeBlackbody"),
     ]),
@@ -312,6 +290,7 @@ compositor_node_categories = [
         NodeItem("CompositorNodeTexture"),
         NodeItem("CompositorNodeBokehImage"),
         NodeItem("CompositorNodeTime"),
+        NodeItem("CompositorNodeSceneTime"),
         NodeItem("CompositorNodeTrackPos"),
     ]),
     CompositorNodeCategory("CMP_OUTPUT", "Output", items=[
@@ -333,6 +312,7 @@ compositor_node_categories = [
         NodeItem("CompositorNodeGamma"),
         NodeItem("CompositorNodeExposure"),
         NodeItem("CompositorNodeColorCorrection"),
+        NodeItem("CompositorNodePosterize"),
         NodeItem("CompositorNodeTonemap"),
         NodeItem("CompositorNodeZcombine"),
     ]),
@@ -343,15 +323,12 @@ compositor_node_categories = [
         NodeItem("CompositorNodePremulKey"),
         NodeItem("CompositorNodeIDMask"),
         NodeItem("CompositorNodeRGBToBW"),
-        NodeItem("CompositorNodeSepRGBA"),
-        NodeItem("CompositorNodeCombRGBA"),
-        NodeItem("CompositorNodeSepHSVA"),
-        NodeItem("CompositorNodeCombHSVA"),
-        NodeItem("CompositorNodeSepYUVA"),
-        NodeItem("CompositorNodeCombYUVA"),
-        NodeItem("CompositorNodeSepYCCA"),
-        NodeItem("CompositorNodeCombYCCA"),
+        NodeItem("CompositorNodeSeparateColor"),
+        NodeItem("CompositorNodeCombineColor"),
+        NodeItem("CompositorNodeSeparateXYZ"),
+        NodeItem("CompositorNodeCombineXYZ"),
         NodeItem("CompositorNodeSwitchView"),
+        NodeItem("CompositorNodeConvertColorSpace"),
     ]),
     CompositorNodeCategory("CMP_OP_FILTER", "Filter", items=[
         NodeItem("CompositorNodeBlur"),
@@ -433,8 +410,8 @@ texture_node_categories = [
         NodeItem("TextureNodeCurveRGB"),
         NodeItem("TextureNodeInvert"),
         NodeItem("TextureNodeHueSaturation"),
-        NodeItem("TextureNodeCompose"),
-        NodeItem("TextureNodeDecompose"),
+        NodeItem("TextureNodeCombineColor"),
+        NodeItem("TextureNodeSeparateColor"),
     ]),
     TextureNodeCategory("TEX_PATTERN", "Pattern", items=[
         NodeItem("TextureNodeChecker"),
@@ -473,119 +450,16 @@ texture_node_categories = [
 ]
 
 
-def not_implemented_node(idname):
-    NodeType = getattr(bpy.types, idname)
-    name = NodeType.bl_rna.name
-    label = "%s (mockup)" % name
-    return NodeItem(idname, label=label)
-
-
-geometry_node_categories = [
-    # Geometry Nodes
-    GeometryNodeCategory("GEO_ATTRIBUTE", "Attribute", items=[
-        NodeItem("GeometryNodeAttributeRandomize"),
-        NodeItem("GeometryNodeAttributeMath"),
-        NodeItem("GeometryNodeAttributeClamp"),
-        NodeItem("GeometryNodeAttributeCompare"),
-        NodeItem("GeometryNodeAttributeConvert"),
-        NodeItem("GeometryNodeAttributeFill"),
-        NodeItem("GeometryNodeAttributeMix"),
-        NodeItem("GeometryNodeAttributeProximity"),
-        NodeItem("GeometryNodeAttributeColorRamp"),
-        NodeItem("GeometryNodeAttributeVectorMath"),
-        NodeItem("GeometryNodeAttributeSampleTexture"),
-        NodeItem("GeometryNodeAttributeCombineXYZ"),
-        NodeItem("GeometryNodeAttributeSeparateXYZ"),
-        NodeItem("GeometryNodeAttributeRemove"),
-        NodeItem("GeometryNodeAttributeMapRange"),
-        NodeItem("GeometryNodeAttributeTransfer"),
-    ]),
-    GeometryNodeCategory("GEO_COLOR", "Color", items=[
-        NodeItem("ShaderNodeValToRGB"),
-        NodeItem("ShaderNodeSeparateRGB"),
-        NodeItem("ShaderNodeCombineRGB"),
-    ]),
-    GeometryNodeCategory("GEO_CURVE", "Curve", items=[
-        NodeItem("GeometryNodeCurveToMesh"),
-    ]),
-    GeometryNodeCategory("GEO_GEOMETRY", "Geometry", items=[
-        NodeItem("GeometryNodeBoundBox"),
-        NodeItem("GeometryNodeTransform"),
-        NodeItem("GeometryNodeJoinGeometry"),
-    ]),
-    GeometryNodeCategory("GEO_INPUT", "Input", items=[
-        NodeItem("GeometryNodeObjectInfo"),
-        NodeItem("GeometryNodeCollectionInfo"),
-        NodeItem("FunctionNodeRandomFloat"),
-        NodeItem("ShaderNodeValue"),
-        NodeItem("FunctionNodeInputString"),
-        NodeItem("FunctionNodeInputVector"),
-        NodeItem("GeometryNodeIsViewport"),
-    ]),
-    GeometryNodeCategory("GEO_MESH", "Mesh", items=[
-        NodeItem("GeometryNodeBoolean"),
-        NodeItem("GeometryNodeTriangulate"),
-        NodeItem("GeometryNodeEdgeSplit"),
-        NodeItem("GeometryNodeSubdivisionSurface"),
-        NodeItem("GeometryNodeSubdivide"),
-    ]),
-    GeometryNodeCategory("GEO_PRIMITIVES", "Mesh Primitives", items=[
-        NodeItem("GeometryNodeMeshCircle"),
-        NodeItem("GeometryNodeMeshCone"),
-        NodeItem("GeometryNodeMeshCube"),
-        NodeItem("GeometryNodeMeshCylinder"),
-        NodeItem("GeometryNodeMeshGrid"),
-        NodeItem("GeometryNodeMeshIcoSphere"),
-        NodeItem("GeometryNodeMeshLine"),
-        NodeItem("GeometryNodeMeshUVSphere"),
-    ]),
-    GeometryNodeCategory("GEO_POINT", "Point", items=[
-        NodeItem("GeometryNodePointDistribute"),
-        NodeItem("GeometryNodePointInstance"),
-        NodeItem("GeometryNodePointSeparate"),
-        NodeItem("GeometryNodePointScale"),
-        NodeItem("GeometryNodePointTranslate"),
-        NodeItem("GeometryNodeRotatePoints"),
-        NodeItem("GeometryNodeAlignRotationToVector"),
-    ]),
-    GeometryNodeCategory("GEO_UTILITIES", "Utilities", items=[
-        NodeItem("ShaderNodeMapRange"),
-        NodeItem("ShaderNodeClamp"),
-        NodeItem("ShaderNodeMath"),
-        NodeItem("FunctionNodeBooleanMath"),
-        NodeItem("FunctionNodeFloatCompare"),
-        NodeItem("GeometryNodeSwitch"),
-    ]),
-    GeometryNodeCategory("GEO_VECTOR", "Vector", items=[
-        NodeItem("ShaderNodeSeparateXYZ"),
-        NodeItem("ShaderNodeCombineXYZ"),
-        NodeItem("ShaderNodeVectorMath"),
-        NodeItem("ShaderNodeVectorRotate"),
-    ]),
-    GeometryNodeCategory("GEO_VOLUME", "Volume", items=[
-        NodeItem("GeometryNodePointsToVolume"),
-        NodeItem("GeometryNodeVolumeToMesh"),
-    ]),
-    GeometryNodeCategory("GEO_GROUP", "Group", items=node_group_items),
-    GeometryNodeCategory("GEO_LAYOUT", "Layout", items=[
-        NodeItem("NodeFrame"),
-        NodeItem("NodeReroute"),
-    ]),
-]
-
-
 def register():
     nodeitems_utils.register_node_categories('SHADER', shader_node_categories)
     nodeitems_utils.register_node_categories('COMPOSITING', compositor_node_categories)
     nodeitems_utils.register_node_categories('TEXTURE', texture_node_categories)
-    nodeitems_utils.register_node_categories('GEOMETRY', geometry_node_categories)
 
 
 def unregister():
     nodeitems_utils.unregister_node_categories('SHADER')
     nodeitems_utils.unregister_node_categories('COMPOSITING')
     nodeitems_utils.unregister_node_categories('TEXTURE')
-    nodeitems_utils.unregister_node_categories('GEOMETRY')
 
 
 if __name__ == "__main__":

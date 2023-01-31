@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pythonintern
@@ -126,7 +112,7 @@ static int validate_array_type(PyObject *seq,
         ok = 0;
       }
       else if ((item_seq_size = PySequence_Size(item)) == -1) {
-        /* BLI_snprintf(error_str, error_str_size, "expected a sequence of %s", item_type_str); */
+        // BLI_snprintf(error_str, error_str_size, "expected a sequence of %s", item_type_str);
         PyErr_Format(PyExc_TypeError,
                      "%s expected a sequence of %s, not %s",
                      error_prefix,
@@ -334,7 +320,7 @@ static int validate_array_length(PyObject *rvalue,
     }
 
     if (tot != len) {
-      /* BLI_snprintf(error_str, error_str_size, "sequence must have length of %d", len); */
+      // BLI_snprintf(error_str, error_str_size, "sequence must have length of %d", len);
       PyErr_Format(PyExc_ValueError,
                    "%s %.200s.%.200s, sequence must have %d items total, not %d",
                    error_prefix,
@@ -391,15 +377,15 @@ static int validate_array(PyObject *rvalue,
                      totdim);
         return -1;
       }
-      if (pymat->num_col != dimsize[0] || pymat->num_row != dimsize[1]) {
+      if (pymat->col_num != dimsize[0] || pymat->row_num != dimsize[1]) {
         PyErr_Format(PyExc_ValueError,
                      "%s %.200s.%.200s, matrix assign dimension size mismatch, "
                      "is %dx%d, expected be %dx%d",
                      error_prefix,
                      RNA_struct_identifier(ptr->type),
                      RNA_property_identifier(prop),
-                     pymat->num_col,
-                     pymat->num_row,
+                     pymat->col_num,
+                     pymat->row_num,
                      dimsize[0],
                      dimsize[1]);
         return -1;
@@ -487,7 +473,7 @@ static char *copy_values(PyObject *seq,
   if (dim == 0) {
     if (MatrixObject_Check(seq)) {
       MatrixObject *pymat = (MatrixObject *)seq;
-      const size_t allocsize = pymat->num_col * pymat->num_row * sizeof(float);
+      const size_t allocsize = pymat->col_num * pymat->row_num * sizeof(float);
 
       /* read callback already done by validate */
       /* since this is the first iteration we can assume data is allocated */
@@ -536,11 +522,11 @@ static int py_to_array(PyObject *seq,
                        RNA_SetArrayFunc rna_set_array,
                        const char *error_prefix)
 {
-  /*int totdim, dim_size[MAX_ARRAY_DIMENSION];*/
+  // int totdim, dim_size[MAX_ARRAY_DIMENSION];
   int totitem;
   char *data = NULL;
 
-  /*totdim = RNA_property_array_dimension(ptr, prop, dim_size);*/ /*UNUSED*/
+  // totdim = RNA_property_array_dimension(ptr, prop, dim_size); /* UNUSED */
 
   if (validate_array(seq, ptr, prop, 0, check_item_type, item_type_str, &totitem, error_prefix) ==
       -1) {
@@ -548,7 +534,7 @@ static int py_to_array(PyObject *seq,
   }
 
   if (totitem) {
-    /* note: this code is confusing */
+    /* NOTE: this code is confusing. */
     if (param_data && RNA_property_flag(prop) & PROP_DYNAMIC) {
       /* not freeing allocated mem, RNA_parameter_list_free() will do this */
       ParameterDynAlloc *param_alloc = (ParameterDynAlloc *)param_data;
@@ -941,7 +927,7 @@ PyObject *pyrna_py_from_array_index(BPy_PropertyArrayRNA *self,
   /* just in case check */
   len = RNA_property_multi_array_length(ptr, prop, arraydim);
   if (index >= len || index < 0) {
-    /* this shouldn't happen because higher level funcs must check for invalid index */
+    /* This shouldn't happen because higher level functions must check for invalid index. */
     CLOG_WARN(BPY_LOG_RNA, "invalid index %d for array with length=%d", index, len);
 
     PyErr_SetString(PyExc_IndexError, "out of range");
@@ -990,9 +976,10 @@ PyObject *pyrna_py_from_array(PointerRNA *ptr, PropertyRNA *prop)
   return pyrna_prop_CreatePyObject(ptr, prop);
 }
 
-/* TODO, multi-dimensional arrays */
 int pyrna_array_contains_py(PointerRNA *ptr, PropertyRNA *prop, PyObject *value)
 {
+  /* TODO: multi-dimensional arrays. */
+
   const int len = RNA_property_array_length(ptr, prop);
   int type;
   int i;

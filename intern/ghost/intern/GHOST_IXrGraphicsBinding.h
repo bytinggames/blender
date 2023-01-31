@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup GHOST
@@ -31,10 +17,14 @@ class GHOST_IXrGraphicsBinding {
  public:
   union {
 #if defined(WITH_GHOST_X11)
+    XrGraphicsBindingEGLMNDX egl;
     XrGraphicsBindingOpenGLXlibKHR glx;
 #elif defined(WIN32)
     XrGraphicsBindingOpenGLWin32KHR wgl;
     XrGraphicsBindingD3D11KHR d3d11;
+#endif
+#if defined(WITH_GHOST_WAYLAND)
+    XrGraphicsBindingOpenGLWaylandKHR wl;
 #endif
   } oxr_binding;
 
@@ -53,6 +43,7 @@ class GHOST_IXrGraphicsBinding {
                                         std::string *r_requirement_info) const = 0;
   virtual void initFromGhostContext(class GHOST_Context &ghost_ctx) = 0;
   virtual std::optional<int64_t> chooseSwapchainFormat(const std::vector<int64_t> &runtime_formats,
+                                                       GHOST_TXrSwapchainFormat &r_format,
                                                        bool &r_is_rgb_format) const = 0;
   virtual std::vector<XrSwapchainImageBaseHeader *> createSwapchainImages(
       uint32_t image_count) = 0;

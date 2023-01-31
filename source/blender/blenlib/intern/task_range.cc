@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bli
@@ -26,6 +12,7 @@
 
 #include "DNA_listBase.h"
 
+#include "BLI_lazy_threading.hh"
 #include "BLI_task.h"
 #include "BLI_threads.h"
 
@@ -90,13 +77,11 @@ struct RangeTask {
 
   void operator()(const tbb::blocked_range<int> &r) const
   {
-    tbb::this_task_arena::isolate([this, r] {
-      TaskParallelTLS tls;
-      tls.userdata_chunk = userdata_chunk;
-      for (int i = r.begin(); i != r.end(); ++i) {
-        func(userdata, i, &tls);
-      }
-    });
+    TaskParallelTLS tls;
+    tls.userdata_chunk = userdata_chunk;
+    for (int i = r.begin(); i != r.end(); ++i) {
+      func(userdata, i, &tls);
+    }
   }
 
   void join(const RangeTask &other)
@@ -119,6 +104,8 @@ void BLI_task_parallel_range(const int start,
     RangeTask task(func, userdata, settings);
     const size_t grainsize = MAX2(settings->min_iter_per_thread, 1);
     const tbb::blocked_range<int> range(start, stop, grainsize);
+
+    blender::lazy_threading::send_hint();
 
     if (settings->func_reduce) {
       parallel_reduce(range, task);
@@ -145,7 +132,7 @@ void BLI_task_parallel_range(const int start,
   }
 }
 
-int BLI_task_parallel_thread_id(const TaskParallelTLS *UNUSED(tls))
+int BLI_task_parallel_thread_id(const TaskParallelTLS * /*tls*/)
 {
 #ifdef WITH_TBB
   /* Get a unique thread ID for texture nodes. In the future we should get rid
@@ -158,7 +145,7 @@ int BLI_task_parallel_thread_id(const TaskParallelTLS *UNUSED(tls))
   if (thread_id == -1) {
     thread_id = atomic_fetch_and_add_int32(&tbb_thread_id_counter, 1);
     if (thread_id >= BLENDER_MAX_THREADS) {
-      BLI_assert(!"Maximum number of threads exceeded for sculpting");
+      BLI_assert_msg(0, "Maximum number of threads exceeded for sculpting");
       thread_id = thread_id % BLENDER_MAX_THREADS;
     }
   }

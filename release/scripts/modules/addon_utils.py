@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8-80 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 __all__ = (
     "paths",
@@ -49,16 +31,16 @@ def _initialize():
 
 def paths():
     # RELEASE SCRIPTS: official scripts distributed in Blender releases
-    addon_paths = _bpy.utils.script_paths("addons")
+    addon_paths = _bpy.utils.script_paths(subdir="addons")
 
     # CONTRIB SCRIPTS: good for testing but not official scripts yet
     # if folder addons_contrib/ exists, scripts in there will be loaded too
-    addon_paths += _bpy.utils.script_paths("addons_contrib")
+    addon_paths += _bpy.utils.script_paths(subdir="addons_contrib")
 
     return addon_paths
 
 
-def modules_refresh(module_cache=addons_fake_modules):
+def modules_refresh(*, module_cache=addons_fake_modules):
     global error_encoding
     import os
 
@@ -203,9 +185,9 @@ def modules_refresh(module_cache=addons_fake_modules):
     del modules_stale
 
 
-def modules(module_cache=addons_fake_modules, *, refresh=True):
+def modules(*, module_cache=addons_fake_modules, refresh=True):
     if refresh or ((module_cache is addons_fake_modules) and modules._is_first):
-        modules_refresh(module_cache)
+        modules_refresh(module_cache=module_cache)
         modules._is_first = False
 
     mod_list = list(module_cache.values())
@@ -358,7 +340,8 @@ def enable(module_name, *, default_set=False, persistent=False, handle_error=Non
         except Exception as ex:
             # if the addon doesn't exist, don't print full traceback
             if type(ex) is ImportError and ex.name == module_name:
-                print("addon not found:", repr(module_name))
+                print("addon not loaded:", repr(module_name))
+                print("cause:", str(ex))
             else:
                 handle_error(ex)
 
@@ -504,15 +487,10 @@ def disable_all():
 
 
 def _blender_manual_url_prefix():
-    if _bpy.app.version_cycle in {"rc", "release"}:
-        manual_version = "%d.%d" % _bpy.app.version[:2]
-    else:
-        manual_version = "dev"
-
-    return "https://docs.blender.org/manual/en/" + manual_version
+    return "https://docs.blender.org/manual/en/%d.%d" % _bpy.app.version[:2]
 
 
-def module_bl_info(mod, info_basis=None):
+def module_bl_info(mod, *, info_basis=None):
     if info_basis is None:
         info_basis = {
             "name": "",
@@ -542,22 +520,6 @@ def module_bl_info(mod, info_basis=None):
 
     if not addon_info["name"]:
         addon_info["name"] = mod.__name__
-
-    # Replace 'wiki_url' with 'doc_url'.
-    doc_url = addon_info.pop("wiki_url", None)
-    if doc_url is not None:
-        # Unlikely, but possible that both are set.
-        if not addon_info["doc_url"]:
-            addon_info["doc_url"] = doc_url
-        if _bpy.app.debug:
-            print(
-                "Warning: add-on \"%s\": 'wiki_url' in 'bl_info' "
-                "is deprecated please use 'doc_url' instead!\n"
-                "         %s" % (
-                    addon_info['name'],
-                    getattr(mod, "__file__", None),
-                )
-            )
 
     doc_url = addon_info["doc_url"]
     if doc_url:

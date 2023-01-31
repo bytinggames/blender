@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # simple script to enable all addons, and disable
 
@@ -32,7 +14,7 @@ import sys
 import importlib
 
 BLACKLIST_DIRS = (
-    os.path.join(bpy.utils.resource_path('USER'), "scripts"),
+    bpy.utils.user_resource('SCRIPTS'),
 ) + tuple(addon_utils.paths()[1:])
 BLACKLIST_ADDONS = set()
 
@@ -59,7 +41,8 @@ def _init_addon_blacklist():
 
 
 def addon_modules_sorted():
-    modules = addon_utils.modules({})
+    # Pass in an empty module cache to prevent `addon_utils` local module cache being manipulated.
+    modules = addon_utils.modules(module_cache={})
     modules[:] = [
         mod for mod in modules
         if not (mod.__file__.startswith(BLACKLIST_DIRS))
@@ -74,7 +57,7 @@ def disable_addons():
     addons = bpy.context.preferences.addons
     for mod_name in list(addons.keys()):
         addon_utils.disable(mod_name, default_set=True)
-    assert(bool(addons) is False)
+    assert bool(addons) is False
 
 
 def test_load_addons():
@@ -114,13 +97,13 @@ def reload_addons(do_reload=True, do_reverse=True):
             mod_name = mod.__name__
             print("\tenabling:", mod_name)
             addon_utils.enable(mod_name, default_set=True)
-            assert(mod_name in addons)
+            assert mod_name in addons
 
         for mod in modules:
             mod_name = mod.__name__
             print("\tdisabling:", mod_name)
             addon_utils.disable(mod_name, default_set=True)
-            assert(not (mod_name in addons))
+            assert not (mod_name in addons)
 
             # now test reloading
             if do_reload:

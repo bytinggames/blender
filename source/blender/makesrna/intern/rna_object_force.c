@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup RNA
@@ -62,6 +48,8 @@ static const EnumPropertyItem effector_shape_items[] = {
 #ifdef RNA_RUNTIME
 
 #  include "BLI_math_base.h"
+
+#  include "RNA_access.h"
 
 /* type specific return values only used from functions */
 static const EnumPropertyItem curve_shape_items[] = {
@@ -133,15 +121,16 @@ static bool rna_Cache_get_valid_owner_ID(PointerRNA *ptr, Object **ob, Scene **s
       *scene = (Scene *)ptr->owner_id;
       break;
     default:
-      BLI_assert(!"Trying to get PTCacheID from an invalid ID type "
-                  "(Only scenes and objects are supported).");
+      BLI_assert_msg(0,
+                     "Trying to get PTCacheID from an invalid ID type "
+                     "(Only scenes and objects are supported).");
       break;
   }
 
   return (*ob != NULL || *scene != NULL);
 }
 
-static char *rna_PointCache_path(PointerRNA *ptr)
+static char *rna_PointCache_path(const PointerRNA *ptr)
 {
   ModifierData *md;
   Object *ob = (Object *)ptr->owner_id;
@@ -252,6 +241,33 @@ static void rna_Cache_toggle_disk_cache(Main *UNUSED(bmain), Scene *UNUSED(scene
   }
 }
 
+bool rna_Cache_use_disk_cache_override_apply(Main *UNUSED(bmain),
+                                             PointerRNA *ptr_dst,
+                                             PointerRNA *ptr_src,
+                                             PointerRNA *UNUSED(ptr_storage),
+                                             PropertyRNA *prop_dst,
+                                             PropertyRNA *prop_src,
+                                             PropertyRNA *UNUSED(prop_storage),
+                                             const int UNUSED(len_dst),
+                                             const int UNUSED(len_src),
+                                             const int UNUSED(len_storage),
+                                             PointerRNA *UNUSED(ptr_item_dst),
+                                             PointerRNA *UNUSED(ptr_item_src),
+                                             PointerRNA *UNUSED(ptr_item_storage),
+                                             IDOverrideLibraryPropertyOperation *opop)
+{
+  BLI_assert(RNA_property_type(prop_dst) == PROP_BOOLEAN);
+  BLI_assert(opop->operation == IDOVERRIDE_LIBRARY_OP_REPLACE);
+  UNUSED_VARS_NDEBUG(opop);
+
+  RNA_property_boolean_set(ptr_dst, prop_dst, RNA_property_boolean_get(ptr_src, prop_src));
+
+  /* DO NOT call `RNA_property_update_main(bmain, NULL, ptr_dst, prop_dst);`, that would trigger
+   * the whole 'update from mem point cache' process, ending up in the complete deletion of an
+   * existing disk-cache if any. */
+  return true;
+}
+
 static void rna_Cache_idname_change(Main *UNUSED(bmain), Scene *UNUSED(scene), PointerRNA *ptr)
 {
   Object *ob = NULL;
@@ -287,7 +303,7 @@ static void rna_Cache_idname_change(Main *UNUSED(bmain), Scene *UNUSED(scene), P
         pid2 = pid;
       }
       else if (cache->name[0] != '\0' && STREQ(cache->name, pid->cache->name)) {
-        /*TODO: report "name exists" to user */
+        /* TODO: report "name exists" to user. */
         BLI_strncpy(cache->name, cache->prev_name, sizeof(cache->name));
         use_new_name = false;
       }
@@ -420,14 +436,14 @@ int rna_Cache_info_length(PointerRNA *ptr)
 
   PTCacheID pid = BKE_ptcache_id_find(ob, scene, cache);
 
-  if (cache->flag & PTCACHE_FLAG_INFO_DIRTY) {
+  if (pid.cache != NULL && pid.cache->flag & PTCACHE_FLAG_INFO_DIRTY) {
     BKE_ptcache_update_info(&pid);
   }
 
   return (int)strlen(cache->info);
 }
 
-static char *rna_CollisionSettings_path(PointerRNA *UNUSED(ptr))
+static char *rna_CollisionSettings_path(const PointerRNA *UNUSED(ptr))
 {
   /* both methods work ok, but return the shorter path */
 #  if 0
@@ -603,17 +619,17 @@ static void rna_SoftBodySettings_spring_vgroup_set(PointerRNA *ptr, const char *
   rna_object_vgroup_name_set(ptr, value, sb->namedVG_Spring_K, sizeof(sb->namedVG_Spring_K));
 }
 
-static char *rna_SoftBodySettings_path(PointerRNA *ptr)
+static char *rna_SoftBodySettings_path(const PointerRNA *ptr)
 {
-  Object *ob = (Object *)ptr->owner_id;
-  ModifierData *md = (ModifierData *)BKE_modifiers_findby_type(ob, eModifierType_Softbody);
+  const Object *ob = (Object *)ptr->owner_id;
+  const ModifierData *md = BKE_modifiers_findby_type(ob, eModifierType_Softbody);
   char name_esc[sizeof(md->name) * 2];
 
   BLI_str_escape(name_esc, md->name, sizeof(name_esc));
   return BLI_sprintfN("modifiers[\"%s\"].settings", name_esc);
 }
 
-static int particle_id_check(PointerRNA *ptr)
+static int particle_id_check(const PointerRNA *ptr)
 {
   ID *id = ptr->owner_id;
 
@@ -704,7 +720,7 @@ static void rna_FieldSettings_dependency_update(Main *bmain, Scene *scene, Point
 
     rna_FieldSettings_shape_update(bmain, scene, ptr);
 
-    if (ob->type == OB_CURVE && ob->pd->forcefield == PFIELD_GUIDE) {
+    if (ob->type == OB_CURVES_LEGACY && ob->pd->forcefield == PFIELD_GUIDE) {
       DEG_id_tag_update(&ob->id, ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY | ID_RECALC_ANIMATION);
     }
     else {
@@ -715,7 +731,7 @@ static void rna_FieldSettings_dependency_update(Main *bmain, Scene *scene, Point
   }
 }
 
-static char *rna_FieldSettings_path(PointerRNA *ptr)
+static char *rna_FieldSettings_path(const PointerRNA *ptr)
 {
   PartDeflect *pd = (PartDeflect *)ptr->data;
 
@@ -771,7 +787,7 @@ static void rna_EffectorWeight_dependency_update(Main *bmain,
   WM_main_add_notifier(NC_OBJECT | ND_DRAW, NULL);
 }
 
-static char *rna_EffectorWeight_path(PointerRNA *ptr)
+static char *rna_EffectorWeight_path(const PointerRNA *ptr)
 {
   EffectorWeights *ew = (EffectorWeights *)ptr->data;
   /* Check through all possible places the settings can be to find the right one */
@@ -912,7 +928,7 @@ static const EnumPropertyItem *rna_Effector_shape_itemf(bContext *UNUSED(C),
 
   ob = (Object *)ptr->owner_id;
 
-  if (ob->type == OB_CURVE) {
+  if (ob->type == OB_CURVES_LEGACY) {
     if (ob->pd->forcefield == PFIELD_VORTEX) {
       return curve_vortex_shape_items;
     }
@@ -984,25 +1000,29 @@ static void rna_def_pointcache_common(StructRNA *srna)
   prop = RNA_def_property(srna, "is_baked", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", PTCACHE_BAKED);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(prop, "", "The cache is baked");
 
   prop = RNA_def_property(srna, "is_baking", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", PTCACHE_BAKING);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(prop, "", "The cache is being baked");
 
   prop = RNA_def_property(srna, "use_disk_cache", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", PTCACHE_DISK_CACHE);
   RNA_def_property_ui_text(
       prop, "Disk Cache", "Save cache files to disk (.blend file must be saved first)");
   RNA_def_property_update(prop, NC_OBJECT, "rna_Cache_toggle_disk_cache");
+  RNA_def_property_override_funcs(prop, NULL, NULL, "rna_Cache_use_disk_cache_override_apply");
 
   prop = RNA_def_property(srna, "is_outdated", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", PTCACHE_OUTDATED);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
-  RNA_def_property_ui_text(prop, "Cache is outdated", "");
+  RNA_def_property_ui_text(prop, "Cache Is Outdated", "");
 
   prop = RNA_def_property(srna, "is_frame_skip", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", PTCACHE_FRAMES_SKIPPED);
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_ui_text(prop, "", "Some frames were skipped while baking/saving that cache");
 
   prop = RNA_def_property(srna, "name", PROP_STRING, PROP_NONE);
   RNA_def_property_string_sdna(prop, NULL, "name");
@@ -1026,6 +1046,7 @@ static void rna_def_pointcache_common(StructRNA *srna)
   prop = RNA_def_property(srna, "info", PROP_STRING, PROP_NONE);
   RNA_def_property_string_sdna(prop, NULL, "info");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_NO_COMPARISON);
   /* Note that we do not actually need a getter here, `rna_Cache_info_length` will update the info
    * string just as well. */
   RNA_def_property_string_funcs(prop, NULL, "rna_Cache_info_length", NULL);
@@ -1055,8 +1076,8 @@ static void rna_def_ptcache_point_caches(BlenderRNA *brna, PropertyRNA *cprop)
   StructRNA *srna;
   PropertyRNA *prop;
 
-  /* FunctionRNA *func; */
-  /* PropertyRNA *parm; */
+  // FunctionRNA *func;
+  // PropertyRNA *parm;
 
   RNA_def_property_srna(cprop, "PointCaches");
   srna = RNA_def_struct(brna, "PointCaches", NULL);
@@ -1095,7 +1116,7 @@ static void rna_def_pointcache_active(BlenderRNA *brna)
    * Those caches items have exact same content as 'active' one, except for that collection,
    * to prevent ugly recursive layout pattern.
    *
-   * Note: This shall probably be redone from scratch in a proper way at some point,
+   * NOTE: This shall probably be redone from scratch in a proper way at some point,
    *       but for now that will do, and shall not break anything in the API. */
   prop = RNA_def_property(srna, "point_caches", PROP_COLLECTION, PROP_NONE);
   RNA_def_property_collection_funcs(prop,
@@ -1123,6 +1144,8 @@ static void rna_def_collision(BlenderRNA *brna)
   RNA_def_struct_path_func(srna, "rna_CollisionSettings_path");
   RNA_def_struct_ui_text(
       srna, "Collision Settings", "Collision settings for object in physics simulation");
+
+  RNA_define_lib_overridable(true);
 
   prop = RNA_def_property(srna, "use", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "deflect", 1);
@@ -1226,6 +1249,8 @@ static void rna_def_collision(BlenderRNA *brna)
                            "Cloth collision impulses act in the direction of the collider normals "
                            "(more reliable in some cases)");
   RNA_def_property_update(prop, 0, "rna_CollisionSettings_update");
+
+  RNA_define_lib_overridable(false);
 }
 
 static void rna_def_effector_weight(BlenderRNA *brna)
@@ -1239,6 +1264,8 @@ static void rna_def_effector_weight(BlenderRNA *brna)
   RNA_def_struct_ui_text(srna, "Effector Weights", "Effector weights for physics simulation");
   RNA_def_struct_ui_icon(srna, ICON_PHYSICS);
 
+  RNA_define_lib_overridable(true);
+
   /* Flags */
   prop = RNA_def_property(srna, "apply_to_hair_growing", PROP_BOOLEAN, PROP_NONE);
   RNA_def_property_boolean_sdna(prop, NULL, "flag", EFF_WEIGHT_DO_HAIR);
@@ -1249,7 +1276,7 @@ static void rna_def_effector_weight(BlenderRNA *brna)
   prop = RNA_def_property(srna, "collection", PROP_POINTER, PROP_NONE);
   RNA_def_property_struct_type(prop, "Collection");
   RNA_def_property_pointer_sdna(prop, NULL, "group");
-  RNA_def_property_flag(prop, PROP_EDITABLE);
+  RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_REFCOUNT);
   RNA_def_property_ui_text(prop, "Effector Collection", "Limit effectors to this collection");
   RNA_def_property_update(prop, 0, "rna_EffectorWeight_dependency_update");
 
@@ -1358,6 +1385,8 @@ static void rna_def_effector_weight(BlenderRNA *brna)
   RNA_def_property_ui_range(prop, 0.0f, 1.0f, 0.1, 3);
   RNA_def_property_ui_text(prop, "Fluid Flow", "Fluid Flow effector weight");
   RNA_def_property_update(prop, 0, "rna_EffectorWeight_update");
+
+  RNA_define_lib_overridable(false);
 }
 
 static void rna_def_field(BlenderRNA *brna)
@@ -1366,97 +1395,97 @@ static void rna_def_field(BlenderRNA *brna)
   PropertyRNA *prop;
 
   static const EnumPropertyItem field_type_items[] = {
-      {0, "NONE", 0, "None", ""},
-      {PFIELD_FORCE,
-       "FORCE",
-       ICON_FORCE_FORCE,
-       "Force",
-       "Radial field toward the center of object"},
-      {PFIELD_WIND,
-       "WIND",
-       ICON_FORCE_WIND,
-       "Wind",
-       "Constant force along the force object's local Z axis"},
-      {PFIELD_VORTEX,
-       "VORTEX",
-       ICON_FORCE_VORTEX,
-       "Vortex",
-       "Spiraling force that twists the force object's local Z axis"},
-      {PFIELD_MAGNET,
-       "MAGNET",
-       ICON_FORCE_MAGNETIC,
-       "Magnetic",
-       "Forcefield depends on the speed of the particles"},
-      {PFIELD_HARMONIC,
-       "HARMONIC",
-       ICON_FORCE_HARMONIC,
-       "Harmonic",
-       "The source of this force field is the zero point of a harmonic oscillator"},
+      {0, "NONE", ICON_BLANK1, "None", ""},
+      {PFIELD_BOID,
+       "BOID",
+       ICON_FORCE_BOID,
+       "Boid",
+       "Create a force that acts as a boid's predators or target"},
       {PFIELD_CHARGE,
        "CHARGE",
        ICON_FORCE_CHARGE,
        "Charge",
        "Spherical forcefield based on the charge of particles, "
        "only influences other charge force fields"},
-      {PFIELD_LENNARDJ,
-       "LENNARDJ",
-       ICON_FORCE_LENNARDJONES,
-       "Lennard-Jones",
-       "Forcefield based on the Lennard-Jones potential"},
-      {PFIELD_TEXTURE, "TEXTURE", ICON_FORCE_TEXTURE, "Texture", "Force field based on a texture"},
       {PFIELD_GUIDE,
        "GUIDE",
        ICON_FORCE_CURVE,
        "Curve Guide",
        "Create a force along a curve object"},
-      {PFIELD_BOID,
-       "BOID",
-       ICON_FORCE_BOID,
-       "Boid",
-       "Create a force that acts as a boid's predators or target"},
-      {PFIELD_TURBULENCE,
-       "TURBULENCE",
-       ICON_FORCE_TURBULENCE,
-       "Turbulence",
-       "Create turbulence with a noise field"},
       {PFIELD_DRAG, "DRAG", ICON_FORCE_DRAG, "Drag", "Create a force that dampens motion"},
       {PFIELD_FLUIDFLOW,
        "FLUID_FLOW",
        ICON_FORCE_FLUIDFLOW,
        "Fluid Flow",
        "Create a force based on fluid simulation velocities"},
+      {PFIELD_FORCE,
+       "FORCE",
+       ICON_FORCE_FORCE,
+       "Force",
+       "Radial field toward the center of object"},
+      {PFIELD_HARMONIC,
+       "HARMONIC",
+       ICON_FORCE_HARMONIC,
+       "Harmonic",
+       "The source of this force field is the zero point of a harmonic oscillator"},
+      {PFIELD_LENNARDJ,
+       "LENNARDJ",
+       ICON_FORCE_LENNARDJONES,
+       "Lennard-Jones",
+       "Forcefield based on the Lennard-Jones potential"},
+      {PFIELD_MAGNET,
+       "MAGNET",
+       ICON_FORCE_MAGNETIC,
+       "Magnetic",
+       "Forcefield depends on the speed of the particles"},
+      {PFIELD_TEXTURE, "TEXTURE", ICON_FORCE_TEXTURE, "Texture", "Force field based on a texture"},
+      {PFIELD_TURBULENCE,
+       "TURBULENCE",
+       ICON_FORCE_TURBULENCE,
+       "Turbulence",
+       "Create turbulence with a noise field"},
+      {PFIELD_VORTEX,
+       "VORTEX",
+       ICON_FORCE_VORTEX,
+       "Vortex",
+       "Spiraling force that twists the force object's local Z axis"},
+      {PFIELD_WIND,
+       "WIND",
+       ICON_FORCE_WIND,
+       "Wind",
+       "Constant force along the force object's local Z axis"},
       {0, NULL, 0, NULL, NULL},
   };
 
   static const EnumPropertyItem falloff_items[] = {
+      {PFIELD_FALL_CONE, "CONE", 0, "Cone", ""},
       {PFIELD_FALL_SPHERE, "SPHERE", 0, "Sphere", ""},
       {PFIELD_FALL_TUBE, "TUBE", 0, "Tube", ""},
-      {PFIELD_FALL_CONE, "CONE", 0, "Cone", ""},
       {0, NULL, 0, NULL, NULL},
   };
 
   static const EnumPropertyItem texture_items[] = {
-      {PFIELD_TEX_RGB, "RGB", 0, "RGB", ""},
-      {PFIELD_TEX_GRAD, "GRADIENT", 0, "Gradient", ""},
       {PFIELD_TEX_CURL, "CURL", 0, "Curl", ""},
+      {PFIELD_TEX_GRAD, "GRADIENT", 0, "Gradient", ""},
+      {PFIELD_TEX_RGB, "RGB", 0, "RGB", ""},
       {0, NULL, 0, NULL, NULL},
   };
 
   static const EnumPropertyItem zdirection_items[] = {
-      {PFIELD_Z_BOTH, "BOTH", 0, "Both Z", ""},
       {PFIELD_Z_POS, "POSITIVE", 0, "+Z", ""},
       {PFIELD_Z_NEG, "NEGATIVE", 0, "-Z", ""},
+      {PFIELD_Z_BOTH, "BOTH", 0, "Both Z", ""},
       {0, NULL, 0, NULL, NULL},
   };
 
   static const EnumPropertyItem guide_kink_items[] = {
-      {0, "NONE", 0, "Nothing", ""},
+      {0, "NONE", 0, "None", ""},
+      {4, "BRAID", 0, "Braid", ""},
       {1, "CURL", 0, "Curl", ""},
       {2, "RADIAL", 0, "Radial", ""},
-      {3, "WAVE", 0, "Wave", ""},
-      {4, "BRAID", 0, "Braid", ""},
-      {5, "ROTATION", 0, "Rotation", ""},
       {6, "ROLL", 0, "Roll", ""},
+      {5, "ROTATION", 0, "Rotation", ""},
+      {3, "WAVE", 0, "Wave", ""},
       {0, NULL, 0, NULL, NULL},
   };
 
@@ -1466,6 +1495,8 @@ static void rna_def_field(BlenderRNA *brna)
   RNA_def_struct_ui_text(
       srna, "Field Settings", "Field settings for an object in physics simulation");
   RNA_def_struct_ui_icon(srna, ICON_PHYSICS);
+
+  RNA_define_lib_overridable(true);
 
   /* Enums */
 
@@ -1510,34 +1541,34 @@ static void rna_def_field(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "strength", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "f_strength");
-  RNA_def_property_range(prop, -FLT_MAX, FLT_MAX);
+  RNA_def_property_ui_range(prop, -FLT_MAX, FLT_MAX, 10, 3);
   RNA_def_property_ui_text(prop, "Strength", "Strength of force field");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
   /* different ui range to above */
   prop = RNA_def_property(srna, "linear_drag", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "f_strength");
-  RNA_def_property_range(prop, -2.0f, 2.0f);
+  RNA_def_property_ui_range(prop, -2.0f, 2.0f, 10, 3);
   RNA_def_property_ui_text(prop, "Linear Drag", "Drag component proportional to velocity");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
   prop = RNA_def_property(srna, "harmonic_damping", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "f_damp");
-  RNA_def_property_range(prop, 0.0f, 10.0f);
+  RNA_def_property_ui_range(prop, 0.0f, 10.0f, 10, 3);
   RNA_def_property_ui_text(prop, "Harmonic Damping", "Damping of the harmonic force");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
   /* different ui range to above */
   prop = RNA_def_property(srna, "quadratic_drag", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "f_damp");
-  RNA_def_property_range(prop, -2.0f, 2.0f);
+  RNA_def_property_ui_range(prop, -2.0f, 2.0f, 10, 3);
   RNA_def_property_ui_text(
       prop, "Quadratic Drag", "Drag component proportional to the square of velocity");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
   prop = RNA_def_property(srna, "flow", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "f_flow");
-  RNA_def_property_range(prop, 0.0f, 10.0f);
+  RNA_def_property_ui_range(prop, 0.0f, 10.0f, 10, 3);
   RNA_def_property_ui_text(prop, "Flow", "Convert effector force into air flow velocity");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
@@ -1553,7 +1584,7 @@ static void rna_def_field(BlenderRNA *brna)
   /* different ui range to above */
   prop = RNA_def_property(srna, "inflow", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "f_flow");
-  RNA_def_property_range(prop, -10.0f, 10.0f);
+  RNA_def_property_ui_range(prop, -10.0f, 10.0f, 10, 3);
   RNA_def_property_ui_text(prop, "Inflow", "Inwards component of the vortex force");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
@@ -1566,7 +1597,8 @@ static void rna_def_field(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "rest_length", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "f_size");
-  RNA_def_property_range(prop, 0.0f, 1000.0f);
+  RNA_def_property_range(prop, 0.0f, FLT_MAX);
+  RNA_def_property_ui_range(prop, 0.0f, 1000.0f, 10, 3);
   RNA_def_property_ui_text(prop, "Rest Length", "Rest length of the harmonic force");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
 
@@ -1724,7 +1756,7 @@ static void rna_def_field(BlenderRNA *brna)
 
   prop = RNA_def_property(srna, "guide_minimum", PROP_FLOAT, PROP_NONE);
   RNA_def_property_float_sdna(prop, NULL, "f_strength");
-  RNA_def_property_range(prop, 0.0f, 1000.0f);
+  RNA_def_property_ui_range(prop, 0.0f, 1000.0f, 10, 3);
   RNA_def_property_ui_text(
       prop, "Minimum Distance", "The distance from which particles are affected fully");
   RNA_def_property_update(prop, 0, "rna_FieldSettings_update");
@@ -1795,6 +1827,8 @@ static void rna_def_field(BlenderRNA *brna)
 
   /* Variables used for Curve Guide, already wrapped, used for other fields too */
   /* falloff_power, use_max_distance, maximum_distance */
+
+  RNA_define_lib_overridable(false);
 }
 
 static void rna_def_softbody(BlenderRNA *brna)
@@ -2047,10 +2081,10 @@ static void rna_def_softbody(BlenderRNA *brna)
       prop, "Estimate Transforms", "Store the estimated transforms in the soft body settings");
 
   /***********************************************************************************/
-  /* these are not exactly settings, but reading calculated results*/
-  /* but i did not want to start a new property struct */
-  /* so rather rename this from SoftBodySettings to SoftBody */
-  /* translation */
+  /* These are not exactly settings, but reading calculated results
+   * but i did not want to start a new property struct
+   * so rather rename this from SoftBodySettings to SoftBody
+   * translation. */
   prop = RNA_def_property(srna, "location_mass_center", PROP_FLOAT, PROP_TRANSLATION);
   RNA_def_property_float_sdna(prop, NULL, "lcom");
   RNA_def_property_ui_text(prop, "Center of Mass", "Location of center of mass");
@@ -2130,6 +2164,7 @@ static void rna_def_softbody(BlenderRNA *brna)
   RNA_def_property_pointer_sdna(prop, NULL, "effector_weights");
   RNA_def_property_struct_type(prop, "EffectorWeights");
   RNA_def_property_clear_flag(prop, PROP_EDITABLE);
+  RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_ui_text(prop, "Effector Weights", "");
 }
 

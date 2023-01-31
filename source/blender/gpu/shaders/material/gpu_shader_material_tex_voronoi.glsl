@@ -1,12 +1,20 @@
+#pragma BLENDER_REQUIRE(gpu_shader_common_hash.glsl)
+#pragma BLENDER_REQUIRE(gpu_shader_common_math_utils.glsl)
+
 /*
+ * Original code is under the MIT License, Copyright (c) 2013 Inigo Quilez.
+ *
  * Smooth Voronoi:
  *
  * - https://wiki.blender.org/wiki/User:OmarSquircleArt/GSoC2019/Documentation/Smooth_Voronoi
  *
- * Distance To Edge:
+ * Distance To Edge based on:
  *
- * - https://www.shadertoy.com/view/llG3zy
+ * - https://www.iquilezles.org/www/articles/voronoilines/voronoilines.htm
+ * - https://www.shadertoy.com/view/ldl3W8
  *
+ * With optimization to change -2..2 scan window to -1..1 for better performance,
+ * as explained in https://www.shadertoy.com/view/llG3zy.
  */
 
 /* **** 1D Voronoi **** */
@@ -66,7 +74,7 @@ void node_tex_voronoi_smooth_f1_1d(vec3 coord,
                                    out float outRadius)
 {
   randomness = clamp(randomness, 0.0, 1.0);
-  smoothness = clamp(smoothness / 2.0, 0, 0.5);
+  smoothness = clamp(smoothness / 2.0, 0.0, 0.5);
 
   float scaledCoord = w * scale;
   float cellPosition = floor(scaledCoord);
@@ -295,7 +303,7 @@ void node_tex_voronoi_smooth_f1_2d(vec3 coord,
                                    out float outRadius)
 {
   randomness = clamp(randomness, 0.0, 1.0);
-  smoothness = clamp(smoothness / 2.0, 0, 0.5);
+  smoothness = clamp(smoothness / 2.0, 0.0, 0.5);
 
   vec2 scaledCoord = coord.xy * scale;
   vec2 cellPosition = floor(scaledCoord);
@@ -559,7 +567,7 @@ void node_tex_voronoi_smooth_f1_3d(vec3 coord,
                                    out float outRadius)
 {
   randomness = clamp(randomness, 0.0, 1.0);
-  smoothness = clamp(smoothness / 2.0, 0, 0.5);
+  smoothness = clamp(smoothness / 2.0, 0.0, 0.5);
 
   vec3 scaledCoord = coord * scale;
   vec3 cellPosition = floor(scaledCoord);
@@ -846,7 +854,7 @@ void node_tex_voronoi_smooth_f1_4d(vec3 coord,
                                    out float outRadius)
 {
   randomness = clamp(randomness, 0.0, 1.0);
-  smoothness = clamp(smoothness / 2.0, 0, 0.5);
+  smoothness = clamp(smoothness / 2.0, 0.0, 0.5);
 
   vec4 scaledCoord = vec4(coord, w) * scale;
   vec4 cellPosition = floor(scaledCoord);

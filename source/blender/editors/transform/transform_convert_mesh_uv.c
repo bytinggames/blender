@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -30,6 +14,7 @@
 #include "BLI_math.h"
 
 #include "BKE_context.h"
+#include "BKE_customdata.h"
 #include "BKE_editmesh.h"
 #include "BKE_mesh_mapping.h"
 
@@ -89,8 +74,12 @@ static void UVsToTransData(const float aspect[2],
 /**
  * \param dists: Store the closest connected distance to selected vertices.
  */
-static void uv_set_connectivity_distance(BMesh *bm, float *dists, const float aspect[2])
+static void uv_set_connectivity_distance(const ToolSettings *ts,
+                                         BMesh *bm,
+                                         float *dists,
+                                         const float aspect[2])
 {
+#define TMP_LOOP_SELECT_TAG BM_ELEM_TAG_ALT
   /* Mostly copied from #transform_convert_mesh_connectivity_distance. */
   BLI_LINKSTACK_DECLARE(queue, BMLoop *);
 
@@ -116,15 +105,15 @@ static void uv_set_connectivity_distance(BMesh *bm, float *dists, const float as
 
     BM_ITER_ELEM (l, &liter, f, BM_LOOPS_OF_FACE) {
       float dist;
-      MLoopUV *luv = BM_ELEM_CD_GET_VOID_P(l, cd_loop_uv_offset);
-
-      bool uv_vert_sel = luv->flag & MLOOPUV_VERTSEL;
+      bool uv_vert_sel = uvedit_uv_select_test_ex(ts, l, cd_loop_uv_offset);
 
       if (uv_vert_sel) {
         BLI_LINKSTACK_PUSH(queue, l);
+        BM_elem_flag_enable(l, TMP_LOOP_SELECT_TAG);
         dist = 0.0f;
       }
       else {
+        BM_elem_flag_disable(l, TMP_LOOP_SELECT_TAG);
         dist = FLT_MAX;
       }
 
@@ -179,7 +168,7 @@ static void uv_set_connectivity_distance(BMesh *bm, float *dists, const float as
 
         bool other_vert_sel, connected_vert_sel;
 
-        other_vert_sel = luv_other->flag & MLOOPUV_VERTSEL;
+        other_vert_sel = BM_elem_flag_test_bool(l_other, TMP_LOOP_SELECT_TAG);
 
         BM_ITER_ELEM (l_connected, &l_connected_iter, l_other->v, BM_LOOPS_OF_VERT) {
           if (l_connected == l_other) {
@@ -191,7 +180,7 @@ static void uv_set_connectivity_distance(BMesh *bm, float *dists, const float as
           }
 
           MLoopUV *luv_connected = BM_ELEM_CD_GET_VOID_P(l_connected, cd_loop_uv_offset);
-          connected_vert_sel = luv_connected->flag & MLOOPUV_VERTSEL;
+          connected_vert_sel = BM_elem_flag_test_bool(l_connected, TMP_LOOP_SELECT_TAG);
 
           /* Check if this loop is connected in UV space.
            * If the uv loops share the same selection state (if not, they are not connected as
@@ -247,13 +236,13 @@ static void uv_set_connectivity_distance(BMesh *bm, float *dists, const float as
   BLI_LINKSTACK_FREE(queue_next);
 
   MEM_freeN(dists_prev);
+#undef TMP_LOOP_SELECT_TAG
 }
 
-void createTransUVs(bContext *C, TransInfo *t)
+static void createTransUVs(bContext *C, TransInfo *t)
 {
   SpaceImage *sima = CTX_wm_space_image(C);
   Scene *scene = t->scene;
-  ToolSettings *ts = CTX_data_tool_settings(C);
 
   const bool is_prop_edit = (t->flag & T_PROP_EDIT) != 0;
   const bool is_prop_connected = (t->flag & T_PROP_CONNECTED) != 0;
@@ -281,13 +270,12 @@ void createTransUVs(bContext *C, TransInfo *t)
     /* count */
     if (is_island_center) {
       /* create element map with island information */
-      const bool use_facesel = (ts->uv_flag & UV_SYNC_SELECTION) == 0;
-      elementmap = BM_uv_element_map_create(em->bm, scene, use_facesel, true, false, true);
+      elementmap = BM_uv_element_map_create(em->bm, scene, true, false, true, true);
       if (elementmap == NULL) {
         continue;
       }
 
-      island_center = MEM_callocN(sizeof(*island_center) * elementmap->totalIslands, __func__);
+      island_center = MEM_callocN(sizeof(*island_center) * elementmap->total_islands, __func__);
     }
 
     BM_ITER_MESH (efa, &iter, em->bm, BM_FACES_OF_MESH) {
@@ -332,9 +320,7 @@ void createTransUVs(bContext *C, TransInfo *t)
     }
 
     if (is_island_center) {
-      int i;
-
-      for (i = 0; i < elementmap->totalIslands; i++) {
+      for (int i = 0; i < elementmap->total_islands; i++) {
         mul_v2_fl(island_center[i].co, 1.0f / island_center[i].co_num);
         mul_v2_v2(island_center[i].co, t->aspect);
       }
@@ -356,7 +342,7 @@ void createTransUVs(bContext *C, TransInfo *t)
     if (is_prop_connected) {
       prop_dists = MEM_callocN(em->bm->totloop * sizeof(float), "TransObPropDists(UV Editing)");
 
-      uv_set_connectivity_distance(em->bm, prop_dists, t->aspect);
+      uv_set_connectivity_distance(t->settings, em->bm, prop_dists, t->aspect);
     }
 
     BM_ITER_MESH (efa, &iter, em->bm, BM_FACES_OF_MESH) {
@@ -418,8 +404,8 @@ void createTransUVs(bContext *C, TransInfo *t)
 static void flushTransUVs(TransInfo *t)
 {
   SpaceImage *sima = t->area->spacedata.first;
-  const bool use_pixel_snap = ((sima->pixel_snap_mode != SI_PIXEL_SNAP_DISABLED) &&
-                               (t->state != TRANS_CANCEL));
+  const bool use_pixel_round = ((sima->pixel_round_mode != SI_PIXEL_ROUND_DISABLED) &&
+                                (t->state != TRANS_CANCEL));
 
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     TransData2D *td;
@@ -429,7 +415,7 @@ static void flushTransUVs(TransInfo *t)
     aspect_inv[0] = 1.0f / t->aspect[0];
     aspect_inv[1] = 1.0f / t->aspect[1];
 
-    if (use_pixel_snap) {
+    if (use_pixel_round) {
       int size_i[2];
       ED_space_image_get_size(sima, &size_i[0], &size_i[1]);
       size[0] = size_i[0];
@@ -441,16 +427,16 @@ static void flushTransUVs(TransInfo *t)
       td->loc2d[0] = td->loc[0] * aspect_inv[0];
       td->loc2d[1] = td->loc[1] * aspect_inv[1];
 
-      if (use_pixel_snap) {
+      if (use_pixel_round) {
         td->loc2d[0] *= size[0];
         td->loc2d[1] *= size[1];
 
-        switch (sima->pixel_snap_mode) {
-          case SI_PIXEL_SNAP_CENTER:
+        switch (sima->pixel_round_mode) {
+          case SI_PIXEL_ROUND_CENTER:
             td->loc2d[0] = roundf(td->loc2d[0] - 0.5f) + 0.5f;
             td->loc2d[1] = roundf(td->loc2d[1] - 0.5f) + 0.5f;
             break;
-          case SI_PIXEL_SNAP_CORNER:
+          case SI_PIXEL_ROUND_CORNER:
             td->loc2d[0] = roundf(td->loc2d[0]);
             td->loc2d[1] = roundf(td->loc2d[1]);
             break;
@@ -463,8 +449,7 @@ static void flushTransUVs(TransInfo *t)
   }
 }
 
-/* helper for recalcData() - for Image Editor transforms */
-void recalcData_uv(TransInfo *t)
+static void recalcData_uv(TransInfo *t)
 {
   SpaceImage *sima = t->area->spacedata.first;
 
@@ -475,9 +460,16 @@ void recalcData_uv(TransInfo *t)
 
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     if (tc->data_len) {
-      DEG_id_tag_update(tc->obedit->data, 0);
+      DEG_id_tag_update(tc->obedit->data, ID_RECALC_GEOMETRY);
     }
   }
 }
 
 /** \} */
+
+TransConvertTypeInfo TransConvertType_MeshUV = {
+    /* flags */ (T_EDIT | T_POINTS | T_2D_EDIT),
+    /* createTransData */ createTransUVs,
+    /* recalcData */ recalcData_uv,
+    /* special_aftertrans_update */ NULL,
+};

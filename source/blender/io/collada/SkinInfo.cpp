@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup collada
@@ -36,6 +22,7 @@
 #include "DNA_scene_types.h"
 
 #include "BKE_action.h"
+#include "BKE_deform.h"
 #include "BKE_object.h"
 #include "BKE_object_deform.h"
 
@@ -52,9 +39,6 @@ template<class T> static const char *bc_get_joint_name(T *node)
   return id.empty() ? node->getOriginalId().c_str() : id.c_str();
 }
 
-/* This is used to store data passed in write_controller_data.
- * Arrays from COLLADAFW::SkinControllerData lose ownership, so do this class members
- * so that arrays don't get freed until we free them explicitly. */
 SkinInfo::SkinInfo() = default;
 
 SkinInfo::SkinInfo(const SkinInfo &skin)
@@ -76,7 +60,6 @@ SkinInfo::SkinInfo(UnitConverter *conv) : unit_converter(conv), ob_arm(nullptr),
 {
 }
 
-/* nobody owns the data after this, so it should be freed manually with releaseMemory */
 template<class T> void SkinInfo::transfer_array_data(T &src, T &dest)
 {
   dest.setData(src.getData(), src.getCount());
@@ -84,7 +67,6 @@ template<class T> void SkinInfo::transfer_array_data(T &src, T &dest)
   dest.yieldOwnerShip();
 }
 
-/* when src is const we cannot src.yieldOwnerShip, this is used by copy constructor */
 void SkinInfo::transfer_int_array_data_const(const COLLADAFW::IntValuesArray &src,
                                              COLLADAFW::IntValuesArray &dest)
 {
@@ -95,7 +77,7 @@ void SkinInfo::transfer_int_array_data_const(const COLLADAFW::IntValuesArray &sr
 void SkinInfo::transfer_uint_array_data_const(const COLLADAFW::UIntValuesArray &src,
                                               COLLADAFW::UIntValuesArray &dest)
 {
-  dest.setData((unsigned int *)src.getData(), src.getCount());
+  dest.setData((uint *)src.getData(), src.getCount());
   dest.yieldOwnerShip();
 }
 
@@ -108,7 +90,7 @@ void SkinInfo::borrow_skin_controller_data(const COLLADAFW::SkinControllerData *
 
   /* cannot transfer data for FloatOrDoubleArray, copy values manually */
   const COLLADAFW::FloatOrDoubleArray &weight = skin->getWeights();
-  for (unsigned int i = 0; i < weight.getValuesCount(); i++) {
+  for (uint i = 0; i < weight.getValuesCount(); i++) {
     weights.push_back(bc_get_float_value(weight, i));
   }
 
@@ -123,9 +105,6 @@ void SkinInfo::free()
   // weights.releaseMemory();
 }
 
-/* using inverse bind matrices to construct armature
- * it is safe to invert them to get the original matrices
- * because if they are inverse matrices, they can be inverted */
 void SkinInfo::add_joint(const COLLADABU::Math::Matrix4 &matrix)
 {
   JointData jd;
@@ -139,7 +118,7 @@ void SkinInfo::set_controller(const COLLADAFW::SkinController *co)
 
   /* fill in joint UIDs */
   const COLLADAFW::UniqueIdArray &joint_uids = co->getJoints();
-  for (unsigned int i = 0; i < joint_uids.getCount(); i++) {
+  for (uint i = 0; i < joint_uids.getCount(); i++) {
     joint_data[i].joint_uid = joint_uids[i];
 
     /* store armature pointer */
@@ -151,7 +130,6 @@ void SkinInfo::set_controller(const COLLADAFW::SkinController *co)
   }
 }
 
-/* called from write_controller */
 Object *SkinInfo::create_armature(Main *bmain, Scene *scene, ViewLayer *view_layer)
 {
   ob_arm = bc_add_object(bmain, scene, view_layer, OB_ARMATURE, nullptr);
@@ -192,11 +170,6 @@ const COLLADAFW::UniqueId &SkinInfo::get_controller_uid()
   return controller_uid;
 }
 
-/* check if this skin controller references a joint or any descendant of it
- *
- * some nodes may not be referenced by SkinController,
- * in this case to determine if the node belongs to this armature,
- * we need to search down the tree */
 bool SkinInfo::uses_joint_or_descendant(COLLADAFW::Node *node)
 {
   const COLLADAFW::UniqueId &uid = node->getUniqueId();
@@ -208,7 +181,7 @@ bool SkinInfo::uses_joint_or_descendant(COLLADAFW::Node *node)
   }
 
   COLLADAFW::NodePointerArray &children = node->getChildNodes();
-  for (unsigned int i = 0; i < children.getCount(); i++) {
+  for (uint i = 0; i < children.getCount(); i++) {
     if (uses_joint_or_descendant(children[i])) {
       return true;
     }
@@ -231,7 +204,7 @@ void SkinInfo::link_armature(bContext *C,
   amd->object = ob_arm;
 
 #if 1
-  /* XXX Why do we enforce objects to be children of Armatures if they weren't so before ?*/
+  /* XXX Why do we enforce objects to be children of Armatures if they weren't so before? */
   if (!BKE_object_is_child_recursive(ob_arm, ob)) {
     bc_set_parent(ob, ob_arm, C);
   }
@@ -241,12 +214,12 @@ void SkinInfo::link_armature(bContext *C,
   ob->partype = PAROBJECT;
 
   BKE_object_workob_calc_parent(scene, ob, &workob);
-  invert_m4_m4(ob->parentinv, workob.obmat);
+  invert_m4_m4(ob->parentinv, workob.object_to_world);
 
   DEG_id_tag_update(&obn->id, ID_RECALC_TRANSFORM | ID_RECALC_GEOMETRY);
 #endif
-  copy_m4_m4(ob->obmat, bind_shape_matrix);
-  BKE_object_apply_mat4(ob, ob->obmat, false, false);
+  copy_m4_m4(ob->object_to_world, bind_shape_matrix);
+  BKE_object_apply_mat4(ob, ob->object_to_world, false, false);
 
   amd->deformflag = ARM_DEF_VGROUP;
 
@@ -281,15 +254,16 @@ void SkinInfo::link_armature(bContext *C,
    *
    * get def group by index with BLI_findlink */
 
-  for (unsigned int vertex = 0, weight = 0; vertex < joints_per_vertex.getCount(); vertex++) {
+  for (uint vertex = 0, weight = 0; vertex < joints_per_vertex.getCount(); vertex++) {
 
-    unsigned int limit = weight + joints_per_vertex[vertex];
+    uint limit = weight + joints_per_vertex[vertex];
     for (; weight < limit; weight++) {
       int joint = joint_indices[weight], joint_weight = weight_indices[weight];
 
       /* -1 means "weight towards the bind shape", we just don't assign it to any group */
       if (joint != -1) {
-        bDeformGroup *def = (bDeformGroup *)BLI_findlink(&ob->defbase, joint);
+        const ListBase *defbase = BKE_object_defgroup_list(ob);
+        bDeformGroup *def = (bDeformGroup *)BLI_findlink(defbase, joint);
 
         ED_vgroup_vert_add(ob, def, vertex, weights[joint_weight], WEIGHT_REPLACE);
       }
@@ -345,7 +319,7 @@ bool SkinInfo::find_node_in_tree(COLLADAFW::Node *node, COLLADAFW::Node *tree_ro
   }
 
   COLLADAFW::NodePointerArray &children = tree_root->getChildNodes();
-  for (unsigned int i = 0; i < children.getCount(); i++) {
+  for (uint i = 0; i < children.getCount(); i++) {
     if (find_node_in_tree(node, children[i])) {
       return true;
     }

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 by Janne Karhu.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 by Janne Karhu. All rights reserved. */
 
 /** \file
  * \ingroup DNA
@@ -43,7 +27,7 @@ typedef enum eBoidRuleType {
   eBoidRuleType_Flock = 5,
   /** follow a boid or assigned object */
   eBoidRuleType_FollowLeader = 6,
-  /** maintain speed, flight level or wander*/
+  /** Maintain speed, flight level or wander. */
   eBoidRuleType_AverageSpeed = 7,
   /** go to closest enemy and attack when in range */
   eBoidRuleType_Fight = 8,
@@ -97,7 +81,8 @@ typedef struct BoidRuleFollowLeader {
 } BoidRuleFollowLeader;
 typedef struct BoidRuleAverageSpeed {
   BoidRule rule;
-  float wander, level, speed, rt;
+  float wander, level, speed;
+  char _pad0[4];
 } BoidRuleAverageSpeed;
 typedef struct BoidRuleFight {
   BoidRule rule;
@@ -178,7 +163,7 @@ typedef struct BoidState {
 //} BoidSignal;
 // typedef struct BoidSignalDefine {
 //  struct BoidSignalDefine *next, *prev;
-//  int id, rt;
+//  int id, _pad[4];
 //  char name[32];
 //} BoidSignalDefine;
 

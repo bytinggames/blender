@@ -1,22 +1,4 @@
-# ##### BEGIN GPL LICENSE BLOCK #####
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU General Public License
-#  as published by the Free Software Foundation; either version 2
-#  of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-#
-# ##### END GPL LICENSE BLOCK #####
-
-# <pep8 compliant>
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 from bpy.types import Operator
 
@@ -223,7 +205,7 @@ def extend(obj, EXTEND_MODE):
     for f_triple in walk_face(f_act):
         apply_uv(*f_triple)
 
-    bmesh.update_edit_mesh(me, False)
+    bmesh.update_edit_mesh(me, loop_triangles=False)
     return STATUS_OK
 
 
@@ -247,7 +229,7 @@ def main(context, operator):
         elif status & STATUS_ERR_NOT_SELECTED:
             operator.report({'ERROR'}, "Active face not selected")
         else:
-            assert((status & STATUS_ERR_ACTIVE_FACE) != 0)
+            assert status & STATUS_ERR_ACTIVE_FACE != 0
             operator.report({'ERROR'}, "No active face")
 
 

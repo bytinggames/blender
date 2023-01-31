@@ -1,32 +1,12 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 #include "GHOST_WindowCocoa.h"
 #include "GHOST_ContextNone.h"
 #include "GHOST_Debug.h"
 #include "GHOST_SystemCocoa.h"
 
-#if defined(WITH_GL_EGL)
-#  include "GHOST_ContextEGL.h"
-#else
-#  include "GHOST_ContextCGL.h"
-#endif
+#include "GHOST_ContextCGL.h"
 
 #include <Cocoa/Cocoa.h>
 #include <Metal/Metal.h>
@@ -288,10 +268,10 @@
 
 GHOST_WindowCocoa::GHOST_WindowCocoa(GHOST_SystemCocoa *systemCocoa,
                                      const char *title,
-                                     GHOST_TInt32 left,
-                                     GHOST_TInt32 bottom,
-                                     GHOST_TUns32 width,
-                                     GHOST_TUns32 height,
+                                     int32_t left,
+                                     int32_t bottom,
+                                     uint32_t width,
+                                     uint32_t height,
                                      GHOST_TWindowState state,
                                      GHOST_TDrawingContextType type,
                                      const bool stereoVisual,
@@ -446,8 +426,8 @@ GHOST_WindowCocoa::~GHOST_WindowCocoa()
     [m_window close];
   }
 
-  // Check for other blender opened windows and make the frontmost key
-  // Note: for some reason the closed window is still in the list
+  /* Check for other blender opened windows and make the front-most key
+   * NOTE: for some reason the closed window is still in the list. */
   NSArray *windowsList = [NSApp orderedWindows];
   for (int a = 0; a < [windowsList count]; a++) {
     if (m_window != (CocoaWindow *)[windowsList objectAtIndex:a]) {
@@ -574,13 +554,13 @@ void GHOST_WindowCocoa::getClientBounds(GHOST_Rect &bounds) const
   [pool drain];
 }
 
-GHOST_TSuccess GHOST_WindowCocoa::setClientWidth(GHOST_TUns32 width)
+GHOST_TSuccess GHOST_WindowCocoa::setClientWidth(uint32_t width)
 {
   GHOST_ASSERT(getValid(), "GHOST_WindowCocoa::setClientWidth(): window invalid");
   NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
   GHOST_Rect cBnds, wBnds;
   getClientBounds(cBnds);
-  if (((GHOST_TUns32)cBnds.getWidth()) != width) {
+  if (((uint32_t)cBnds.getWidth()) != width) {
     NSSize size;
     size.width = width;
     size.height = cBnds.getHeight();
@@ -590,13 +570,13 @@ GHOST_TSuccess GHOST_WindowCocoa::setClientWidth(GHOST_TUns32 width)
   return GHOST_kSuccess;
 }
 
-GHOST_TSuccess GHOST_WindowCocoa::setClientHeight(GHOST_TUns32 height)
+GHOST_TSuccess GHOST_WindowCocoa::setClientHeight(uint32_t height)
 {
   GHOST_ASSERT(getValid(), "GHOST_WindowCocoa::setClientHeight(): window invalid");
   NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
   GHOST_Rect cBnds, wBnds;
   getClientBounds(cBnds);
-  if (((GHOST_TUns32)cBnds.getHeight()) != height) {
+  if (((uint32_t)cBnds.getHeight()) != height) {
     NSSize size;
     size.width = cBnds.getWidth();
     size.height = height;
@@ -606,14 +586,13 @@ GHOST_TSuccess GHOST_WindowCocoa::setClientHeight(GHOST_TUns32 height)
   return GHOST_kSuccess;
 }
 
-GHOST_TSuccess GHOST_WindowCocoa::setClientSize(GHOST_TUns32 width, GHOST_TUns32 height)
+GHOST_TSuccess GHOST_WindowCocoa::setClientSize(uint32_t width, uint32_t height)
 {
   GHOST_ASSERT(getValid(), "GHOST_WindowCocoa::setClientSize(): window invalid");
   NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
   GHOST_Rect cBnds, wBnds;
   getClientBounds(cBnds);
-  if ((((GHOST_TUns32)cBnds.getWidth()) != width) ||
-      (((GHOST_TUns32)cBnds.getHeight()) != height)) {
+  if ((((uint32_t)cBnds.getWidth()) != width) || (((uint32_t)cBnds.getHeight()) != height)) {
     NSSize size;
     size.width = width;
     size.height = height;
@@ -658,10 +637,10 @@ GHOST_TWindowState GHOST_WindowCocoa::getState() const
   return state;
 }
 
-void GHOST_WindowCocoa::screenToClient(GHOST_TInt32 inX,
-                                       GHOST_TInt32 inY,
-                                       GHOST_TInt32 &outX,
-                                       GHOST_TInt32 &outY) const
+void GHOST_WindowCocoa::screenToClient(int32_t inX,
+                                       int32_t inY,
+                                       int32_t &outX,
+                                       int32_t &outY) const
 {
   GHOST_ASSERT(getValid(), "GHOST_WindowCocoa::screenToClient(): window invalid");
 
@@ -673,10 +652,10 @@ void GHOST_WindowCocoa::screenToClient(GHOST_TInt32 inX,
   outY = (cBnds.getHeight() - 1) - outY;
 }
 
-void GHOST_WindowCocoa::clientToScreen(GHOST_TInt32 inX,
-                                       GHOST_TInt32 inY,
-                                       GHOST_TInt32 &outX,
-                                       GHOST_TInt32 &outY) const
+void GHOST_WindowCocoa::clientToScreen(int32_t inX,
+                                       int32_t inY,
+                                       int32_t &outX,
+                                       int32_t &outY) const
 {
   GHOST_ASSERT(getValid(), "GHOST_WindowCocoa::clientToScreen(): window invalid");
 
@@ -688,10 +667,10 @@ void GHOST_WindowCocoa::clientToScreen(GHOST_TInt32 inX,
   clientToScreenIntern(inX, inY, outX, outY);
 }
 
-void GHOST_WindowCocoa::screenToClientIntern(GHOST_TInt32 inX,
-                                             GHOST_TInt32 inY,
-                                             GHOST_TInt32 &outX,
-                                             GHOST_TInt32 &outY) const
+void GHOST_WindowCocoa::screenToClientIntern(int32_t inX,
+                                             int32_t inY,
+                                             int32_t &outX,
+                                             int32_t &outY) const
 {
   NSRect screenCoord;
   NSRect baseCoord;
@@ -705,10 +684,10 @@ void GHOST_WindowCocoa::screenToClientIntern(GHOST_TInt32 inX,
   outY = baseCoord.origin.y;
 }
 
-void GHOST_WindowCocoa::clientToScreenIntern(GHOST_TInt32 inX,
-                                             GHOST_TInt32 inY,
-                                             GHOST_TInt32 &outX,
-                                             GHOST_TInt32 &outY) const
+void GHOST_WindowCocoa::clientToScreenIntern(int32_t inX,
+                                             int32_t inY,
+                                             int32_t &outX,
+                                             int32_t &outY) const
 {
   NSRect screenCoord;
   NSRect baseCoord;
@@ -740,7 +719,7 @@ void GHOST_WindowCocoa::setNativePixelSize(void)
 }
 
 /**
- * \note Fullscreen switch is not actual fullscreen with display capture.
+ * \note Full-screen switch is not actual fullscreen with display capture.
  * As this capture removes all OS X window manager features.
  *
  * Instead, the menu bar and the dock are hidden, and the window is made border-less and enlarged.
@@ -824,10 +803,10 @@ GHOST_TSuccess GHOST_WindowCocoa::setOrder(GHOST_TWindowOrder order)
 
 GHOST_Context *GHOST_WindowCocoa::newDrawingContext(GHOST_TDrawingContextType type)
 {
-  if (type == GHOST_kDrawingContextTypeOpenGL) {
+  if (type == GHOST_kDrawingContextTypeOpenGL || type == GHOST_kDrawingContextTypeMetal) {
 
     GHOST_Context *context = new GHOST_ContextCGL(
-        m_wantStereoVisual, m_metalView, m_metalLayer, m_openGLView);
+        m_wantStereoVisual, m_metalView, m_metalLayer, m_openGLView, type);
 
     if (context->initializeDrawingContext())
       return context;
@@ -1131,9 +1110,9 @@ GHOST_TSuccess GHOST_WindowCocoa::hasCursorShape(GHOST_TStandardCursor shape)
   return success;
 }
 
-/* Reverse the bits in a GHOST_TUns8 */
+/* Reverse the bits in a uint8_t */
 #if 0
-static GHOST_TUns8 uns8ReverseBits(GHOST_TUns8 ch)
+static uint8_t uns8ReverseBits(uint8_t ch)
 {
   ch= ((ch >> 1) & 0x55) | ((ch << 1) & 0xAA);
   ch= ((ch >> 2) & 0x33) | ((ch << 2) & 0xCC);
@@ -1142,8 +1121,8 @@ static GHOST_TUns8 uns8ReverseBits(GHOST_TUns8 ch)
 }
 #endif
 
-/** Reverse the bits in a GHOST_TUns16 */
-static GHOST_TUns16 uns16ReverseBits(GHOST_TUns16 shrt)
+/** Reverse the bits in a uint16_t */
+static uint16_t uns16ReverseBits(uint16_t shrt)
 {
   shrt = ((shrt >> 1) & 0x5555) | ((shrt << 1) & 0xAAAA);
   shrt = ((shrt >> 2) & 0x3333) | ((shrt << 2) & 0xCCCC);
@@ -1152,20 +1131,15 @@ static GHOST_TUns16 uns16ReverseBits(GHOST_TUns16 shrt)
   return shrt;
 }
 
-GHOST_TSuccess GHOST_WindowCocoa::setWindowCustomCursorShape(GHOST_TUns8 *bitmap,
-                                                             GHOST_TUns8 *mask,
-                                                             int sizex,
-                                                             int sizey,
-                                                             int hotX,
-                                                             int hotY,
-                                                             bool canInvertColor)
+GHOST_TSuccess GHOST_WindowCocoa::setWindowCustomCursorShape(
+    uint8_t *bitmap, uint8_t *mask, int sizex, int sizey, int hotX, int hotY, bool canInvertColor)
 {
   int y, nbUns16;
   NSPoint hotSpotPoint;
   NSBitmapImageRep *cursorImageRep;
   NSImage *cursorImage;
   NSSize imSize;
-  GHOST_TUns16 *cursorBitmap;
+  uint16_t *cursorBitmap;
 
   NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
@@ -1186,7 +1160,7 @@ GHOST_TSuccess GHOST_WindowCocoa::setWindowCustomCursorShape(GHOST_TUns8 *bitmap
                    bytesPerRow:(sizex / 8 + (sizex % 8 > 0 ? 1 : 0))
                   bitsPerPixel:1];
 
-  cursorBitmap = (GHOST_TUns16 *)[cursorImageRep bitmapData];
+  cursorBitmap = (uint16_t *)[cursorImageRep bitmapData];
   nbUns16 = [cursorImageRep bytesPerPlane] / 2;
 
   for (y = 0; y < nbUns16; y++) {
@@ -1225,3 +1199,25 @@ GHOST_TSuccess GHOST_WindowCocoa::setWindowCustomCursorShape(GHOST_TUns8 *bitmap
   [pool drain];
   return GHOST_kSuccess;
 }
+
+#ifdef WITH_INPUT_IME
+void GHOST_WindowCocoa::beginIME(int32_t x, int32_t y, int32_t w, int32_t h, bool completed)
+{
+  if (m_openGLView) {
+    [m_openGLView beginIME:x y:y w:w h:h completed:completed];
+  }
+  else {
+    [m_metalView beginIME:x y:y w:w h:h completed:completed];
+  }
+}
+
+void GHOST_WindowCocoa::endIME()
+{
+  if (m_openGLView) {
+    [m_openGLView endIME];
+  }
+  else {
+    [m_metalView endIME];
+  }
+}
+#endif /* WITH_INPUT_IME */

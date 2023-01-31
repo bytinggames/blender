@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -24,6 +10,8 @@
 #include "../Iterator/BPy_Interface0DIterator.h"
 
 #include "UnaryFunction0D_vector_ViewShape/BPy_GetOccludersF0D.h"
+
+#include "BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -120,9 +108,9 @@ static PyObject *UnaryFunction0DVectorViewShape___call__(BPy_UnaryFunction0DVect
     return nullptr;
   }
 
-  const unsigned int list_len = self->uf0D_vectorviewshape->result.size();
+  const uint list_len = self->uf0D_vectorviewshape->result.size();
   PyObject *list = PyList_New(list_len);
-  for (unsigned int i = 0; i < list_len; i++) {
+  for (uint i = 0; i < list_len; i++) {
     ViewShape *v = self->uf0D_vectorviewshape->result[i];
     PyList_SET_ITEM(list, i, v ? BPy_ViewShape_from_ViewShape(*v) : (Py_INCREF(Py_None), Py_None));
   }
@@ -145,7 +133,7 @@ PyTypeObject UnaryFunction0DVectorViewShape_Type = {
     nullptr,                                                            /* tp_as_number */
     nullptr,                                                            /* tp_as_sequence */
     nullptr,                                                            /* tp_as_mapping */
-    nullptr,                                                            /* tp_hash  */
+    nullptr,                                                            /* tp_hash */
     (ternaryfunc)UnaryFunction0DVectorViewShape___call__,               /* tp_call */
     nullptr,                                                            /* tp_str */
     nullptr,                                                            /* tp_getattro */

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2016 Kévin Dietrich.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2016 Kévin Dietrich. All rights reserved. */
 
 /** \file
  * \ingroup balembic
@@ -82,7 +66,7 @@ bool AbcCurveReader::accepts_object_type(
     return false;
   }
 
-  if (ob->type != OB_CURVE) {
+  if (ob->type != OB_CURVES_LEGACY) {
     *err_str = "Object type mismatch, Alembic object path points to Curves.";
     return false;
   }
@@ -92,9 +76,9 @@ bool AbcCurveReader::accepts_object_type(
 
 void AbcCurveReader::readObjectData(Main *bmain, const Alembic::Abc::ISampleSelector &sample_sel)
 {
-  Curve *cu = BKE_curve_add(bmain, m_data_name.c_str(), OB_CURVE);
+  Curve *cu = BKE_curve_add(bmain, m_data_name.c_str(), OB_CURVES_LEGACY);
 
-  cu->flag |= CU_DEFORM_FILL | CU_3D;
+  cu->flag |= CU_3D;
   cu->actvert = CU_ACT_NONE;
   cu->resolu = 1;
 
@@ -107,12 +91,12 @@ void AbcCurveReader::readObjectData(Main *bmain, const Alembic::Abc::ISampleSele
     }
   }
 
-  m_object = BKE_object_add_only_object(bmain, OB_CURVE, m_object_name.c_str());
+  m_object = BKE_object_add_only_object(bmain, OB_CURVES_LEGACY, m_object_name.c_str());
   m_object->data = cu;
 
   read_curve_sample(cu, m_curves_schema, sample_sel);
 
-  if (has_animations(m_curves_schema, m_settings)) {
+  if (m_settings->always_add_cache_reader || has_animations(m_curves_schema, m_settings)) {
     addCacheModifier();
   }
 }
@@ -168,7 +152,7 @@ void AbcCurveReader::read_curve_sample(Curve *cu,
         break;
       case Alembic::AbcGeom::kVariableOrder:
         if (orders && orders->size() > i) {
-          nu->orderu = static_cast<short>((*orders)[i]);
+          nu->orderu = short((*orders)[i]);
           break;
         }
         ATTR_FALLTHROUGH;
@@ -274,15 +258,11 @@ void AbcCurveReader::read_curve_sample(Curve *cu,
   }
 }
 
-/* NOTE: Alembic only stores data about control points, but the Mesh
- * passed from the cache modifier contains the displist, which has more data
- * than the control points, so to avoid corrupting the displist we modify the
- * object directly and create a new Mesh from that. Also we might need to
- * create new or delete existing NURBS in the curve.
- */
 Mesh *AbcCurveReader::read_mesh(Mesh *existing_mesh,
                                 const ISampleSelector &sample_sel,
                                 int /*read_flag*/,
+                                const char * /*velocity_name*/,
+                                const float /*velocity_scale*/,
                                 const char **err_str)
 {
   ICurvesSchema::Sample sample;

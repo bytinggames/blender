@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2012 by Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2012 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bli
@@ -72,7 +56,7 @@ static void vector_from_float(const float *data, float vector[4], int components
   }
 }
 
-static void vector_from_byte(const unsigned char *data, float vector[4], int components)
+static void vector_from_byte(const uchar *data, float vector[4], int components)
 {
   if (components == 1) {
     vector[0] = data[0];
@@ -91,9 +75,9 @@ static void vector_from_byte(const unsigned char *data, float vector[4], int com
 }
 
 /* BICUBIC INTERPOLATION */
-BLI_INLINE void bicubic_interpolation(const unsigned char *byte_buffer,
+BLI_INLINE void bicubic_interpolation(const uchar *byte_buffer,
                                       const float *float_buffer,
-                                      unsigned char *byte_output,
+                                      uchar *byte_output,
                                       float *float_output,
                                       int width,
                                       int height,
@@ -151,7 +135,7 @@ BLI_INLINE void bicubic_interpolation(const unsigned char *byte_buffer,
         vector_from_float(float_data, data, components);
       }
       else {
-        const unsigned char *byte_data = byte_buffer + width * y1 * components + components * x1;
+        const uchar *byte_data = byte_buffer + width * y1 * components + components * x1;
 
         vector_from_byte(byte_data, data, components);
       }
@@ -190,7 +174,7 @@ BLI_INLINE void bicubic_interpolation(const unsigned char *byte_buffer,
           vector_from_float(float_data, data, components);
         }
         else {
-          const unsigned char *byte_data = byte_buffer + width * y1 * components + components * x1;
+          const uchar *byte_data = byte_buffer + width * y1 * components + components * x1;
 
           vector_from_byte(byte_data, data, components);
         }
@@ -227,18 +211,18 @@ BLI_INLINE void bicubic_interpolation(const unsigned char *byte_buffer,
   }
   else {
     if (components == 1) {
-      byte_output[0] = (unsigned char)(out[0] + 0.5f);
+      byte_output[0] = (uchar)(out[0] + 0.5f);
     }
     else if (components == 3) {
-      byte_output[0] = (unsigned char)(out[0] + 0.5f);
-      byte_output[1] = (unsigned char)(out[1] + 0.5f);
-      byte_output[2] = (unsigned char)(out[2] + 0.5f);
+      byte_output[0] = (uchar)(out[0] + 0.5f);
+      byte_output[1] = (uchar)(out[1] + 0.5f);
+      byte_output[2] = (uchar)(out[2] + 0.5f);
     }
     else {
-      byte_output[0] = (unsigned char)(out[0] + 0.5f);
-      byte_output[1] = (unsigned char)(out[1] + 0.5f);
-      byte_output[2] = (unsigned char)(out[2] + 0.5f);
-      byte_output[3] = (unsigned char)(out[3] + 0.5f);
+      byte_output[0] = (uchar)(out[0] + 0.5f);
+      byte_output[1] = (uchar)(out[1] + 0.5f);
+      byte_output[2] = (uchar)(out[2] + 0.5f);
+      byte_output[3] = (uchar)(out[3] + 0.5f);
     }
   }
 }
@@ -249,21 +233,16 @@ void BLI_bicubic_interpolation_fl(
   bicubic_interpolation(NULL, buffer, NULL, output, width, height, components, u, v);
 }
 
-void BLI_bicubic_interpolation_char(const unsigned char *buffer,
-                                    unsigned char *output,
-                                    int width,
-                                    int height,
-                                    int components,
-                                    float u,
-                                    float v)
+void BLI_bicubic_interpolation_char(
+    const uchar *buffer, uchar *output, int width, int height, int components, float u, float v)
 {
   bicubic_interpolation(buffer, NULL, output, NULL, width, height, components, u, v);
 }
 
 /* BILINEAR INTERPOLATION */
-BLI_INLINE void bilinear_interpolation(const unsigned char *byte_buffer,
+BLI_INLINE void bilinear_interpolation(const uchar *byte_buffer,
                                        const float *float_buffer,
-                                       unsigned char *byte_output,
+                                       uchar *byte_output,
                                        float *float_output,
                                        int width,
                                        int height,
@@ -367,8 +346,8 @@ BLI_INLINE void bilinear_interpolation(const unsigned char *byte_buffer,
     }
   }
   else {
-    const unsigned char *row1, *row2, *row3, *row4;
-    unsigned char empty[4] = {0, 0, 0, 0};
+    const uchar *row1, *row2, *row3, *row4;
+    uchar empty[4] = {0, 0, 0, 0};
 
     /* pixel value must be already wrapped, however values at boundaries may flip */
     if (wrap_x) {
@@ -434,26 +413,26 @@ BLI_INLINE void bilinear_interpolation(const unsigned char *byte_buffer,
     ma_mb = (1.0f - a) * (1.0f - b);
 
     if (components == 1) {
-      byte_output[0] = (unsigned char)(ma_mb * row1[0] + a_mb * row3[0] + ma_b * row2[0] +
-                                       a_b * row4[0] + 0.5f);
+      byte_output[0] = (uchar)(ma_mb * row1[0] + a_mb * row3[0] + ma_b * row2[0] + a_b * row4[0] +
+                               0.5f);
     }
     else if (components == 3) {
-      byte_output[0] = (unsigned char)(ma_mb * row1[0] + a_mb * row3[0] + ma_b * row2[0] +
-                                       a_b * row4[0] + 0.5f);
-      byte_output[1] = (unsigned char)(ma_mb * row1[1] + a_mb * row3[1] + ma_b * row2[1] +
-                                       a_b * row4[1] + 0.5f);
-      byte_output[2] = (unsigned char)(ma_mb * row1[2] + a_mb * row3[2] + ma_b * row2[2] +
-                                       a_b * row4[2] + 0.5f);
+      byte_output[0] = (uchar)(ma_mb * row1[0] + a_mb * row3[0] + ma_b * row2[0] + a_b * row4[0] +
+                               0.5f);
+      byte_output[1] = (uchar)(ma_mb * row1[1] + a_mb * row3[1] + ma_b * row2[1] + a_b * row4[1] +
+                               0.5f);
+      byte_output[2] = (uchar)(ma_mb * row1[2] + a_mb * row3[2] + ma_b * row2[2] + a_b * row4[2] +
+                               0.5f);
     }
     else {
-      byte_output[0] = (unsigned char)(ma_mb * row1[0] + a_mb * row3[0] + ma_b * row2[0] +
-                                       a_b * row4[0] + 0.5f);
-      byte_output[1] = (unsigned char)(ma_mb * row1[1] + a_mb * row3[1] + ma_b * row2[1] +
-                                       a_b * row4[1] + 0.5f);
-      byte_output[2] = (unsigned char)(ma_mb * row1[2] + a_mb * row3[2] + ma_b * row2[2] +
-                                       a_b * row4[2] + 0.5f);
-      byte_output[3] = (unsigned char)(ma_mb * row1[3] + a_mb * row3[3] + ma_b * row2[3] +
-                                       a_b * row4[3] + 0.5f);
+      byte_output[0] = (uchar)(ma_mb * row1[0] + a_mb * row3[0] + ma_b * row2[0] + a_b * row4[0] +
+                               0.5f);
+      byte_output[1] = (uchar)(ma_mb * row1[1] + a_mb * row3[1] + ma_b * row2[1] + a_b * row4[1] +
+                               0.5f);
+      byte_output[2] = (uchar)(ma_mb * row1[2] + a_mb * row3[2] + ma_b * row2[2] + a_b * row4[2] +
+                               0.5f);
+      byte_output[3] = (uchar)(ma_mb * row1[3] + a_mb * row3[3] + ma_b * row2[3] + a_b * row4[3] +
+                               0.5f);
     }
   }
 }
@@ -465,13 +444,8 @@ void BLI_bilinear_interpolation_fl(
       NULL, buffer, NULL, output, width, height, components, u, v, false, false);
 }
 
-void BLI_bilinear_interpolation_char(const unsigned char *buffer,
-                                     unsigned char *output,
-                                     int width,
-                                     int height,
-                                     int components,
-                                     float u,
-                                     float v)
+void BLI_bilinear_interpolation_char(
+    const uchar *buffer, uchar *output, int width, int height, int components, float u, float v)
 {
   bilinear_interpolation(
       buffer, NULL, output, NULL, width, height, components, u, v, false, false);
@@ -491,8 +465,8 @@ void BLI_bilinear_interpolation_wrap_fl(const float *buffer,
       NULL, buffer, NULL, output, width, height, components, u, v, wrap_x, wrap_y);
 }
 
-void BLI_bilinear_interpolation_wrap_char(const unsigned char *buffer,
-                                          unsigned char *output,
+void BLI_bilinear_interpolation_wrap_char(const uchar *buffer,
+                                          uchar *output,
                                           int width,
                                           int height,
                                           int components,
@@ -567,10 +541,11 @@ static void radangle2imp(float a2, float b2, float th, float *A, float *B, float
   *F = a2 * b2;
 }
 
-/* all tests here are done to make sure possible overflows are hopefully minimized */
 void BLI_ewa_imp2radangle(
     float A, float B, float C, float F, float *a, float *b, float *th, float *ecc)
 {
+  /* NOTE: all tests here are done to make sure possible overflows are hopefully minimized. */
+
   if (F <= 1e-5f) { /* use arbitrary major radius, zero minor, infinite eccentricity */
     *a = sqrtf(A > C ? A : C);
     *b = 0.0f;
@@ -625,7 +600,7 @@ void BLI_ewa_filter(const int width,
    * Use a different radius based on interpolation switch,
    * just enough to anti-alias when interpolation is off,
    * and slightly larger to make result a bit smoother than bilinear interpolation when
-   * interpolation is on (minimum values: const float rmin = intpol ? 1.0f : 0.5f;) */
+   * interpolation is on (minimum values: `const float rmin = intpol ? 1.0f : 0.5f;`) */
   const float rmin = (intpol ? 1.5625f : 0.765625f) / ff2;
   BLI_ewa_imp2radangle(A, B, C, F, &a, &b, &th, &ecc);
   if ((b2 = b * b) < rmin) {
@@ -649,13 +624,13 @@ void BLI_ewa_filter(const int width,
 
   U0 = uv[0] * (float)width;
   V0 = uv[1] * (float)height;
-  u1 = (int)(floorf(U0 - ue));
-  u2 = (int)(ceilf(U0 + ue));
-  v1 = (int)(floorf(V0 - ve));
-  v2 = (int)(ceilf(V0 + ve));
+  u1 = (int)floorf(U0 - ue);
+  u2 = (int)ceilf(U0 + ue);
+  v1 = (int)floorf(V0 - ve);
+  v2 = (int)ceilf(V0 + ve);
 
   /* sane clamping to avoid unnecessarily huge loops */
-  /* note: if eccentricity gets clamped (see above),
+  /* NOTE: if eccentricity gets clamped (see above),
    * the ue/ve limits can also be lowered accordingly
    */
   if (U0 - (float)u1 > EWA_MAXIDX) {
@@ -694,7 +669,7 @@ void BLI_ewa_filter(const int width,
     for (u = u1; u <= u2; u++) {
       if (Q < (float)(EWA_MAXIDX + 1)) {
         float tc[4];
-        const float wt = EWA_WTS[(Q < 0.0f) ? 0 : (unsigned int)Q];
+        const float wt = EWA_WTS[(Q < 0.0f) ? 0 : (uint)Q];
         read_pixel_cb(userdata, u, v, tc);
         madd_v3_v3fl(result, tc, wt);
         result[3] += use_alpha ? tc[3] * wt : 0.0f;
@@ -705,9 +680,9 @@ void BLI_ewa_filter(const int width,
     }
   }
 
-  /* d should hopefully never be zero anymore */
+  /* `d` should hopefully never be zero anymore. */
   d = 1.0f / d;
   mul_v3_fl(result, d);
-  /* clipping can be ignored if alpha used, texr->ta already includes filtered edge */
+  /* Clipping can be ignored if alpha used, `texr->trgba[3]` already includes filtered edge. */
   result[3] = use_alpha ? result[3] * d : 1.0f;
 }

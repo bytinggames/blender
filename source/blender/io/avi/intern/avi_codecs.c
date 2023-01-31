@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup avi
@@ -29,6 +13,8 @@
 #include "avi_mjpeg.h"
 #include "avi_rgb.h"
 #include "avi_rgb32.h"
+
+#include "BLI_string.h"
 
 void *avi_format_convert(
     AviMovie *movie, int stream, void *buffer, AviFormat from, AviFormat to, size_t *size)
@@ -84,10 +70,10 @@ int avi_get_data_id(AviFormat format, int stream)
   char fcc[5];
 
   if (avi_get_format_type(format) == FCC("vids")) {
-    sprintf(fcc, "%2.2ddc", stream);
+    BLI_snprintf(fcc, sizeof(fcc), "%2.2ddc", stream);
   }
   else if (avi_get_format_type(format) == FCC("auds")) {
-    sprintf(fcc, "%2.2ddc", stream);
+    BLI_snprintf(fcc, sizeof(fcc), "%2.2ddc", stream);
   }
   else {
     return 0;

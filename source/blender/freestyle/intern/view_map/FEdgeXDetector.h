@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -42,7 +28,7 @@ namespace Freestyle {
 
 using namespace Geometry;
 
-/*! This class takes as input a WXEdge structure and fills it */
+/** This class takes as input a WXEdge structure and fills it */
 class FEdgeXDetector {
  public:
   FEdgeXDetector()
@@ -69,7 +55,7 @@ class FEdgeXDetector {
   {
   }
 
-  /*! Process shapes from a WingedEdge containing a list of WShapes */
+  /** Process shapes from a WingedEdge containing a list of WShapes */
   virtual void processShapes(WingedEdge &);
 
   // GENERAL STUFF
@@ -86,7 +72,7 @@ class FEdgeXDetector {
   virtual void processCreaseShape(WXShape *iWShape);
   virtual void ProcessCreaseEdge(WXEdge *iEdge);
 
-  /*! Sets the minimum angle for detecting crease edges
+  /** Sets the minimum angle for detecting crease edges
    *  \param angle:
    *    The angular threshold in degrees (between 0 and 180) for detecting crease edges. An edge is
    * considered a crease edge if the angle between two faces sharing the edge is smaller than the
@@ -121,7 +107,7 @@ class FEdgeXDetector {
   virtual void ProcessSuggestiveContourFace(WXFace *iFace);
   virtual void postProcessSuggestiveContourShape(WXShape *iShape);
   virtual void postProcessSuggestiveContourFace(WXFace *iFace);
-  /*! Sets the minimal derivative of the radial curvature for suggestive contours
+  /** Sets the minimal derivative of the radial curvature for suggestive contours
    *  \param dkr:
    *    The minimal derivative of the radial curvature
    */
@@ -144,7 +130,7 @@ class FEdgeXDetector {
   // EVERYBODY
   virtual void buildSmoothEdges(WXShape *iShape);
 
-  /*! Sets the current viewpoint */
+  /** Sets the current viewpoint */
   inline void setViewpoint(const Vec3f &ivp)
   {
     _Viewpoint = ivp;
@@ -186,7 +172,7 @@ class FEdgeXDetector {
     }
   }
 
-  /*! Sets the radius of the geodesic sphere around each vertex (for the curvature computation)
+  /** Sets the radius of the geodesic sphere around each vertex (for the curvature computation)
    *  \param r:
    *    The radius of the sphere expressed as a ratio of the mean edge size
    */

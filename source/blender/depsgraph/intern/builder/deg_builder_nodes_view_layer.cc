@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2013 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2013 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup depsgraph
@@ -60,11 +44,11 @@ namespace blender::deg {
 
 void DepsgraphNodeBuilder::build_layer_collections(ListBase *lb)
 {
-  const int restrict_flag = (graph_->mode == DAG_EVAL_VIEWPORT) ? COLLECTION_RESTRICT_VIEWPORT :
-                                                                  COLLECTION_RESTRICT_RENDER;
+  const int visibility_flag = (graph_->mode == DAG_EVAL_VIEWPORT) ? COLLECTION_HIDE_VIEWPORT :
+                                                                    COLLECTION_HIDE_RENDER;
 
   for (LayerCollection *lc = (LayerCollection *)lb->first; lc; lc = lc->next) {
-    if (lc->collection->flag & restrict_flag) {
+    if (lc->collection->flag & visibility_flag) {
       continue;
     }
     if ((lc->flag & LAYER_COLLECTION_EXCLUDE) == 0) {
@@ -106,16 +90,23 @@ void DepsgraphNodeBuilder::build_view_layer(Scene *scene,
    * but object is expected to be an original one. Hence we go into some
    * tricks here iterating over the view layer. */
   int base_index = 0;
-  LISTBASE_FOREACH (Base *, base, &view_layer->object_bases) {
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  LISTBASE_FOREACH (Base *, base, BKE_view_layer_object_bases_get(view_layer)) {
     /* object itself */
-    if (need_pull_base_into_graph(base)) {
-      /* NOTE: We consider object visible even if it's currently
-       * restricted by the base/restriction flags. Otherwise its drivers
-       * will never be evaluated.
-       *
-       * TODO(sergey): Need to go more granular on visibility checks. */
-      build_object(base_index, base->object, linked_state, true);
-      base_index++;
+    if (!need_pull_base_into_graph(base)) {
+      continue;
+    }
+
+    /* NOTE: We consider object visible even if it's currently
+     * restricted by the base/restriction flags. Otherwise its drivers
+     * will never be evaluated.
+     *
+     * TODO(sergey): Need to go more granular on visibility checks. */
+    build_object(base_index, base->object, linked_state, true);
+    base_index++;
+
+    if (!graph_->has_animated_visibility) {
+      graph_->has_animated_visibility |= is_object_visibility_animated(base->object);
     }
   }
   build_layer_collections(&view_layer->layer_collections);

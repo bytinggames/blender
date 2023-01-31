@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup RNA
@@ -89,16 +73,16 @@ static void rna_Scene_frame_set(Scene *scene, Main *bmain, int frame, float subf
   /* don't do notifier when we're rendering, avoid some viewport crashes
    * redrawing while the data is being modified for render */
   if (!G.is_rendering) {
-    /* cant use NC_SCENE|ND_FRAME because this causes wm_event_do_notifiers to call
+    /* can't use NC_SCENE|ND_FRAME because this causes wm_event_do_notifiers to call
      * BKE_scene_graph_update_for_newframe which will lose any un-keyed changes T24690. */
-    /* WM_main_add_notifier(NC_SCENE|ND_FRAME, scene); */
+    // WM_main_add_notifier(NC_SCENE|ND_FRAME, scene);
 
     /* instead just redraw the views */
     WM_main_add_notifier(NC_WINDOW, NULL);
   }
 }
 
-static void rna_Scene_uvedit_aspect(Scene *UNUSED(scene), Object *ob, float *aspect)
+static void rna_Scene_uvedit_aspect(Scene *UNUSED(scene), Object *ob, float aspect[2])
 {
   if ((ob->type == OB_MESH) && (ob->mode == OB_MODE_EDIT)) {
     BMEditMesh *em;
@@ -154,8 +138,9 @@ static void rna_Scene_ray_cast(Scene *scene,
 
   bool ret = ED_transform_snap_object_project_ray_ex(sctx,
                                                      depsgraph,
+                                                     NULL,
                                                      &(const struct SnapObjectParams){
-                                                         .snap_select = SNAP_ALL,
+                                                         .snap_target_select = SCE_SNAP_TARGET_ALL,
                                                      },
                                                      origin,
                                                      direction,
@@ -207,7 +192,6 @@ static void rna_Scene_alembic_export(Scene *scene,
                                      bool apply_subdiv,
                                      bool flatten_hierarchy,
                                      bool visible_objects_only,
-                                     bool renderable_only,
                                      bool face_sets,
                                      bool use_subdiv_schema,
                                      bool export_hair,
@@ -241,7 +225,6 @@ static void rna_Scene_alembic_export(Scene *scene,
       .apply_subdiv = apply_subdiv,
       .flatten_hierarchy = flatten_hierarchy,
       .visible_objects_only = visible_objects_only,
-      .renderable_only = renderable_only,
       .face_sets = face_sets,
       .use_subdiv_schema = use_subdiv_schema,
       .export_hair = export_hair,
@@ -374,7 +357,7 @@ void RNA_api_scene(StructRNA *srna)
   RNA_def_boolean(func, "selected_only", 0, "Selected only", "Export only selected objects");
   RNA_def_boolean(func, "uvs", 1, "UVs", "Export UVs");
   RNA_def_boolean(func, "normals", 1, "Normals", "Export normals");
-  RNA_def_boolean(func, "vcolors", 0, "Vertex colors", "Export vertex colors");
+  RNA_def_boolean(func, "vcolors", 0, "Color Attributes", "Export color attributes");
   RNA_def_boolean(
       func, "apply_subdiv", 1, "Subsurfs as meshes", "Export subdivision surfaces as meshes");
   RNA_def_boolean(func, "flatten", 0, "Flatten hierarchy", "Flatten hierarchy");
@@ -383,11 +366,6 @@ void RNA_api_scene(StructRNA *srna)
                   0,
                   "Visible layers only",
                   "Export only objects in visible layers");
-  RNA_def_boolean(func,
-                  "renderable_only",
-                  0,
-                  "Renderable objects only",
-                  "Export only objects marked renderable in the outliner");
   RNA_def_boolean(func, "face_sets", 0, "Facesets", "Export face sets");
   RNA_def_boolean(func,
                   "subdiv_schema",

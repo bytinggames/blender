@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include <iomanip>
 
@@ -107,7 +93,7 @@ void Graph::set_random_cluster_bgcolors()
 
 void Cluster::set_random_cluster_bgcolors()
 {
-  float hue = rand() / (float)RAND_MAX;
+  float hue = rand() / float(RAND_MAX);
   float staturation = 0.3f;
   float value = 0.8f;
   this->attributes.set("bgcolor", color_attr_from_hsv(hue, staturation, value));
@@ -241,7 +227,7 @@ void Attributes::export__as_bracket_list(std::stringstream &ss) const
 
 void Node::export__as_id(std::stringstream &ss) const
 {
-  ss << '"' << (uintptr_t)this << '"';
+  ss << '"' << uintptr_t(this) << '"';
 }
 
 void Node::export__as_declaration(std::stringstream &ss) const

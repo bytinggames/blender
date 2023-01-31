@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup freestyle
@@ -22,6 +8,8 @@
 
 #include "../../BPy_Convert.h"
 #include "../../Interface0D/BPy_SVertex.h"
+
+#include "BLI_sys_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -192,7 +180,7 @@ static Mathutils_Callback FEdgeSharp_mathutils_cb = {
     FEdgeSharp_mathutils_set_index,
 };
 
-static unsigned char FEdgeSharp_mathutils_cb_index = -1;
+static uchar FEdgeSharp_mathutils_cb_index = -1;
 
 void FEdgeSharp_mathutils_register_callback()
 {
@@ -207,15 +195,13 @@ PyDoc_STRVAR(FEdgeSharp_normal_right_doc,
              "\n"
              ":type: :class:`mathutils.Vector`");
 
-static PyObject *FEdgeSharp_normal_right_get(BPy_FEdgeSharp *self, void *UNUSED(closure))
+static PyObject *FEdgeSharp_normal_right_get(BPy_FEdgeSharp *self, void * /*closure*/)
 {
   return Vector_CreatePyObject_cb(
       (PyObject *)self, 3, FEdgeSharp_mathutils_cb_index, MATHUTILS_SUBTYPE_NORMAL_A);
 }
 
-static int FEdgeSharp_normal_right_set(BPy_FEdgeSharp *self,
-                                       PyObject *value,
-                                       void *UNUSED(closure))
+static int FEdgeSharp_normal_right_set(BPy_FEdgeSharp *self, PyObject *value, void * /*closure*/)
 {
   float v[3];
   if (mathutils_array_parse(v, 3, 3, value, "value must be a 3-dimensional vector") == -1) {
@@ -231,13 +217,13 @@ PyDoc_STRVAR(FEdgeSharp_normal_left_doc,
              "\n"
              ":type: :class:`mathutils.Vector`");
 
-static PyObject *FEdgeSharp_normal_left_get(BPy_FEdgeSharp *self, void *UNUSED(closure))
+static PyObject *FEdgeSharp_normal_left_get(BPy_FEdgeSharp *self, void * /*closure*/)
 {
   return Vector_CreatePyObject_cb(
       (PyObject *)self, 3, FEdgeSharp_mathutils_cb_index, MATHUTILS_SUBTYPE_NORMAL_B);
 }
 
-static int FEdgeSharp_normal_left_set(BPy_FEdgeSharp *self, PyObject *value, void *UNUSED(closure))
+static int FEdgeSharp_normal_left_set(BPy_FEdgeSharp *self, PyObject *value, void * /*closure*/)
 {
   float v[3];
   if (mathutils_array_parse(v, 3, 3, value, "value must be a 3-dimensional vector") == -1) {
@@ -255,16 +241,16 @@ PyDoc_STRVAR(FEdgeSharp_material_index_right_doc,
              "\n"
              ":type: int");
 
-static PyObject *FEdgeSharp_material_index_right_get(BPy_FEdgeSharp *self, void *UNUSED(closure))
+static PyObject *FEdgeSharp_material_index_right_get(BPy_FEdgeSharp *self, void * /*closure*/)
 {
   return PyLong_FromLong(self->fes->aFrsMaterialIndex());
 }
 
 static int FEdgeSharp_material_index_right_set(BPy_FEdgeSharp *self,
                                                PyObject *value,
-                                               void *UNUSED(closure))
+                                               void * /*closure*/)
 {
-  unsigned int i = PyLong_AsUnsignedLong(value);
+  uint i = PyLong_AsUnsignedLong(value);
   if (PyErr_Occurred()) {
     return -1;
   }
@@ -277,16 +263,16 @@ PyDoc_STRVAR(FEdgeSharp_material_index_left_doc,
              "\n"
              ":type: int");
 
-static PyObject *FEdgeSharp_material_index_left_get(BPy_FEdgeSharp *self, void *UNUSED(closure))
+static PyObject *FEdgeSharp_material_index_left_get(BPy_FEdgeSharp *self, void * /*closure*/)
 {
   return PyLong_FromLong(self->fes->bFrsMaterialIndex());
 }
 
 static int FEdgeSharp_material_index_left_set(BPy_FEdgeSharp *self,
                                               PyObject *value,
-                                              void *UNUSED(closure))
+                                              void * /*closure*/)
 {
-  unsigned int i = PyLong_AsUnsignedLong(value);
+  uint i = PyLong_AsUnsignedLong(value);
   if (PyErr_Occurred()) {
     return -1;
   }
@@ -300,7 +286,7 @@ PyDoc_STRVAR(FEdgeSharp_material_right_doc,
              "\n"
              ":type: :class:`Material`");
 
-static PyObject *FEdgeSharp_material_right_get(BPy_FEdgeSharp *self, void *UNUSED(closure))
+static PyObject *FEdgeSharp_material_right_get(BPy_FEdgeSharp *self, void * /*closure*/)
 {
   return BPy_FrsMaterial_from_FrsMaterial(self->fes->aFrsMaterial());
 }
@@ -310,7 +296,7 @@ PyDoc_STRVAR(FEdgeSharp_material_left_doc,
              "\n"
              ":type: :class:`Material`");
 
-static PyObject *FEdgeSharp_material_left_get(BPy_FEdgeSharp *self, void *UNUSED(closure))
+static PyObject *FEdgeSharp_material_left_get(BPy_FEdgeSharp *self, void * /*closure*/)
 {
   return BPy_FrsMaterial_from_FrsMaterial(self->fes->bFrsMaterial());
 }
@@ -322,14 +308,14 @@ PyDoc_STRVAR(FEdgeSharp_face_mark_right_doc,
              "\n"
              ":type: bool");
 
-static PyObject *FEdgeSharp_face_mark_right_get(BPy_FEdgeSharp *self, void *UNUSED(closure))
+static PyObject *FEdgeSharp_face_mark_right_get(BPy_FEdgeSharp *self, void * /*closure*/)
 {
   return PyBool_from_bool(self->fes->aFaceMark());
 }
 
 static int FEdgeSharp_face_mark_right_set(BPy_FEdgeSharp *self,
                                           PyObject *value,
-                                          void *UNUSED(closure))
+                                          void * /*closure*/)
 {
   if (!PyBool_Check(value)) {
     return -1;
@@ -343,14 +329,12 @@ PyDoc_STRVAR(FEdgeSharp_face_mark_left_doc,
              "\n"
              ":type: bool");
 
-static PyObject *FEdgeSharp_face_mark_left_get(BPy_FEdgeSharp *self, void *UNUSED(closure))
+static PyObject *FEdgeSharp_face_mark_left_get(BPy_FEdgeSharp *self, void * /*closure*/)
 {
   return PyBool_from_bool(self->fes->bFaceMark());
 }
 
-static int FEdgeSharp_face_mark_left_set(BPy_FEdgeSharp *self,
-                                         PyObject *value,
-                                         void *UNUSED(closure))
+static int FEdgeSharp_face_mark_left_set(BPy_FEdgeSharp *self, PyObject *value, void * /*closure*/)
 {
   if (!PyBool_Check(value)) {
     return -1;
@@ -418,7 +402,7 @@ PyTypeObject FEdgeSharp_Type = {
     nullptr,                                        /* tp_as_number */
     nullptr,                                        /* tp_as_sequence */
     nullptr,                                        /* tp_as_mapping */
-    nullptr,                                        /* tp_hash  */
+    nullptr,                                        /* tp_hash */
     nullptr,                                        /* tp_call */
     nullptr,                                        /* tp_str */
     nullptr,                                        /* tp_getattro */

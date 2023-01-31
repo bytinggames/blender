@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup edtransform
@@ -35,6 +19,7 @@
 #include "BKE_gpencil.h"
 #include "BKE_gpencil_curve.h"
 #include "BKE_gpencil_geom.h"
+#include "BKE_layer.h"
 
 #include "ED_gpencil.h"
 #include "ED_keyframing.h"
@@ -176,7 +161,7 @@ static void createTransGPencil_curves(bContext *C,
           }
         }
 
-        /* If not multiedit out of loop. */
+        /* If not multi-edit out of loop. */
         if (!is_multiedit) {
           break;
         }
@@ -382,7 +367,7 @@ static void createTransGPencil_curves(bContext *C,
           }
         }
 
-        /* If not multiedit out of loop. */
+        /* If not multi-edit out of loop. */
         if (!is_multiedit) {
           break;
         }
@@ -470,7 +455,7 @@ static void createTransGPencil_strokes(bContext *C,
             }
           }
         }
-        /* If not multiedit out of loop. */
+        /* If not multi-edit out of loop. */
         if (!is_multiedit) {
           break;
         }
@@ -496,8 +481,8 @@ static void createTransGPencil_strokes(bContext *C,
     if (BKE_gpencil_layer_is_editable(gpl) && (gpl->actframe != NULL)) {
       const int cfra = (gpl->flag & GP_LAYER_FRAMELOCK) ? gpl->actframe->framenum : cfra_scene;
       bGPDframe *gpf = gpl->actframe;
-      float diff_mat[4][4];
-      float inverse_diff_mat[4][4];
+      float diff_mat[3][3];
+      float inverse_diff_mat[3][3];
 
       bGPDframe *init_gpf = (is_multiedit) ? gpl->frames.first : gpl->actframe;
       /* Init multiframe falloff options. */
@@ -509,9 +494,14 @@ static void createTransGPencil_strokes(bContext *C,
       }
 
       /* Calculate difference matrix. */
-      BKE_gpencil_layer_transform_matrix_get(depsgraph, obact, gpl, diff_mat);
-      /* Undo matrix. */
-      invert_m4_m4(inverse_diff_mat, diff_mat);
+      {
+        float diff_mat_tmp[4][4];
+        BKE_gpencil_layer_transform_matrix_get(depsgraph, obact, gpl, diff_mat_tmp);
+        copy_m3_m4(diff_mat, diff_mat_tmp);
+      }
+
+      /* Use safe invert for cases where the input matrix has zero axes. */
+      invert_m3_m3_safe_ortho(inverse_diff_mat, diff_mat);
 
       /* Make a new frame to work on if the layer's frame
        * and the current scene frame don't match up.
@@ -651,9 +641,9 @@ static void createTransGPencil_strokes(bContext *C,
                     }
                   }
                   /* apply parent transformations */
-                  copy_m3_m4(td->smtx, inverse_diff_mat); /* final position */
-                  copy_m3_m4(td->mtx, diff_mat);          /* display position */
-                  copy_m3_m4(td->axismtx, diff_mat);      /* axis orientation */
+                  copy_m3_m3(td->smtx, inverse_diff_mat); /* final position */
+                  copy_m3_m3(td->mtx, diff_mat);          /* display position */
+                  copy_m3_m3(td->axismtx, diff_mat);      /* axis orientation */
 
                   /* Triangulation must be calculated again,
                    * so save the stroke for recalc function */
@@ -674,7 +664,7 @@ static void createTransGPencil_strokes(bContext *C,
             }
           }
         }
-        /* if not multiedit out of loop */
+        /* If not multi-edit out of loop. */
         if (!is_multiedit) {
           break;
         }
@@ -683,7 +673,7 @@ static void createTransGPencil_strokes(bContext *C,
   }
 }
 
-void createTransGPencil(bContext *C, TransInfo *t)
+static void createTransGPencil(bContext *C, TransInfo *t)
 {
   if (t->data_container_len == 0) {
     return;
@@ -692,11 +682,12 @@ void createTransGPencil(bContext *C, TransInfo *t)
   Depsgraph *depsgraph = CTX_data_ensure_evaluated_depsgraph(C);
   const Scene *scene = CTX_data_scene(C);
   ToolSettings *ts = scene->toolsettings;
-  Object *obact = OBACT(t->view_layer);
+  BKE_view_layer_synced_ensure(t->scene, t->view_layer);
+  Object *obact = BKE_view_layer_active_object_get(t->view_layer);
   bGPdata *gpd = obact->data;
   BLI_assert(gpd != NULL);
 
-  const int cfra_scene = CFRA;
+  const int cfra_scene = scene->r.cfra;
 
   const bool is_multiedit = (bool)GPENCIL_MULTIEDIT_SESSIONS_ON(gpd);
   const bool use_multiframe_falloff = (ts->gp_sculpt.flag & GP_SCULPT_SETT_FLAG_FRAME_FALLOFF) !=
@@ -748,8 +739,7 @@ void createTransGPencil(bContext *C, TransInfo *t)
   }
 }
 
-/* force recalculation of triangles during transformation */
-void recalcData_gpencil_strokes(TransInfo *t)
+static void recalcData_gpencil_strokes(TransInfo *t)
 {
   TransDataContainer *tc = TRANS_DATA_CONTAINER_FIRST_SINGLE(t);
   GHash *strokes = BLI_ghash_ptr_new(__func__);
@@ -760,7 +750,7 @@ void recalcData_gpencil_strokes(TransInfo *t)
   for (int i = 0; i < tc->data_len; i++, td++) {
     bGPDstroke *gps = td->extra;
 
-    if ((gps != NULL) && (!BLI_ghash_haskey(strokes, gps))) {
+    if ((gps != NULL) && !BLI_ghash_haskey(strokes, gps)) {
       BLI_ghash_insert(strokes, gps, gps);
       if (is_curve_edit && gps->editcurve != NULL) {
         BKE_gpencil_editcurve_recalculate_handles(gps);
@@ -774,3 +764,10 @@ void recalcData_gpencil_strokes(TransInfo *t)
 }
 
 /** \} */
+
+TransConvertTypeInfo TransConvertType_GPencil = {
+    /* flags */ (T_EDIT | T_POINTS),
+    /* createTransData */ createTransGPencil,
+    /* recalcData */ recalcData_gpencil_strokes,
+    /* special_aftertrans_update */ NULL,
+};

@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup GHOST
@@ -59,7 +43,7 @@ class GHOST_SystemCocoa : public GHOST_System {
    * Based on ANSI clock() routine.
    * \return The number of milliseconds.
    */
-  GHOST_TUns64 getMilliSeconds() const;
+  uint64_t getMilliSeconds() const;
 
   /***************************************************************************************
    * Display/window management functionality
@@ -69,18 +53,18 @@ class GHOST_SystemCocoa : public GHOST_System {
    * Returns the number of displays on this system.
    * \return The number of displays.
    */
-  GHOST_TUns8 getNumDisplays() const;
+  uint8_t getNumDisplays() const;
 
   /**
    * Returns the dimensions of the main display on this system.
    * \return The dimension of the main display.
    */
-  void getMainDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const;
+  void getMainDisplayDimensions(uint32_t &width, uint32_t &height) const;
 
   /** Returns the combine dimensions of all monitors.
    * \return The dimension of the workspace.
    */
-  void getAllDisplayDimensions(GHOST_TUns32 &width, GHOST_TUns32 &height) const;
+  void getAllDisplayDimensions(uint32_t &width, uint32_t &height) const;
 
   /**
    * Create a new window.
@@ -93,27 +77,25 @@ class GHOST_SystemCocoa : public GHOST_System {
    * \param width: The width the window.
    * \param height: The height the window.
    * \param state: The state of the window when opened.
-   * \param type: The type of drawing context installed in this window.
    * \param glSettings: Misc OpenGL settings.
-   * \param exclusive: Use to show the window ontop and ignore others (used fullscreen).
+   * \param exclusive: Use to show the window on top and ignore others (used full-screen).
    * \param parentWindow: Parent (embedder) window.
    * \return The new window (or 0 if creation failed).
    */
   GHOST_IWindow *createWindow(const char *title,
-                              GHOST_TInt32 left,
-                              GHOST_TInt32 top,
-                              GHOST_TUns32 width,
-                              GHOST_TUns32 height,
+                              int32_t left,
+                              int32_t top,
+                              uint32_t width,
+                              uint32_t height,
                               GHOST_TWindowState state,
-                              GHOST_TDrawingContextType type,
                               GHOST_GLSettings glSettings,
                               const bool exclusive = false,
                               const bool is_dialog = false,
                               const GHOST_IWindow *parentWindow = NULL);
 
   /**
-   * Create a new offscreen context.
-   * Never explicitly delete the context, use disposeContext() instead.
+   * Create a new off-screen context.
+   * Never explicitly delete the context, use #disposeContext() instead.
    * \return The new context (or 0 if creation failed).
    */
   GHOST_IContext *createOffscreenContext(GHOST_GLSettings glSettings);
@@ -124,6 +106,14 @@ class GHOST_SystemCocoa : public GHOST_System {
    * \return Indication of success.
    */
   GHOST_TSuccess disposeContext(GHOST_IContext *context);
+
+  /**
+   * Get the Window under the cursor.
+   * \param x: The x-coordinate of the cursor.
+   * \param y: The y-coordinate of the cursor.
+   * \return The window under the cursor or nullptr if none.
+   */
+  GHOST_IWindow *getWindowUnderCursor(int32_t x, int32_t y);
 
   /***************************************************************************************
    * Event management functionality
@@ -137,7 +127,7 @@ class GHOST_SystemCocoa : public GHOST_System {
   bool processEvents(bool waitForEvent);
 
   /**
-   * Handle User request to quit, from Menu bar Quit, and Cmd+Q
+   * Handle User request to quit, from Menu bar Quit, and Command+Q
    * Display alert panel if changes performed since last save
    */
   void handleQuitRequest();
@@ -175,7 +165,7 @@ class GHOST_SystemCocoa : public GHOST_System {
    * \param y: The y-coordinate of the cursor.
    * \return Indication of success.
    */
-  GHOST_TSuccess getCursorPosition(GHOST_TInt32 &x, GHOST_TInt32 &y) const;
+  GHOST_TSuccess getCursorPosition(int32_t &x, int32_t &y) const;
 
   /**
    * Updates the location of the cursor (location in screen coordinates).
@@ -183,7 +173,7 @@ class GHOST_SystemCocoa : public GHOST_System {
    * \param y: The y-coordinate of the cursor.
    * \return Indication of success.
    */
-  GHOST_TSuccess setCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y);
+  GHOST_TSuccess setCursorPosition(int32_t x, int32_t y);
 
   /***************************************************************************************
    * Access to mouse button and keyboard states.
@@ -208,14 +198,14 @@ class GHOST_SystemCocoa : public GHOST_System {
    * \param selection: Indicate which buffer to return.
    * \return Returns the selected buffer
    */
-  GHOST_TUns8 *getClipboard(bool selection) const;
+  char *getClipboard(bool selection) const;
 
   /**
    * Puts buffer to system clipboard
    * \param buffer: The buffer to be copied.
    * \param selection: Indicates which buffer to copy too, only used on X11.
    */
-  void putClipboard(GHOST_TInt8 *buffer, bool selection) const;
+  void putClipboard(const char *buffer, bool selection) const;
 
   /**
    * Handles a window event. Called by GHOST_WindowCocoa window delegate
@@ -244,9 +234,9 @@ class GHOST_SystemCocoa : public GHOST_System {
   /**
    * \see GHOST_ISystem
    */
-  int toggleConsole(int action)
+  bool setConsoleWindowState(GHOST_TConsoleWindowState action)
   {
-    return 0;
+    return false;
   }
 
   /**
@@ -288,10 +278,10 @@ class GHOST_SystemCocoa : public GHOST_System {
    * \param y: The y-coordinate of the cursor.
    * \return Indication of success.
    */
-  GHOST_TSuccess setMouseCursorPosition(GHOST_TInt32 x, GHOST_TInt32 y);
+  GHOST_TSuccess setMouseCursorPosition(int32_t x, int32_t y);
 
   /** Start time at initialization. */
-  GHOST_TUns64 m_start_time;
+  uint64_t m_start_time;
 
   /** Event has been processed directly by Cocoa (or NDOF manager)
    * and has sent a ghost event to be dispatched */
@@ -302,14 +292,14 @@ class GHOST_SystemCocoa : public GHOST_System {
   bool m_needDelayedApplicationBecomeActiveEventProcessing;
 
   /** State of the modifiers. */
-  GHOST_TUns32 m_modifierMask;
+  uint32_t m_modifierMask;
 
   /** Ignores window size messages (when window is dragged). */
   bool m_ignoreWindowSizedMessages;
 
   /** Temporarily ignore momentum scroll events */
   bool m_ignoreMomentumScroll;
-  /** Is the scroll wheel event generated by a multitouch trackpad or mouse? */
+  /** Is the scroll wheel event generated by a multi-touch track-pad or mouse? */
   bool m_multiTouchScroll;
   /** To prevent multiple warp, we store the time of the last warp event
    * and ignore mouse moved events generated before that. */

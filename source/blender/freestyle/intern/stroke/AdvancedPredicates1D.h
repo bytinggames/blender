@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #pragma once
 
@@ -38,12 +24,12 @@ namespace Freestyle {
 namespace Predicates1D {
 
 // DensityLowerThanUP1D
-/*! Returns true if the density evaluated for the
+/** Returns true if the density evaluated for the
  *  Interface1D is less than a user-defined density value.
  */
 class DensityLowerThanUP1D : public UnaryPredicate1D {
  public:
-  /*! Builds the functor.
+  /** Builds the functor.
    *  \param threshold:
    *    The value of the threshold density.
    *    Any Interface1D having a density lower than this threshold will match.
@@ -56,13 +42,13 @@ class DensityLowerThanUP1D : public UnaryPredicate1D {
     _sigma = sigma;
   }
 
-  /*! Returns the string "DensityLowerThanUP1D" */
+  /** Returns the string "DensityLowerThanUP1D" */
   string getName() const
   {
     return "DensityLowerThanUP1D";
   }
 
-  /*! The () operator. */
+  /** The () operator. */
   int operator()(Interface1D &inter)
   {
     Functions1D::DensityF1D fun(_sigma);

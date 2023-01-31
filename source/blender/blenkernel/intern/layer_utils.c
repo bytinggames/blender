@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup bke
@@ -23,6 +9,7 @@
 #include "BLI_array.h"
 
 #include "BKE_collection.h"
+#include "BKE_customdata.h"
 #include "BKE_editmesh.h"
 #include "BKE_layer.h"
 
@@ -80,9 +67,11 @@ Object **BKE_view_layer_array_selected_objects_params(
   }
   FOREACH_SELECTED_OBJECT_END;
 
-  object_array = MEM_reallocN(object_array, sizeof(*object_array) * BLI_array_len(object_array));
-  /* We always need a valid allocation (prevent crash on free). */
-  if (object_array == NULL) {
+  if (object_array != NULL) {
+    BLI_array_trim(object_array);
+  }
+  else {
+    /* We always need a valid allocation (prevent crash on free). */
     object_array = MEM_mallocN(0, __func__);
   }
   *r_len = BLI_array_len(object_array);
@@ -95,13 +84,14 @@ Object **BKE_view_layer_array_selected_objects_params(
 /** \name Objects in Mode Array
  * \{ */
 
-Base **BKE_view_layer_array_from_bases_in_mode_params(ViewLayer *view_layer,
+Base **BKE_view_layer_array_from_bases_in_mode_params(const Scene *scene,
+                                                      ViewLayer *view_layer,
                                                       const View3D *v3d,
                                                       uint *r_len,
                                                       const struct ObjectsInModeParams *params)
 {
   if (params->no_dup_data) {
-    FOREACH_BASE_IN_MODE_BEGIN (view_layer, v3d, -1, params->object_mode, base_iter) {
+    FOREACH_BASE_IN_MODE_BEGIN (scene, view_layer, v3d, -1, params->object_mode, base_iter) {
       ID *id = base_iter->object->data;
       if (id) {
         id->tag |= LIB_TAG_DOIT;
@@ -113,7 +103,7 @@ Base **BKE_view_layer_array_from_bases_in_mode_params(ViewLayer *view_layer,
   Base **base_array = NULL;
   BLI_array_declare(base_array);
 
-  FOREACH_BASE_IN_MODE_BEGIN (view_layer, v3d, -1, params->object_mode, base_iter) {
+  FOREACH_BASE_IN_MODE_BEGIN (scene, view_layer, v3d, -1, params->object_mode, base_iter) {
     if (params->filter_fn) {
       if (!params->filter_fn(base_iter->object, params->filter_userdata)) {
         continue;
@@ -134,22 +124,25 @@ Base **BKE_view_layer_array_from_bases_in_mode_params(ViewLayer *view_layer,
   }
   FOREACH_BASE_IN_MODE_END;
 
-  base_array = MEM_reallocN(base_array, sizeof(*base_array) * BLI_array_len(base_array));
   /* We always need a valid allocation (prevent crash on free). */
-  if (base_array == NULL) {
+  if (base_array != NULL) {
+    BLI_array_trim(base_array);
+  }
+  else {
     base_array = MEM_mallocN(0, __func__);
   }
   *r_len = BLI_array_len(base_array);
   return base_array;
 }
 
-Object **BKE_view_layer_array_from_objects_in_mode_params(ViewLayer *view_layer,
+Object **BKE_view_layer_array_from_objects_in_mode_params(const Scene *scene,
+                                                          ViewLayer *view_layer,
                                                           const View3D *v3d,
                                                           uint *r_len,
                                                           const struct ObjectsInModeParams *params)
 {
   Base **base_array = BKE_view_layer_array_from_bases_in_mode_params(
-      view_layer, v3d, r_len, params);
+      scene, view_layer, v3d, r_len, params);
   if (base_array != NULL) {
     for (uint i = 0; i < *r_len; i++) {
       ((Object **)base_array)[i] = base_array[i]->object;
@@ -158,17 +151,102 @@ Object **BKE_view_layer_array_from_objects_in_mode_params(ViewLayer *view_layer,
   return (Object **)base_array;
 }
 
+struct Object **BKE_view_layer_array_from_objects_in_edit_mode(const Scene *scene,
+                                                               ViewLayer *view_layer,
+                                                               const View3D *v3d,
+                                                               uint *r_len)
+{
+  struct ObjectsInModeParams params = {0};
+  params.object_mode = OB_MODE_EDIT;
+  return BKE_view_layer_array_from_objects_in_mode_params(scene, view_layer, v3d, r_len, &params);
+}
+
+struct Base **BKE_view_layer_array_from_bases_in_edit_mode(const Scene *scene,
+                                                           ViewLayer *view_layer,
+                                                           const View3D *v3d,
+                                                           uint *r_len)
+{
+  struct ObjectsInModeParams params = {0};
+  params.object_mode = OB_MODE_EDIT;
+  return BKE_view_layer_array_from_bases_in_mode_params(scene, view_layer, v3d, r_len, &params);
+}
+
+struct Object **BKE_view_layer_array_from_objects_in_edit_mode_unique_data(const Scene *scene,
+                                                                           ViewLayer *view_layer,
+                                                                           const View3D *v3d,
+                                                                           uint *r_len)
+{
+  struct ObjectsInModeParams params = {0};
+  params.object_mode = OB_MODE_EDIT;
+  params.no_dup_data = true;
+  return BKE_view_layer_array_from_objects_in_mode_params(scene, view_layer, v3d, r_len, &params);
+}
+
+struct Base **BKE_view_layer_array_from_bases_in_edit_mode_unique_data(const Scene *scene,
+                                                                       ViewLayer *view_layer,
+                                                                       const View3D *v3d,
+                                                                       uint *r_len)
+{
+  struct ObjectsInModeParams params = {0};
+  params.object_mode = OB_MODE_EDIT;
+  params.no_dup_data = true;
+  return BKE_view_layer_array_from_bases_in_mode_params(scene, view_layer, v3d, r_len, &params);
+}
+
+struct Object **BKE_view_layer_array_from_objects_in_edit_mode_unique_data_with_uvs(
+    const Scene *scene, ViewLayer *view_layer, const View3D *v3d, uint *r_len)
+{
+  struct ObjectsInModeParams params = {0};
+  params.object_mode = OB_MODE_EDIT;
+  params.no_dup_data = true;
+  params.filter_fn = BKE_view_layer_filter_edit_mesh_has_uvs;
+  return BKE_view_layer_array_from_objects_in_mode_params(scene, view_layer, v3d, r_len, &params);
+}
+
+struct Object **BKE_view_layer_array_from_objects_in_mode_unique_data(const Scene *scene,
+                                                                      ViewLayer *view_layer,
+                                                                      const View3D *v3d,
+                                                                      uint *r_len,
+                                                                      const eObjectMode mode)
+{
+  struct ObjectsInModeParams params = {0};
+  params.object_mode = mode;
+  params.no_dup_data = true;
+  return BKE_view_layer_array_from_objects_in_mode_params(scene, view_layer, v3d, r_len, &params);
+}
+
+ListBase *BKE_view_layer_object_bases_get(ViewLayer *view_layer)
+{
+  BLI_assert_msg((view_layer->flag & VIEW_LAYER_OUT_OF_SYNC) == 0,
+                 "Object Bases out of sync, invoke BKE_view_layer_synced_ensure.");
+  return &view_layer->object_bases;
+}
+
+Base *BKE_view_layer_active_base_get(ViewLayer *view_layer)
+{
+  BLI_assert_msg((view_layer->flag & VIEW_LAYER_OUT_OF_SYNC) == 0,
+                 "Active Base out of sync, invoke BKE_view_layer_synced_ensure.");
+  return view_layer->basact;
+}
+
+LayerCollection *BKE_view_layer_active_collection_get(ViewLayer *view_layer)
+{
+  BLI_assert_msg((view_layer->flag & VIEW_LAYER_OUT_OF_SYNC) == 0,
+                 "Active Collection out of sync, invoke BKE_view_layer_synced_ensure.");
+  return view_layer->active_collection;
+}
+
 /** \} */
 
 /* -------------------------------------------------------------------- */
 /** \name Filter Functions
  * \{ */
 
-bool BKE_view_layer_filter_edit_mesh_has_uvs(Object *ob, void *UNUSED(user_data))
+bool BKE_view_layer_filter_edit_mesh_has_uvs(const Object *ob, void *UNUSED(user_data))
 {
   if (ob->type == OB_MESH) {
-    Mesh *me = ob->data;
-    BMEditMesh *em = me->edit_mesh;
+    const Mesh *me = ob->data;
+    const BMEditMesh *em = me->edit_mesh;
     if (em != NULL) {
       if (CustomData_get_offset(&em->bm->ldata, CD_MLOOPUV) != -1) {
         return true;
@@ -178,11 +256,11 @@ bool BKE_view_layer_filter_edit_mesh_has_uvs(Object *ob, void *UNUSED(user_data)
   return false;
 }
 
-bool BKE_view_layer_filter_edit_mesh_has_edges(Object *ob, void *UNUSED(user_data))
+bool BKE_view_layer_filter_edit_mesh_has_edges(const Object *ob, void *UNUSED(user_data))
 {
   if (ob->type == OB_MESH) {
-    Mesh *me = ob->data;
-    BMEditMesh *em = me->edit_mesh;
+    const Mesh *me = ob->data;
+    const BMEditMesh *em = me->edit_mesh;
     if (em != NULL) {
       if (em->bm->totedge != 0) {
         return true;
@@ -192,17 +270,12 @@ bool BKE_view_layer_filter_edit_mesh_has_edges(Object *ob, void *UNUSED(user_dat
   return false;
 }
 
-/**
- * Use this in rare cases we need to detect a pair of objects (active, selected).
- * This returns the other non-active selected object.
- *
- * Returns NULL with it finds multiple other selected objects
- * as behavior in this case would be random from the user perspective.
- */
-Object *BKE_view_layer_non_active_selected_object(struct ViewLayer *view_layer,
+Object *BKE_view_layer_non_active_selected_object(const struct Scene *scene,
+                                                  struct ViewLayer *view_layer,
                                                   const struct View3D *v3d)
 {
-  Object *ob_active = OBACT(view_layer);
+  BKE_view_layer_synced_ensure(scene, view_layer);
+  Object *ob_active = BKE_view_layer_active_object_get(view_layer);
   Object *ob_result = NULL;
   FOREACH_SELECTED_OBJECT_BEGIN (view_layer, v3d, ob_iter) {
     if (ob_iter == ob_active) {
@@ -220,4 +293,29 @@ Object *BKE_view_layer_non_active_selected_object(struct ViewLayer *view_layer,
   FOREACH_SELECTED_OBJECT_END;
   return ob_result;
 }
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
+/** \name Active object accessors.
+ * \{ */
+
+Object *BKE_view_layer_active_object_get(const ViewLayer *view_layer)
+{
+  Base *base = BKE_view_layer_active_base_get((ViewLayer *)view_layer);
+  return base ? base->object : NULL;
+}
+
+Object *BKE_view_layer_edit_object_get(const ViewLayer *view_layer)
+{
+  Object *ob = BKE_view_layer_active_object_get(view_layer);
+  if (ob == NULL) {
+    return NULL;
+  }
+  if (!(ob->mode & OB_MODE_EDIT)) {
+    return NULL;
+  }
+  return ob;
+}
+
 /** \} */

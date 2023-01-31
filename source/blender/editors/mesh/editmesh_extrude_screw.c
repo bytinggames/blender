@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2004 by Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2004 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup edmesh
@@ -57,7 +41,7 @@ static int edbm_screw_exec(bContext *C, wmOperator *op)
   int valence;
   uint objects_empty_len = 0;
   uint failed_axis_len = 0;
-  uint failed_vertices_len = 0;
+  uint failed_verts_len = 0;
 
   turns = RNA_int_get(op->ptr, "turns");
   steps = RNA_int_get(op->ptr, "steps");
@@ -65,9 +49,10 @@ static int edbm_screw_exec(bContext *C, wmOperator *op)
   RNA_float_get_array(op->ptr, "axis", axis);
 
   uint objects_len = 0;
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
 
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *obedit = objects[ob_index];
@@ -113,15 +98,15 @@ static int edbm_screw_exec(bContext *C, wmOperator *op)
     }
 
     if (v1 == NULL || v2 == NULL) {
-      failed_vertices_len++;
+      failed_verts_len++;
       continue;
     }
 
-    copy_v3_v3(nor, obedit->obmat[2]);
+    copy_v3_v3(nor, obedit->object_to_world[2]);
 
     /* calculate dvec */
-    mul_v3_m4v3(v1_co_global, obedit->obmat, v1->co);
-    mul_v3_m4v3(v2_co_global, obedit->obmat, v2->co);
+    mul_v3_m4v3(v1_co_global, obedit->object_to_world, v1->co);
+    mul_v3_m4v3(v2_co_global, obedit->object_to_world, v2->co);
     sub_v3_v3v3(dvec, v1_co_global, v2_co_global);
     mul_v3_fl(dvec, 1.0f / steps);
 
@@ -141,7 +126,7 @@ static int edbm_screw_exec(bContext *C, wmOperator *op)
             dvec,
             turns * steps,
             DEG2RADF(360.0f * turns),
-            obedit->obmat,
+            obedit->object_to_world,
             false)) {
       continue;
     }
@@ -155,14 +140,19 @@ static int edbm_screw_exec(bContext *C, wmOperator *op)
       continue;
     }
 
-    EDBM_update_generic(obedit->data, true, true);
+    EDBM_update(obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = false,
+                    .is_destructive = true,
+                });
   }
   MEM_freeN(objects);
 
   if (failed_axis_len == objects_len - objects_empty_len) {
     BKE_report(op->reports, RPT_ERROR, "Invalid/unset axis");
   }
-  else if (failed_vertices_len == objects_len - objects_empty_len) {
+  else if (failed_verts_len == objects_len - objects_empty_len) {
     BKE_report(op->reports, RPT_ERROR, "You have to select a string of connected vertices too");
   }
 

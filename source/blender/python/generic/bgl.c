@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup pygen
@@ -33,7 +19,7 @@
 
 #include "../generic/py_capi_utils.h"
 
-#include "glew-mx.h"
+#include <epoxy/gl.h>
 
 #include "bgl.h"
 
@@ -41,7 +27,7 @@
 /** \name Local utility defines for wrapping OpenGL
  * \{ */
 
-/*@ By golly George! It looks like fancy pants macro time!!! */
+/* By golly George! It looks like fancy pants macro time! */
 
 /* TYPE_str is the string to pass to Py_ArgParse (for the format) */
 /* TYPE_var is the name to pass to the GL function */
@@ -161,7 +147,7 @@ typedef struct BufferOrOffset {
 #  define buffer_def(number) Buffer *bgl_buffer##number
 #endif
 
-/*@The standard GL typedefs are used as prototypes, we can't
+/* The standard GL typedefs are used as prototypes, we can't
  * use the GL type directly because Py_ArgParse expects normal
  * C types.
  *
@@ -431,11 +417,11 @@ static PyObject *Method_ShaderSource(PyObject *self, PyObject *args);
 
 /* Buffer sequence methods */
 
-static int Buffer_len(Buffer *self);
-static PyObject *Buffer_item(Buffer *self, int i);
-static PyObject *Buffer_slice(Buffer *self, int begin, int end);
-static int Buffer_ass_item(Buffer *self, int i, PyObject *v);
-static int Buffer_ass_slice(Buffer *self, int begin, int end, PyObject *seq);
+static Py_ssize_t Buffer_len(Buffer *self);
+static PyObject *Buffer_item(Buffer *self, Py_ssize_t i);
+static PyObject *Buffer_slice(Buffer *self, Py_ssize_t begin, Py_ssize_t end);
+static int Buffer_ass_item(Buffer *self, Py_ssize_t i, PyObject *v);
+static int Buffer_ass_slice(Buffer *self, Py_ssize_t begin, Py_ssize_t end, PyObject *seq);
 static PyObject *Buffer_subscript(Buffer *self, PyObject *item);
 static int Buffer_ass_subscript(Buffer *self, PyObject *item, PyObject *value);
 
@@ -505,13 +491,13 @@ static bool compare_dimensions(int ndim, const int *dim1, const Py_ssize_t *dim2
  * \{ */
 
 static PySequenceMethods Buffer_SeqMethods = {
-    (lenfunc)Buffer_len,              /*sq_length */
-    (binaryfunc)NULL,                 /*sq_concat */
-    (ssizeargfunc)NULL,               /*sq_repeat */
-    (ssizeargfunc)Buffer_item,        /*sq_item */
-    (ssizessizeargfunc)NULL,          /*sq_slice, deprecated, handled in Buffer_item */
-    (ssizeobjargproc)Buffer_ass_item, /*sq_ass_item */
-    (ssizessizeobjargproc)NULL,       /*sq_ass_slice, deprecated handled in Buffer_ass_item */
+    (lenfunc)Buffer_len,              /* sq_length */
+    (binaryfunc)NULL,                 /* sq_concat */
+    (ssizeargfunc)NULL,               /* sq_repeat */
+    (ssizeargfunc)Buffer_item,        /* sq_item */
+    (ssizessizeargfunc)NULL,          /* sq_slice, deprecated, handled in Buffer_item */
+    (ssizeobjargproc)Buffer_ass_item, /* sq_ass_item */
+    (ssizessizeobjargproc)NULL,       /* sq_ass_slice, deprecated handled in Buffer_ass_item */
     (objobjproc)NULL,                 /* sq_contains */
     (binaryfunc)NULL,                 /* sq_inplace_concat */
     (ssizeargfunc)NULL,               /* sq_inplace_repeat */
@@ -582,17 +568,17 @@ static PyGetSetDef Buffer_getseters[] = {
 };
 
 PyTypeObject BGL_bufferType = {
-    PyVarObject_HEAD_INIT(NULL, 0) "bgl.Buffer", /*tp_name */
-    sizeof(Buffer),                              /*tp_basicsize */
-    0,                                           /*tp_itemsize */
-    (destructor)Buffer_dealloc,                  /*tp_dealloc */
-    (printfunc)NULL,                             /*tp_print */
-    NULL,                                        /*tp_getattr */
-    NULL,                                        /*tp_setattr */
-    NULL,                                        /*tp_compare */
-    (reprfunc)Buffer_repr,                       /*tp_repr */
-    NULL,                                        /*tp_as_number */
-    &Buffer_SeqMethods,                          /*tp_as_sequence */
+    PyVarObject_HEAD_INIT(NULL, 0) "bgl.Buffer", /* tp_name */
+    sizeof(Buffer),                              /* tp_basicsize */
+    0,                                           /* tp_itemsize */
+    (destructor)Buffer_dealloc,                  /* tp_dealloc */
+    (printfunc)NULL,                             /* tp_print */
+    NULL,                                        /* tp_getattr */
+    NULL,                                        /* tp_setattr */
+    NULL,                                        /* tp_compare */
+    (reprfunc)Buffer_repr,                       /* tp_repr */
+    NULL,                                        /* tp_as_number */
+    &Buffer_SeqMethods,                          /* tp_as_sequence */
     &Buffer_AsMapping,                           /* PyMappingMethods *tp_as_mapping; */
 
     /* More standard operations (here for binary compatibility) */
@@ -666,13 +652,6 @@ static Buffer *BGL_MakeBuffer_FromData(
   return buffer;
 }
 
-/**
- * Create a buffer object
- *
- * \param dimensions: An array of ndimensions integers representing the size of each dimension.
- * \param initbuffer: When not NULL holds a contiguous buffer
- * with the correct format from which the buffer will be initialized
- */
 Buffer *BGL_MakeBuffer(int type, int ndimensions, int *dimensions, void *initbuffer)
 {
   Buffer *buffer;
@@ -683,7 +662,7 @@ Buffer *BGL_MakeBuffer(int type, int ndimensions, int *dimensions, void *initbuf
     size *= dimensions[i];
   }
 
-  buf = MEM_mallocN(size, "Buffer buffer");
+  buf = MEM_mallocN(size, __func__);
 
   buffer = BGL_MakeBuffer_FromData(NULL, type, ndimensions, dimensions, buf);
 
@@ -753,7 +732,7 @@ static PyObject *Buffer_new(PyTypeObject *UNUSED(type), PyObject *args, PyObject
 
   if (PyLong_Check(length_ob)) {
     ndimensions = 1;
-    if (((dimensions[0] = PyLong_AsLong(length_ob)) < 1)) {
+    if ((dimensions[0] = PyLong_AsLong(length_ob)) < 1) {
       PyErr_SetString(PyExc_AttributeError,
                       "dimensions must be between 1 and " STRINGIFY(MAX_DIMENSIONS));
       return NULL;
@@ -790,7 +769,7 @@ static PyObject *Buffer_new(PyTypeObject *UNUSED(type), PyObject *args, PyObject
   }
   else {
     PyErr_Format(PyExc_TypeError,
-                 "invalid second argument argument expected a sequence "
+                 "invalid second argument expected a sequence "
                  "or an int, not a %.200s",
                  Py_TYPE(length_ob)->tp_name);
     return NULL;
@@ -832,12 +811,12 @@ static PyObject *Buffer_new(PyTypeObject *UNUSED(type), PyObject *args, PyObject
 
 /* Buffer sequence methods */
 
-static int Buffer_len(Buffer *self)
+static Py_ssize_t Buffer_len(Buffer *self)
 {
   return self->dimensions[0];
 }
 
-static PyObject *Buffer_item(Buffer *self, int i)
+static PyObject *Buffer_item(Buffer *self, Py_ssize_t i)
 {
   if (i >= self->dimensions[0] || i < 0) {
     PyErr_SetString(PyExc_IndexError, "array index out of range");
@@ -875,10 +854,9 @@ static PyObject *Buffer_item(Buffer *self, int i)
   return NULL;
 }
 
-static PyObject *Buffer_slice(Buffer *self, int begin, int end)
+static PyObject *Buffer_slice(Buffer *self, Py_ssize_t begin, Py_ssize_t end)
 {
   PyObject *list;
-  int count;
 
   if (begin < 0) {
     begin = 0;
@@ -892,13 +870,13 @@ static PyObject *Buffer_slice(Buffer *self, int begin, int end)
 
   list = PyList_New(end - begin);
 
-  for (count = begin; count < end; count++) {
+  for (Py_ssize_t count = begin; count < end; count++) {
     PyList_SET_ITEM(list, count - begin, Buffer_item(self, count));
   }
   return list;
 }
 
-static int Buffer_ass_item(Buffer *self, int i, PyObject *v)
+static int Buffer_ass_item(Buffer *self, Py_ssize_t i, PyObject *v)
 {
   if (i >= self->dimensions[0] || i < 0) {
     PyErr_SetString(PyExc_IndexError, "array assignment index out of range");
@@ -933,10 +911,11 @@ static int Buffer_ass_item(Buffer *self, int i, PyObject *v)
   }
 }
 
-static int Buffer_ass_slice(Buffer *self, int begin, int end, PyObject *seq)
+static int Buffer_ass_slice(Buffer *self, Py_ssize_t begin, Py_ssize_t end, PyObject *seq)
 {
   PyObject *item;
-  int count, err = 0;
+  int err = 0;
+  Py_ssize_t count;
 
   if (begin < 0) {
     begin = 0;
@@ -956,7 +935,7 @@ static int Buffer_ass_slice(Buffer *self, int begin, int end, PyObject *seq)
     return -1;
   }
 
-  /* re-use count var */
+  /* Re-use count variable. */
   if ((count = PySequence_Size(seq)) != (end - begin)) {
     PyErr_Format(PyExc_TypeError,
                  "buffer[:] = value, size mismatch in assignment. "
@@ -1103,18 +1082,34 @@ static PyObject *Buffer_repr(Buffer *self)
 /** \name OpenGL API Wrapping
  * \{ */
 
-#define BGL_Wrap(funcname, ret, arg_list) \
-  static PyObject *Method_##funcname(PyObject *UNUSED(self), PyObject *args) \
-  { \
-    arg_def arg_list; \
-    ret_def_##ret; \
-    if (!PyArg_ParseTuple(args, arg_str arg_list, arg_ref arg_list)) { \
+#ifdef WITH_OPENGL
+#  define BGL_Wrap(funcname, ret, arg_list) \
+    static PyObject *Method_##funcname(PyObject *UNUSED(self), PyObject *args) \
+    { \
+      arg_def arg_list; \
+      ret_def_##ret; \
+      if (!PyArg_ParseTuple(args, arg_str arg_list, arg_ref arg_list)) { \
+        return NULL; \
+      } \
+      GPU_bgl_start(); \
+      ret_set_##ret gl##funcname(arg_var arg_list); \
+      ret_ret_##ret; \
+    }
+#else
+
+static void bgl_no_opengl_error(void)
+{
+  PyErr_SetString(PyExc_RuntimeError, "Built without OpenGL support");
+}
+
+#  define BGL_Wrap(funcname, ret, arg_list) \
+    static PyObject *Method_##funcname(PyObject *UNUSED(self), PyObject *args) \
+    { \
+      (void)args; \
+      bgl_no_opengl_error(); \
       return NULL; \
-    } \
-    GPU_bgl_start(); \
-    ret_set_##ret gl##funcname(arg_var arg_list); \
-    ret_ret_##ret; \
-  }
+    }
+#endif
 
 /* GL_VERSION_1_0 */
 BGL_Wrap(BlendFunc, void, (GLenum, GLenum));
@@ -1402,7 +1397,7 @@ static struct PyModuleDef BGL_module_def = {
     NULL,  /* m_doc */
     0,     /* m_size */
     NULL,  /* m_methods */
-    NULL,  /* m_reload */
+    NULL,  /* m_slots */
     NULL,  /* m_traverse */
     NULL,  /* m_clear */
     NULL,  /* m_free */
@@ -1442,12 +1437,22 @@ static void py_module_dict_add_method(PyObject *submodule,
 #ifdef __GNUC__
 #  pragma GCC diagnostic ignored "-Waddress"
 #endif
-#define PY_MOD_ADD_METHOD(func) \
-  { \
-    static PyMethodDef method_def = {"gl" #func, Method_##func, METH_VARARGS}; \
-    py_module_dict_add_method(submodule, dict, &method_def, (gl##func != NULL)); \
-  } \
-  ((void)0)
+
+#ifdef WITH_OPENGL
+#  define PY_MOD_ADD_METHOD(func) \
+    { \
+      static PyMethodDef method_def = {"gl" #func, Method_##func, METH_VARARGS}; \
+      py_module_dict_add_method(submodule, dict, &method_def, (gl##func != NULL)); \
+    } \
+    ((void)0)
+#else
+#  define PY_MOD_ADD_METHOD(func) \
+    { \
+      static PyMethodDef method_def = {"gl" #func, Method_##func, METH_VARARGS}; \
+      py_module_dict_add_method(submodule, dict, &method_def, false); \
+    } \
+    ((void)0)
+#endif
 
 static void init_bgl_version_1_0_methods(PyObject *submodule, PyObject *dict)
 {
@@ -2641,9 +2646,13 @@ static PyObject *Method_ShaderSource(PyObject *UNUSED(self), PyObject *args)
     return NULL;
   }
 
+#ifdef WITH_OPENGL
   glShaderSource(shader, 1, (const char **)&source, NULL);
-
   Py_RETURN_NONE;
+#else
+  bgl_no_opengl_error();
+  return NULL;
+#endif
 }
 
 /** \} */

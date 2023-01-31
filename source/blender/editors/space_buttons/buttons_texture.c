@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2009 Blender Foundation.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2009 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup spbuttons
@@ -56,6 +40,7 @@
 #endif
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "UI_interface.h"
 #include "UI_resources.h"
@@ -75,15 +60,16 @@ static SpaceProperties *find_space_properties(const bContext *C);
 
 /************************* Texture User **************************/
 
-static void buttons_texture_user_node_property_add(ListBase *users,
-                                                   ID *id,
-                                                   PointerRNA ptr,
-                                                   PropertyRNA *prop,
-                                                   bNodeTree *ntree,
-                                                   bNode *node,
-                                                   const char *category,
-                                                   int icon,
-                                                   const char *name)
+static void buttons_texture_user_socket_property_add(ListBase *users,
+                                                     ID *id,
+                                                     PointerRNA ptr,
+                                                     PropertyRNA *prop,
+                                                     bNodeTree *ntree,
+                                                     bNode *node,
+                                                     bNodeSocket *socket,
+                                                     const char *category,
+                                                     int icon,
+                                                     const char *name)
 {
   ButsTextureUser *user = MEM_callocN(sizeof(ButsTextureUser), "ButsTextureUser");
 
@@ -92,6 +78,7 @@ static void buttons_texture_user_node_property_add(ListBase *users,
   user->prop = prop;
   user->ntree = ntree;
   user->node = node;
+  user->socket = socket;
   user->category = category;
   user->icon = icon;
   user->name = name;
@@ -153,10 +140,10 @@ static void buttons_texture_users_find_nodetree(ListBase *users,
     for (node = ntree->nodes.first; node; node = node->next) {
       if (node->typeinfo->nclass == NODE_CLASS_TEXTURE) {
         PointerRNA ptr;
-        /* PropertyRNA *prop; */ /* UNUSED */
+        // PropertyRNA *prop; /* UNUSED */
 
         RNA_pointer_create(&ntree->id, &RNA_Node, node, &ptr);
-        /* prop = RNA_struct_find_property(&ptr, "texture"); */ /* UNUSED */
+        // prop = RNA_struct_find_property(&ptr, "texture"); /* UNUSED */
 
         buttons_texture_user_node_add(
             users, id, ntree, node, category, RNA_struct_ui_icon(ptr.type), node->name);
@@ -181,25 +168,29 @@ static void buttons_texture_modifier_geonodes_users_add(Object *ob,
       /* Recurse into the node group */
       buttons_texture_modifier_geonodes_users_add(ob, nmd, (bNodeTree *)node->id, users);
     }
-    else if (node->type == GEO_NODE_ATTRIBUTE_SAMPLE_TEXTURE) {
-      RNA_pointer_create(&node_tree->id, &RNA_Node, node, &ptr);
-      prop = RNA_struct_find_property(&ptr, "texture");
-      if (prop == NULL) {
+    LISTBASE_FOREACH (bNodeSocket *, socket, &node->inputs) {
+      if (socket->flag & SOCK_UNAVAIL) {
         continue;
       }
+      if (socket->type != SOCK_TEXTURE) {
+        continue;
+      }
+      RNA_pointer_create(&node_tree->id, &RNA_NodeSocket, socket, &ptr);
+      prop = RNA_struct_find_property(&ptr, "default_value");
 
       PointerRNA texptr = RNA_property_pointer_get(&ptr, prop);
-      Tex *tex = (RNA_struct_is_a(texptr.type, &RNA_Texture)) ? (Tex *)texptr.data : NULL;
+      Tex *tex = RNA_struct_is_a(texptr.type, &RNA_Texture) ? (Tex *)texptr.data : NULL;
       if (tex != NULL) {
-        buttons_texture_user_node_property_add(users,
-                                               &ob->id,
-                                               ptr,
-                                               prop,
-                                               node_tree,
-                                               node,
-                                               N_("Geometry Nodes"),
-                                               RNA_struct_ui_icon(ptr.type),
-                                               nmd->modifier.name);
+        buttons_texture_user_socket_property_add(users,
+                                                 &ob->id,
+                                                 ptr,
+                                                 prop,
+                                                 node_tree,
+                                                 node,
+                                                 socket,
+                                                 N_("Geometry Nodes"),
+                                                 RNA_struct_ui_icon(ptr.type),
+                                                 nmd->modifier.name);
       }
     }
   }
@@ -290,7 +281,8 @@ static void buttons_texture_users_from_context(ListBase *users,
 
     brush = BKE_paint_brush(BKE_paint_get_active_from_context(C));
     linestyle = BKE_linestyle_active_from_view_layer(view_layer);
-    ob = OBACT(view_layer);
+    BKE_view_layer_synced_ensure(scene, view_layer);
+    ob = BKE_view_layer_active_object_get(view_layer);
   }
 
   /* fill users */
@@ -422,7 +414,7 @@ void buttons_texture_context_compute(const bContext *C, SpaceProperties *sbuts)
 
         /* Get texture datablock pointer if it's a property. */
         texptr = RNA_property_pointer_get(&ct->user->ptr, ct->user->prop);
-        tex = (RNA_struct_is_a(texptr.type, &RNA_Texture)) ? texptr.data : NULL;
+        tex = RNA_struct_is_a(texptr.type, &RNA_Texture) ? texptr.data : NULL;
 
         ct->texture = tex;
       }
@@ -445,7 +437,7 @@ static void template_texture_select(bContext *C, void *user_p, void *UNUSED(arg)
 
   /* set user as active */
   if (user->node) {
-    ED_node_set_active(CTX_data_main(C), user->ntree, user->node, NULL);
+    ED_node_set_active(CTX_data_main(C), NULL, user->ntree, user->node, NULL);
     ct->texture = NULL;
 
     /* Not totally sure if we should also change selection? */
@@ -457,7 +449,7 @@ static void template_texture_select(bContext *C, void *user_p, void *UNUSED(arg)
   }
   if (user->ptr.data) {
     texptr = RNA_property_pointer_get(&user->ptr, user->prop);
-    tex = (RNA_struct_is_a(texptr.type, &RNA_Texture)) ? texptr.data : NULL;
+    tex = RNA_struct_is_a(texptr.type, &RNA_Texture) ? texptr.data : NULL;
 
     ct->texture = tex;
 
@@ -661,7 +653,6 @@ static void template_texture_show(bContext *C, void *data_p, void *prop_p)
   }
 }
 
-/* Button to quickly show texture in Properties Editor texture tab. */
 void uiTemplateTextureShow(uiLayout *layout, const bContext *C, PointerRNA *ptr, PropertyRNA *prop)
 {
   /* Only show the button if there is actually a texture assigned. */

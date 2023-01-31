@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup collada
@@ -128,7 +114,7 @@ int ArmatureImporter::create_bone(SkinInfo *skin,
       Object *ob_arm = skin->BKE_armature_from_object();
       if (ob_arm) {
         float invmat[4][4];
-        invert_m4_m4(invmat, ob_arm->obmat);
+        invert_m4_m4(invmat, ob_arm->object_to_world);
         mul_m4_m4m4(mat, invmat, mat);
       }
 
@@ -204,7 +190,7 @@ int ArmatureImporter::create_bone(SkinInfo *skin,
 
   COLLADAFW::NodePointerArray &children = node->getChildNodes();
 
-  for (unsigned int i = 0; i < children.getCount(); i++) {
+  for (uint i = 0; i < children.getCount(); i++) {
     int cl = create_bone(skin, children[i], bone, children.getCount(), mat, arm, layer_labels);
     if (cl > chain_length) {
       chain_length = cl;
@@ -220,12 +206,6 @@ int ArmatureImporter::create_bone(SkinInfo *skin,
   return chain_length + 1;
 }
 
-/**
- * Collada only knows Joints, hence bones at the end of a bone chain
- * don't have a defined length. This function guesses reasonable
- * tail locations for the affected bones (nodes which don't have any connected child)
- * Hint: The extended_bones set gets populated in ArmatureImporter::create_bone
- */
 void ArmatureImporter::fix_leaf_bone_hierarchy(bArmature *armature,
                                                Bone *bone,
                                                bool fix_orientation)
@@ -325,7 +305,7 @@ void ArmatureImporter::connect_bone_chains(bArmature *armature,
 
   BoneExtended *pbe = extended_bones[parentbone->name];
   if (dominant_child != nullptr) {
-    /* Found a valid chain. Now connect current bone with that chain.*/
+    /* Found a valid chain. Now connect current bone with that chain. */
     EditBone *pebone = bc_get_edit_bone(armature, parentbone->name);
     EditBone *cebone = bc_get_edit_bone(armature, dominant_child->get_name());
     if (pebone && !(cebone->flag & BONE_CONNECTED)) {
@@ -341,7 +321,7 @@ void ArmatureImporter::connect_bone_chains(bArmature *armature,
 
       if (len_squared_v3(vec) > MINIMUM_BONE_LENGTH) {
         copy_v3_v3(pebone->tail, cebone->head);
-        pbe->set_tail(pebone->tail); /* to make fix_leafbone happy ...*/
+        pbe->set_tail(pebone->tail); /* To make fix_leafbone happy. */
         if (pbe && pbe->get_chain_length() >= this->import_settings->min_chain_length) {
 
           BoneExtended *cbe = extended_bones[cebone->name];
@@ -728,7 +708,7 @@ void ArmatureImporter::set_pose(Object *ob_arm,
 
     copy_m4_m4(mat, obmat);
     float invObmat[4][4];
-    invert_m4_m4(invObmat, ob_arm->obmat);
+    invert_m4_m4(invObmat, ob_arm->object_to_world);
     mul_m4_m4m4(pchan->pose_mat, invObmat, mat);
   }
 
@@ -739,7 +719,7 @@ void ArmatureImporter::set_pose(Object *ob_arm,
 #endif
 
   COLLADAFW::NodePointerArray &children = root_node->getChildNodes();
-  for (unsigned int i = 0; i < children.getCount(); i++) {
+  for (uint i = 0; i < children.getCount(); i++) {
     set_pose(ob_arm, children[i], bone_name, mat);
   }
 }
@@ -747,7 +727,7 @@ void ArmatureImporter::set_pose(Object *ob_arm,
 bool ArmatureImporter::node_is_decomposed(const COLLADAFW::Node *node)
 {
   const COLLADAFW::TransformationPointerArray &nodeTransforms = node->getTransformations();
-  for (unsigned int i = 0; i < nodeTransforms.getCount(); i++) {
+  for (uint i = 0; i < nodeTransforms.getCount(); i++) {
     COLLADAFW::Transformation *transform = nodeTransforms[i];
     COLLADAFW::Transformation::TransformationType tm_type = transform->getTransformationType();
     if (tm_type == COLLADAFW::Transformation::MATRIX) {
@@ -757,11 +737,6 @@ bool ArmatureImporter::node_is_decomposed(const COLLADAFW::Node *node)
   return true;
 }
 
-/**
- * root - if this joint is the top joint in hierarchy, if a joint
- * is a child of a node (not joint), root should be true since
- * this is where we build armature bones from
- */
 void ArmatureImporter::add_root_joint(COLLADAFW::Node *node, Object *parent)
 {
   root_joints.push_back(node);
@@ -786,7 +761,6 @@ void ArmatureImporter::add_root_joint(COLLADAFW::Node *node)
 }
 #endif
 
-/* here we add bones to armatures, having armatures previously created in write_controller */
 void ArmatureImporter::make_armatures(bContext *C, std::vector<Object *> &objects_to_scale)
 {
   Main *bmain = CTX_data_main(C);
@@ -905,7 +879,7 @@ bool ArmatureImporter::write_skin_controller_data(const COLLADAFW::SkinControlle
 
   /* store join inv bind matrix to use it later in armature construction */
   const COLLADAFW::Matrix4Array &inv_bind_mats = data->getInverseBindMatrices();
-  for (unsigned int i = 0; i < data->getJointsCount(); i++) {
+  for (uint i = 0; i < data->getJointsCount(); i++) {
     skin.add_joint(inv_bind_mats[i]);
   }
 
@@ -955,7 +929,7 @@ void ArmatureImporter::make_shape_keys(bContext *C)
     COLLADAFW::UniqueIdArray &morphTargetIds = (*mc)->getMorphTargets();
     COLLADAFW::FloatOrDoubleArray &morphWeights = (*mc)->getMorphWeights();
 
-    /* Prereq: all the geometries must be imported and mesh objects must be made */
+    /* Prerequisite: all the geometries must be imported and mesh objects must be made. */
     Object *source_ob = this->mesh_importer->get_object_by_geom_uid((*mc)->getSource());
 
     if (source_ob) {
@@ -1042,7 +1016,6 @@ void ArmatureImporter::get_rna_path_for_joint(COLLADAFW::Node *node,
   BLI_snprintf(joint_path, count, "pose.bones[\"%s\"]", bone_name_esc);
 }
 
-/* gives a world-space mat */
 bool ArmatureImporter::get_joint_bind_mat(float m[4][4], COLLADAFW::Node *joint)
 {
   std::map<COLLADAFW::UniqueId, SkinInfo>::iterator it;

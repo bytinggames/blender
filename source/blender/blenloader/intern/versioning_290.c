@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup blenloader
@@ -32,11 +18,11 @@
 #include "DNA_cachefile_types.h"
 #include "DNA_collection_types.h"
 #include "DNA_constraint_types.h"
+#include "DNA_curves_types.h"
 #include "DNA_fluid_types.h"
 #include "DNA_genfile.h"
 #include "DNA_gpencil_modifier_types.h"
 #include "DNA_gpencil_types.h"
-#include "DNA_hair_types.h"
 #include "DNA_light_types.h"
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
@@ -80,6 +66,7 @@
 
 #include "BLO_readfile.h"
 #include "readfile.h"
+#include "versioning_common.h"
 
 /* Make preferences read-only, use versioning_userdef.c. */
 #define U (*((const UserDef *)&U))
@@ -117,23 +104,37 @@ static bool can_use_proxy(const Sequence *seq, int psize)
 }
 
 /* image_size is width or height depending what RNA property is converted - X or Y. */
-static void seq_convert_transform_animation(const Scene *scene,
+static void seq_convert_transform_animation(const Sequence *seq,
+                                            const Scene *scene,
                                             const char *path,
-                                            const int image_size)
+                                            const int image_size,
+                                            const int scene_size)
 {
   if (scene->adt == NULL || scene->adt->action == NULL) {
     return;
   }
 
-  FCurve *fcu = BKE_fcurve_find(&scene->adt->action->curves, path, 0);
-  if (fcu != NULL && !BKE_fcurve_is_empty(fcu)) {
-    BezTriple *bezt = fcu->bezt;
-    for (int i = 0; i < fcu->totvert; i++, bezt++) {
-      /* Same math as with old_image_center_*, but simplified. */
-      bezt->vec[0][1] = image_size / 2 + bezt->vec[0][1] - scene->r.xsch / 2;
-      bezt->vec[1][1] = image_size / 2 + bezt->vec[1][1] - scene->r.xsch / 2;
-      bezt->vec[2][1] = image_size / 2 + bezt->vec[2][1] - scene->r.xsch / 2;
+  /* Hardcoded legacy bit-flags which has been removed. */
+  const uint32_t use_transform_flag = (1 << 16);
+  const uint32_t use_crop_flag = (1 << 17);
+
+  /* Convert offset animation, but only if crop is not used. */
+  if ((seq->flag & use_transform_flag) != 0 && (seq->flag & use_crop_flag) == 0) {
+    FCurve *fcu = BKE_fcurve_find(&scene->adt->action->curves, path, 0);
+    if (fcu != NULL && !BKE_fcurve_is_empty(fcu)) {
+      BezTriple *bezt = fcu->bezt;
+      for (int i = 0; i < fcu->totvert; i++, bezt++) {
+        /* Same math as with old_image_center_*, but simplified. */
+        bezt->vec[0][1] = (image_size - scene_size) / 2 + bezt->vec[0][1];
+        bezt->vec[1][1] = (image_size - scene_size) / 2 + bezt->vec[1][1];
+        bezt->vec[2][1] = (image_size - scene_size) / 2 + bezt->vec[2][1];
+      }
     }
+  }
+  else { /* Else, remove offset animation. */
+    FCurve *fcu = BKE_fcurve_find(&scene->adt->action->curves, path, 0);
+    BLI_remlink(&scene->adt->action->curves, fcu);
+    BKE_fcurve_free(fcu);
   }
 }
 
@@ -155,11 +156,11 @@ static void seq_convert_transform_crop(const Scene *scene,
   int image_size_x = scene->r.xsch;
   int image_size_y = scene->r.ysch;
 
-  /* Hardcoded legacy bit-flags which has been removed. */
+  /* Hard-coded legacy bit-flags which has been removed. */
   const uint32_t use_transform_flag = (1 << 16);
   const uint32_t use_crop_flag = (1 << 17);
 
-  const StripElem *s_elem = SEQ_render_give_stripelem(seq, seq->start);
+  const StripElem *s_elem = seq->strip->stripdata;
   if (s_elem != NULL) {
     image_size_x = s_elem->orig_width;
     image_size_y = s_elem->orig_height;
@@ -231,18 +232,15 @@ static void seq_convert_transform_crop(const Scene *scene,
   t->xofs = old_image_center_x - scene->r.xsch / 2;
   t->yofs = old_image_center_y - scene->r.ysch / 2;
 
-  /* Convert offset animation, but only if crop is not used. */
-  if ((seq->flag & use_transform_flag) != 0 && (seq->flag & use_crop_flag) == 0) {
-    char name_esc[(sizeof(seq->name) - 2) * 2], *path;
-    BLI_str_escape(name_esc, seq->name + 2, sizeof(name_esc));
+  char name_esc[(sizeof(seq->name) - 2) * 2], *path;
+  BLI_str_escape(name_esc, seq->name + 2, sizeof(name_esc));
 
-    path = BLI_sprintfN("sequence_editor.sequences_all[\"%s\"].transform.offset_x", name_esc);
-    seq_convert_transform_animation(scene, path, image_size_x);
-    MEM_freeN(path);
-    path = BLI_sprintfN("sequence_editor.sequences_all[\"%s\"].transform.offset_y", name_esc);
-    seq_convert_transform_animation(scene, path, image_size_y);
-    MEM_freeN(path);
-  }
+  path = BLI_sprintfN("sequence_editor.sequences_all[\"%s\"].transform.offset_x", name_esc);
+  seq_convert_transform_animation(seq, scene, path, image_size_x, scene->r.xsch);
+  MEM_freeN(path);
+  path = BLI_sprintfN("sequence_editor.sequences_all[\"%s\"].transform.offset_y", name_esc);
+  seq_convert_transform_animation(seq, scene, path, image_size_y, scene->r.ysch);
+  MEM_freeN(path);
 
   seq->flag &= ~use_transform_flag;
   seq->flag &= ~use_crop_flag;
@@ -287,7 +285,7 @@ static void seq_convert_transform_crop_2(const Scene *scene,
                                          Sequence *seq,
                                          const eSpaceSeq_Proxy_RenderSize render_size)
 {
-  const StripElem *s_elem = SEQ_render_give_stripelem(seq, seq->start);
+  const StripElem *s_elem = seq->strip->stripdata;
   if (s_elem == NULL) {
     return;
   }
@@ -349,8 +347,10 @@ static void seq_convert_transform_crop_lb_2(const Scene *scene,
   }
 }
 
-static void seq_update_meta_disp_range(Editing *ed)
+static void seq_update_meta_disp_range(Scene *scene)
 {
+  Editing *ed = SEQ_editing_get(scene);
+
   if (ed == NULL) {
     return;
   }
@@ -358,13 +358,13 @@ static void seq_update_meta_disp_range(Editing *ed)
   LISTBASE_FOREACH_BACKWARD (MetaStack *, ms, &ed->metastack) {
     /* Update ms->disp_range from meta. */
     if (ms->disp_range[0] == ms->disp_range[1]) {
-      copy_v2_v2_int(ms->disp_range, &ms->parseq->startdisp);
+      ms->disp_range[0] = SEQ_time_left_handle_frame_get(scene, ms->parseq);
+      ms->disp_range[1] = SEQ_time_right_handle_frame_get(scene, ms->parseq);
     }
 
     /* Update meta strip endpoints. */
-    SEQ_transform_set_left_handle_frame(ms->parseq, ms->disp_range[0]);
-    SEQ_transform_set_right_handle_frame(ms->parseq, ms->disp_range[1]);
-    SEQ_transform_fix_single_image_seq_offsets(ms->parseq);
+    SEQ_time_left_handle_frame_set(scene, ms->parseq, ms->disp_range[0]);
+    SEQ_time_right_handle_frame_set(scene, ms->parseq, ms->disp_range[1]);
 
     /* Recalculate effects using meta strip. */
     LISTBASE_FOREACH (Sequence *, seq, ms->oldbasep) {
@@ -593,34 +593,8 @@ void do_versions_after_linking_290(Main *bmain, ReportList *UNUSED(reports))
      *
      * To play safe we move all the inputs beyond 18 to their rightful new place.
      * In case users are doing unexpected things with not-really supported keyframeable channels.
-     *
-     * The for loop for the input ids is at the top level otherwise we lose the animation
-     * keyframe data.
      */
-    for (int input_id = 21; input_id >= 18; input_id--) {
-      FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-        if (ntree->type == NTREE_SHADER) {
-          LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
-            if (node->type != SH_NODE_BSDF_PRINCIPLED) {
-              continue;
-            }
-
-            const size_t node_name_length = strlen(node->name);
-            const size_t node_name_escaped_max_length = (node_name_length * 2);
-            char *node_name_escaped = MEM_mallocN(node_name_escaped_max_length + 1,
-                                                  "escaped name");
-            BLI_str_escape(node_name_escaped, node->name, node_name_escaped_max_length);
-            char *rna_path_prefix = BLI_sprintfN("nodes[\"%s\"].inputs", node_name_escaped);
-
-            BKE_animdata_fix_paths_rename_all_ex(
-                bmain, id, rna_path_prefix, NULL, NULL, input_id, input_id + 1, false);
-            MEM_freeN(rna_path_prefix);
-            MEM_freeN(node_name_escaped);
-          }
-        }
-      }
-      FOREACH_NODETREE_END;
-    }
+    version_node_socket_index_animdata(bmain, NTREE_SHADER, SH_NODE_BSDF_PRINCIPLED, 18, 1, 22);
   }
 
   /* Convert all Multires displacement to Catmull-Clark subdivision limit surface. */
@@ -675,7 +649,7 @@ void do_versions_after_linking_290(Main *bmain, ReportList *UNUSED(reports))
 
   if (!MAIN_VERSION_ATLEAST(bmain, 293, 16)) {
     LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
-      seq_update_meta_disp_range(SEQ_editing_get(scene, false));
+      seq_update_meta_disp_range(scene);
     }
 
     /* Add a separate socket for Grid node X and Y size. */
@@ -729,8 +703,10 @@ static void panels_remove_x_closed_flag_recursive(Panel *panel)
 static void do_versions_point_attributes(CustomData *pdata)
 {
   /* Change to generic named float/float3 attributes. */
-  const int CD_LOCATION = 43;
-  const int CD_RADIUS = 44;
+  enum {
+    CD_LOCATION = 43,
+    CD_RADIUS = 44,
+  };
 
   for (int i = 0; i < pdata->totlayer; i++) {
     CustomDataLayer *layer = &pdata->layers[i];
@@ -817,33 +793,6 @@ static void do_versions_strip_cache_settings_recursive(const ListBase *seqbase)
   }
 }
 
-static void version_node_socket_name(bNodeTree *ntree,
-                                     const int node_type,
-                                     const char *old_name,
-                                     const char *new_name)
-{
-  LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
-    if (node->type == node_type) {
-      LISTBASE_FOREACH (bNodeSocket *, socket, &node->inputs) {
-        if (STREQ(socket->name, old_name)) {
-          strcpy(socket->name, new_name);
-        }
-        if (STREQ(socket->identifier, old_name)) {
-          strcpy(socket->identifier, new_name);
-        }
-      }
-      LISTBASE_FOREACH (bNodeSocket *, socket, &node->outputs) {
-        if (STREQ(socket->name, old_name)) {
-          strcpy(socket->name, new_name);
-        }
-        if (STREQ(socket->identifier, old_name)) {
-          strcpy(socket->identifier, new_name);
-        }
-      }
-    }
-  }
-}
-
 static void version_node_join_geometry_for_multi_input_socket(bNodeTree *ntree)
 {
   LISTBASE_FOREACH_MUTABLE (bNodeLink *, link, &ntree->links) {
@@ -861,26 +810,6 @@ static void version_node_join_geometry_for_multi_input_socket(bNodeTree *ntree)
   }
 }
 
-static ARegion *do_versions_add_region_if_not_found(ListBase *regionbase,
-                                                    int region_type,
-                                                    const char *name,
-                                                    int link_after_region_type)
-{
-  ARegion *link_after_region = NULL;
-  LISTBASE_FOREACH (ARegion *, region, regionbase) {
-    if (region->regiontype == region_type) {
-      return NULL;
-    }
-    if (region->regiontype == link_after_region_type) {
-      link_after_region = region;
-    }
-  }
-  ARegion *new_region = MEM_callocN(sizeof(ARegion), name);
-  new_region->regiontype = region_type;
-  BLI_insertlinkafter(regionbase, link_after_region, new_region);
-  return new_region;
-}
-
 /* NOLINTNEXTLINE: readability-function-size */
 void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
 {
@@ -889,21 +818,21 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
   if (MAIN_VERSION_ATLEAST(bmain, 290, 2) && MAIN_VERSION_OLDER(bmain, 291, 1)) {
     /* In this range, the extrude manifold could generate meshes with degenerated face. */
     LISTBASE_FOREACH (Mesh *, me, &bmain->meshes) {
-      for (MPoly *mp = me->mpoly, *mp_end = mp + me->totpoly; mp < mp_end; mp++) {
+      for (const MPoly *mp = BKE_mesh_polys(me), *mp_end = mp + me->totpoly; mp < mp_end; mp++) {
         if (mp->totloop == 2) {
           bool changed;
           BKE_mesh_validate_arrays(me,
-                                   me->mvert,
+                                   BKE_mesh_verts_for_write(me),
                                    me->totvert,
-                                   me->medge,
+                                   BKE_mesh_edges_for_write(me),
                                    me->totedge,
-                                   me->mface,
+                                   (MFace *)CustomData_get_layer(&me->fdata, CD_MFACE),
                                    me->totface,
-                                   me->mloop,
+                                   BKE_mesh_loops_for_write(me),
                                    me->totloop,
-                                   me->mpoly,
+                                   BKE_mesh_polys_for_write(me),
                                    me->totpoly,
-                                   me->dvert,
+                                   BKE_mesh_deform_verts_for_write(me),
                                    false,
                                    true,
                                    &changed);
@@ -919,7 +848,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       short id_codes[] = {ID_BR, ID_PAL};
       for (int i = 0; i < ARRAY_SIZE(id_codes); i++) {
         ListBase *lb = which_libbase(bmain, id_codes[i]);
-        BKE_main_id_repair_duplicate_names_listbase(lb);
+        BKE_main_id_repair_duplicate_names_listbase(bmain, lb);
       }
     }
 
@@ -996,7 +925,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       for (Object *object = bmain->objects.first; object != NULL; object = object->id.next) {
         LISTBASE_FOREACH (ModifierData *, md, &object->modifiers) {
           if (md->mode & eModifierMode_Expanded_DEPRECATED) {
-            md->ui_expand_flag = 1;
+            md->ui_expand_flag = UI_PANEL_DATA_EXPAND_ROOT;
           }
           else {
             md->ui_expand_flag = 0;
@@ -1024,7 +953,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       for (Object *object = bmain->objects.first; object != NULL; object = object->id.next) {
         LISTBASE_FOREACH (bConstraint *, con, &object->constraints) {
           if (con->flag & CONSTRAINT_EXPAND_DEPRECATED) {
-            con->ui_expand_flag = 1;
+            con->ui_expand_flag = UI_PANEL_DATA_EXPAND_ROOT;
           }
           else {
             con->ui_expand_flag = 0;
@@ -1038,7 +967,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       for (Object *object = bmain->objects.first; object != NULL; object = object->id.next) {
         LISTBASE_FOREACH (GpencilModifierData *, md, &object->greasepencil_modifiers) {
           if (md->mode & eGpencilModifierMode_Expanded_DEPRECATED) {
-            md->ui_expand_flag = 1;
+            md->ui_expand_flag = UI_PANEL_DATA_EXPAND_ROOT;
           }
           else {
             md->ui_expand_flag = 0;
@@ -1052,7 +981,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       for (Object *object = bmain->objects.first; object != NULL; object = object->id.next) {
         LISTBASE_FOREACH (ShaderFxData *, fx, &object->shader_fx) {
           if (fx->mode & eShaderFxMode_Expanded_DEPRECATED) {
-            fx->ui_expand_flag = 1;
+            fx->ui_expand_flag = UI_PANEL_DATA_EXPAND_ROOT;
           }
           else {
             fx->ui_expand_flag = 0;
@@ -1127,8 +1056,6 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
           if (md->type == eModifierType_MeshSequenceCache) {
             MeshSeqCacheModifierData *mcmd = (MeshSeqCacheModifierData *)md;
             mcmd->velocity_scale = 1.0f;
-            mcmd->vertex_velocities = NULL;
-            mcmd->num_vertices = 0;
           }
         }
       }
@@ -1183,10 +1110,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
-    /* Hair and PointCloud attributes. */
-    for (Hair *hair = bmain->hairs.first; hair != NULL; hair = hair->id.next) {
-      do_versions_point_attributes(&hair->pdata);
-    }
+    /* PointCloud attributes. */
     for (PointCloud *pointcloud = bmain->pointclouds.first; pointcloud != NULL;
          pointcloud = pointcloud->id.next) {
       do_versions_point_attributes(&pointcloud->pdata);
@@ -1458,7 +1382,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
-    /* Replace object hidden filter with inverted object visible filter.  */
+    /* Replace object hidden filter with inverted object visible filter. */
     LISTBASE_FOREACH (bScreen *, screen, &bmain->screens) {
       LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
         LISTBASE_FOREACH (SpaceLink *, space, &area->spacedata) {
@@ -1485,10 +1409,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
-    /* Hair and PointCloud attributes names. */
-    LISTBASE_FOREACH (Hair *, hair, &bmain->hairs) {
-      do_versions_point_attribute_names(&hair->pdata);
-    }
+    /* PointCloud attributes names. */
     LISTBASE_FOREACH (PointCloud *, pointcloud, &bmain->pointclouds) {
       do_versions_point_attribute_names(&pointcloud->pdata);
     }
@@ -1527,7 +1448,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
         view_layer->eevee.render_passes &= ~EEVEE_RENDER_PASS_UNUSED_8;
       }
 
-      /* Rename Renderlayer Socket `VolumeScatterCol` to `VolumeDir` */
+      /* Rename Render-layer Socket `VolumeScatterCol` to `VolumeDir`. */
       if (scene->nodetree) {
         LISTBASE_FOREACH (bNode *, node, &scene->nodetree->nodes) {
           if (node->type == CMP_NODE_R_LAYERS) {
@@ -1566,8 +1487,8 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
         LISTBASE_FOREACH (SpaceLink *, sl, &area->spacedata) {
           if (sl->spacetype == SPACE_SEQ) {
             SpaceSeq *sseq = (SpaceSeq *)sl;
-            sseq->flag |= (SEQ_SHOW_STRIP_OVERLAY | SEQ_SHOW_STRIP_NAME | SEQ_SHOW_STRIP_SOURCE |
-                           SEQ_SHOW_STRIP_DURATION);
+            sseq->flag |= (SEQ_SHOW_OVERLAY | SEQ_TIMELINE_SHOW_STRIP_NAME |
+                           SEQ_TIMELINE_SHOW_STRIP_SOURCE | SEQ_TIMELINE_SHOW_STRIP_DURATION);
           }
         }
       }
@@ -1578,7 +1499,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
     LISTBASE_FOREACH (bNodeTree *, ntree, &bmain->nodetrees) {
       LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
         if (STREQ(node->idname, "GeometryNodeRandomAttribute")) {
-          STRNCPY(node->idname, "GeometryNodeAttributeRandomize");
+          STRNCPY(node->idname, "GeometryLegacyNodeAttributeRandomize");
         }
       }
     }
@@ -1591,27 +1512,6 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 292, 9)) {
-    FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-      if (ntree->type == NTREE_GEOMETRY) {
-        LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
-          if (node->type == GEO_NODE_ATTRIBUTE_MATH && node->storage == NULL) {
-            const int old_use_attibute_a = (1 << 0);
-            const int old_use_attibute_b = (1 << 1);
-            NodeAttributeMath *data = MEM_callocN(sizeof(NodeAttributeMath), "NodeAttributeMath");
-            data->operation = NODE_MATH_ADD;
-            data->input_type_a = (node->custom2 & old_use_attibute_a) ?
-                                     GEO_NODE_ATTRIBUTE_INPUT_ATTRIBUTE :
-                                     GEO_NODE_ATTRIBUTE_INPUT_FLOAT;
-            data->input_type_b = (node->custom2 & old_use_attibute_b) ?
-                                     GEO_NODE_ATTRIBUTE_INPUT_ATTRIBUTE :
-                                     GEO_NODE_ATTRIBUTE_INPUT_FLOAT;
-            node->storage = data;
-          }
-        }
-      }
-    }
-    FOREACH_NODETREE_END;
-
     /* Default properties editors to auto outliner sync. */
     LISTBASE_FOREACH (bScreen *, screen, &bmain->screens) {
       LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
@@ -1658,7 +1558,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
     }
 
     LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
-      Editing *ed = SEQ_editing_get(scene, false);
+      Editing *ed = SEQ_editing_get(scene);
       if (ed == NULL) {
         continue;
       }
@@ -1688,8 +1588,8 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
   if (!MAIN_VERSION_ATLEAST(bmain, 293, 1)) {
     FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
       if (ntree->type == NTREE_GEOMETRY) {
-        version_node_socket_name(ntree, GEO_NODE_BOOLEAN, "Geometry A", "Geometry 1");
-        version_node_socket_name(ntree, GEO_NODE_BOOLEAN, "Geometry B", "Geometry 2");
+        version_node_socket_name(ntree, GEO_NODE_MESH_BOOLEAN, "Geometry A", "Geometry 1");
+        version_node_socket_name(ntree, GEO_NODE_MESH_BOOLEAN, "Geometry B", "Geometry 2");
       }
     }
     FOREACH_NODETREE_END;
@@ -1710,8 +1610,8 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
     }
   }
 
-  if ((!MAIN_VERSION_ATLEAST(bmain, 292, 14)) ||
-      ((bmain->versionfile == 293) && (!MAIN_VERSION_ATLEAST(bmain, 293, 1)))) {
+  if (!MAIN_VERSION_ATLEAST(bmain, 292, 14) ||
+      ((bmain->versionfile == 293) && !MAIN_VERSION_ATLEAST(bmain, 293, 1))) {
     FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
       if (ntree->type != NTREE_GEOMETRY) {
         continue;
@@ -1749,39 +1649,6 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
     }
   }
 
-  if (!MAIN_VERSION_ATLEAST(bmain, 293, 3)) {
-    FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-      if (ntree->type != NTREE_GEOMETRY) {
-        continue;
-      }
-      LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
-        if (node->type == GEO_NODE_POINT_INSTANCE && node->storage == NULL) {
-          NodeGeometryPointInstance *data = (NodeGeometryPointInstance *)MEM_callocN(
-              sizeof(NodeGeometryPointInstance), __func__);
-          data->instance_type = node->custom1;
-          data->flag = (node->custom2 ? 0 : GEO_NODE_POINT_INSTANCE_WHOLE_COLLECTION);
-          node->storage = data;
-        }
-      }
-    }
-    FOREACH_NODETREE_END;
-  }
-
-  if (!MAIN_VERSION_ATLEAST(bmain, 293, 4)) {
-    /* Add support for all operations to the "Attribute Math" node. */
-    FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-      if (ntree->type == NTREE_GEOMETRY) {
-        LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
-          if (node->type == GEO_NODE_ATTRIBUTE_MATH) {
-            NodeAttributeMath *data = (NodeAttributeMath *)node->storage;
-            data->input_type_c = GEO_NODE_ATTRIBUTE_INPUT_ATTRIBUTE;
-          }
-        }
-      }
-    }
-    FOREACH_NODETREE_END;
-  }
-
   if (!MAIN_VERSION_ATLEAST(bmain, 293, 5)) {
     /* Change Nishita sky model Altitude unit. */
     FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
@@ -1801,13 +1668,8 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
     LISTBASE_FOREACH (bScreen *, screen, &bmain->screens) {
       LISTBASE_FOREACH (ScrArea *, area, &screen->areabase) {
         LISTBASE_FOREACH (SpaceLink *, space, &area->spacedata) {
-          /* UV/Image Max resolution images in image editor. */
-          if (space->spacetype == SPACE_IMAGE) {
-            SpaceImage *sima = (SpaceImage *)space;
-            sima->iuser.flag |= IMA_SHOW_MAX_RESOLUTION;
-          }
           /* Enable Outliner render visibility column. */
-          else if (space->spacetype == SPACE_OUTLINER) {
+          if (space->spacetype == SPACE_OUTLINER) {
             SpaceOutliner *space_outliner = (SpaceOutliner *)space;
             space_outliner->show_restrict_flags |= SO_RESTRICT_RENDER;
           }
@@ -1825,24 +1687,6 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
     FOREACH_NODETREE_END;
   }
 
-  if (!MAIN_VERSION_ATLEAST(bmain, 293, 8)) {
-    FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-      if (ntree->type != NTREE_GEOMETRY) {
-        continue;
-      }
-      LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
-        if (node->type == GEO_NODE_ATTRIBUTE_RANDOMIZE && node->storage == NULL) {
-          NodeAttributeRandomize *data = (NodeAttributeRandomize *)MEM_callocN(
-              sizeof(NodeAttributeRandomize), __func__);
-          data->data_type = node->custom1;
-          data->operation = GEO_NODE_ATTRIBUTE_RANDOMIZE_REPLACE_CREATE;
-          node->storage = data;
-        }
-      }
-    }
-    FOREACH_NODETREE_END;
-  }
-
   if (!MAIN_VERSION_ATLEAST(bmain, 293, 9)) {
     if (!DNA_struct_elem_find(fd->filesdna, "SceneEEVEE", "float", "bokeh_overblur")) {
       LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
@@ -1852,7 +1696,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
-    /* Add subpanels for FModifiers, which requires a field to store expansion. */
+    /* Add sub-panels for FModifiers, which requires a field to store expansion. */
     if (!DNA_struct_elem_find(fd->filesdna, "FModifier", "short", "ui_expand_flag")) {
       LISTBASE_FOREACH (bAction *, act, &bmain->actions) {
         LISTBASE_FOREACH (FCurve *, fcu, &act->curves) {
@@ -1864,23 +1708,9 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
         }
       }
     }
-
-    FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-      if (ntree->type == NTREE_GEOMETRY) {
-        version_node_socket_name(ntree, GEO_NODE_ATTRIBUTE_PROXIMITY, "Result", "Distance");
-      }
-    }
-    FOREACH_NODETREE_END;
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 293, 10)) {
-    FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-      if (ntree->type == NTREE_GEOMETRY) {
-        version_node_socket_name(ntree, GEO_NODE_ATTRIBUTE_PROXIMITY, "Location", "Position");
-      }
-    }
-    FOREACH_NODETREE_END;
-
     LISTBASE_FOREACH (Scene *, scene, &bmain->scenes) {
       /* Fix old scene with too many samples that were not being used.
        * Now they are properly used and might produce a huge slowdown.
@@ -1966,16 +1796,6 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
         light->volume_fac = 1.0f;
       }
     }
-
-    LISTBASE_FOREACH (bNodeTree *, ntree, &bmain->nodetrees) {
-      if (ntree->type == NTREE_GEOMETRY) {
-        LISTBASE_FOREACH (bNode *, node, &ntree->nodes) {
-          if (node->type == GEO_NODE_ATTRIBUTE_FILL) {
-            node->custom2 = ATTR_DOMAIN_AUTO;
-          }
-        }
-      }
-    }
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 293, 15)) {
@@ -2020,13 +1840,6 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
   }
 
   if (!MAIN_VERSION_ATLEAST(bmain, 293, 18)) {
-    FOREACH_NODETREE_BEGIN (bmain, ntree, id) {
-      if (ntree->type == NTREE_GEOMETRY) {
-        version_node_socket_name(ntree, GEO_NODE_VOLUME_TO_MESH, "Grid", "Density");
-      }
-    }
-    FOREACH_NODETREE_END;
-
     if (!DNA_struct_elem_find(fd->filesdna, "bArmature", "float", "axes_position")) {
       /* Convert the axes draw position to its old default (tip of bone). */
       LISTBASE_FOREACH (struct bArmature *, arm, &bmain->armatures) {
@@ -2034,7 +1847,7 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
       }
     }
 
-    /* Initialize the spread parameter for area lights*/
+    /* Initialize the spread parameter for area lights. */
     if (!DNA_struct_elem_find(fd->filesdna, "Lamp", "float", "area_spread")) {
       LISTBASE_FOREACH (Light *, la, &bmain->lights) {
         la->area_spread = DEG2RADF(180.0f);
@@ -2066,6 +1879,24 @@ void blo_do_versions_290(FileData *fd, Library *UNUSED(lib), Main *bmain)
           }
         }
       }
+    }
+  }
+
+  /* Set default value for the new bisect_threshold parameter in the mirror modifier. */
+  if (!MAIN_VERSION_ATLEAST(bmain, 293, 19)) {
+    LISTBASE_FOREACH (Object *, ob, &bmain->objects) {
+      LISTBASE_FOREACH (ModifierData *, md, &ob->modifiers) {
+        if (md->type == eModifierType_Mirror) {
+          MirrorModifierData *mmd = (MirrorModifierData *)md;
+          /* This was the previous hard-coded value. */
+          mmd->bisect_threshold = 0.001f;
+        }
+      }
+    }
+
+    LISTBASE_FOREACH (Curve *, cu, &bmain->curves) {
+      /* Turn on clamping as this was implicit before. */
+      cu->flag |= CU_PATH_CLAMP;
     }
   }
 

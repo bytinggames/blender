@@ -1,24 +1,7 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- *
- * - Blender Foundation, 2003-2009
- * - Peter Schlaile <peter [at] schlaile [dot] de> 2005/2006
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved.
+ *           2003-2009 Blender Foundation.
+ *           2005-2006 Peter Schlaile <peter [at] schlaile [dot] de> */
 
 /** \file
  * \ingroup bke
@@ -33,19 +16,22 @@
 #include "DNA_scene_types.h"
 #include "DNA_sequence_types.h"
 
-#include "BLI_listbase.h"
-#include "BLI_path_util.h"
-#include "BLI_string.h"
-#include "BLI_utildefines.h"
+#include "BLI_blenlib.h"
 
+#include "BKE_animsys.h"
 #include "BKE_image.h"
 #include "BKE_main.h"
 #include "BKE_scene.h"
 
+#include "SEQ_animation.h"
+#include "SEQ_channels.h"
+#include "SEQ_edit.h"
 #include "SEQ_iterator.h"
 #include "SEQ_relations.h"
+#include "SEQ_render.h"
 #include "SEQ_select.h"
 #include "SEQ_sequencer.h"
+#include "SEQ_time.h"
 #include "SEQ_utils.h"
 
 #include "IMB_imbuf.h"
@@ -53,55 +39,8 @@
 
 #include "multiview.h"
 #include "proxy.h"
+#include "sequencer.h"
 #include "utils.h"
-
-void SEQ_sort(Scene *scene)
-{
-  /* all strips together per kind, and in order of y location ("machine") */
-  ListBase seqbase, effbase;
-  Editing *ed = SEQ_editing_get(scene, false);
-  Sequence *seq, *seqt;
-
-  if (ed == NULL) {
-    return;
-  }
-
-  BLI_listbase_clear(&seqbase);
-  BLI_listbase_clear(&effbase);
-
-  while ((seq = BLI_pophead(ed->seqbasep))) {
-
-    if (seq->type & SEQ_TYPE_EFFECT) {
-      seqt = effbase.first;
-      while (seqt) {
-        if (seqt->machine >= seq->machine) {
-          BLI_insertlinkbefore(&effbase, seqt, seq);
-          break;
-        }
-        seqt = seqt->next;
-      }
-      if (seqt == NULL) {
-        BLI_addtail(&effbase, seq);
-      }
-    }
-    else {
-      seqt = seqbase.first;
-      while (seqt) {
-        if (seqt->machine >= seq->machine) {
-          BLI_insertlinkbefore(&seqbase, seqt, seq);
-          break;
-        }
-        seqt = seqt->next;
-      }
-      if (seqt == NULL) {
-        BLI_addtail(&seqbase, seq);
-      }
-    }
-  }
-
-  BLI_movelisttolist(&seqbase, &effbase);
-  *(ed->seqbasep) = seqbase;
-}
 
 typedef struct SeqUniqueInfo {
   Sequence *seq;
@@ -128,15 +67,17 @@ static void seqbase_unique_name(ListBase *seqbasep, SeqUniqueInfo *sui)
   }
 }
 
-static int seqbase_unique_name_recursive_fn(Sequence *seq, void *arg_pt)
+static bool seqbase_unique_name_recursive_fn(Sequence *seq, void *arg_pt)
 {
   if (seq->seqbase.first) {
     seqbase_unique_name(&seq->seqbase, (SeqUniqueInfo *)arg_pt);
   }
-  return 1;
+  return true;
 }
 
-void SEQ_sequence_base_unique_name_recursive(ListBase *seqbasep, Sequence *seq)
+void SEQ_sequence_base_unique_name_recursive(struct Scene *scene,
+                                             ListBase *seqbasep,
+                                             Sequence *seq)
 {
   SeqUniqueInfo sui;
   char *dot;
@@ -160,10 +101,10 @@ void SEQ_sequence_base_unique_name_recursive(ListBase *seqbasep, Sequence *seq)
   while (sui.match) {
     sui.match = 0;
     seqbase_unique_name(seqbasep, &sui);
-    SEQ_iterator_seqbase_recursive_apply(seqbasep, seqbase_unique_name_recursive_fn, &sui);
+    SEQ_for_each_callback(seqbasep, seqbase_unique_name_recursive_fn, &sui);
   }
 
-  BLI_strncpy(seq->name + 2, sui.name_dest, sizeof(seq->name) - 2);
+  SEQ_edit_sequence_name_set(scene, seq, sui.name_dest);
 }
 
 static const char *give_seqname_by_type(int type)
@@ -238,21 +179,23 @@ const char *SEQ_sequence_give_name(Sequence *seq)
   return name;
 }
 
-ListBase *SEQ_get_seqbase_from_sequence(Sequence *seq, int *r_offset)
+ListBase *SEQ_get_seqbase_from_sequence(Sequence *seq, ListBase **r_channels, int *r_offset)
 {
   ListBase *seqbase = NULL;
 
   switch (seq->type) {
     case SEQ_TYPE_META: {
       seqbase = &seq->seqbase;
-      *r_offset = seq->start;
+      *r_channels = &seq->channels;
+      *r_offset = SEQ_time_start_frame_get(seq);
       break;
     }
     case SEQ_TYPE_SCENE: {
       if (seq->flag & SEQ_SCENE_STRIPS && seq->scene) {
-        Editing *ed = SEQ_editing_get(seq->scene, false);
+        Editing *ed = SEQ_editing_get(seq->scene);
         if (ed) {
           seqbase = &ed->seqbase;
+          *r_channels = &ed->channels;
           *r_offset = seq->scene->r.sfra;
         }
       }
@@ -274,14 +217,14 @@ void seq_open_anim_file(Scene *scene, Sequence *seq, bool openfile)
   const bool is_multiview = (seq->flag & SEQ_USE_VIEWS) != 0 &&
                             (scene->r.scemode & R_MULTIVIEW) != 0;
 
-  if ((seq->anims.first != NULL) && (((StripAnim *)seq->anims.first)->anim != NULL)) {
+  if ((seq->anims.first != NULL) && (((StripAnim *)seq->anims.first)->anim != NULL) && !openfile) {
     return;
   }
 
   /* reset all the previously created anims */
   SEQ_relations_sequence_free_anim(seq);
 
-  BLI_join_dirfile(name, sizeof(name), seq->strip->dir, seq->strip->stripdata->name);
+  BLI_path_join(name, sizeof(name), seq->strip->dir, seq->strip->stripdata->name);
   BLI_path_abs(name, BKE_main_blendfile_path_from_global());
 
   proxy = seq->strip->proxy;
@@ -394,16 +337,19 @@ void seq_open_anim_file(Scene *scene, Sequence *seq, bool openfile)
 
 const Sequence *SEQ_get_topmost_sequence(const Scene *scene, int frame)
 {
-  const Editing *ed = scene->ed;
-  const Sequence *seq, *best_seq = NULL;
-  int best_machine = -1;
+  Editing *ed = scene->ed;
 
   if (!ed) {
     return NULL;
   }
 
+  ListBase *channels = SEQ_channels_displayed_get(ed);
+  const Sequence *seq, *best_seq = NULL;
+  int best_machine = -1;
+
   for (seq = ed->seqbasep->first; seq; seq = seq->next) {
-    if (seq->flag & SEQ_MUTE || seq->startdisp > frame || seq->enddisp <= frame) {
+    if (SEQ_render_is_muted(channels, seq) ||
+        !SEQ_time_strip_intersects_frame(scene, seq, frame)) {
       continue;
     }
     /* Only use strips that generate an image, not ones that combine
@@ -424,47 +370,36 @@ const Sequence *SEQ_get_topmost_sequence(const Scene *scene, int frame)
   return best_seq;
 }
 
-/* in cases where we done know the sequence's listbase */
-ListBase *SEQ_get_seqbase_by_seq(ListBase *seqbase, Sequence *seq)
+ListBase *SEQ_get_seqbase_by_seq(const Scene *scene, Sequence *seq)
 {
-  Sequence *iseq;
-  ListBase *lb = NULL;
+  Editing *ed = SEQ_editing_get(scene);
+  ListBase *main_seqbase = &ed->seqbase;
+  Sequence *seq_meta = seq_sequence_lookup_meta_by_seq(scene, seq);
 
-  for (iseq = seqbase->first; iseq; iseq = iseq->next) {
-    if (seq == iseq) {
-      return seqbase;
-    }
-    if (iseq->seqbase.first && (lb = SEQ_get_seqbase_by_seq(&iseq->seqbase, seq))) {
-      return lb;
-    }
+  if (seq_meta != NULL) {
+    return &seq_meta->seqbase;
   }
-
+  if (BLI_findindex(main_seqbase, seq) >= 0) {
+    return main_seqbase;
+  }
   return NULL;
 }
 
-Sequence *seq_find_metastrip_by_sequence(ListBase *seqbase, Sequence *meta, Sequence *seq)
+Sequence *SEQ_get_meta_by_seqbase(ListBase *seqbase_main, ListBase *meta_seqbase)
 {
-  Sequence *iseq;
+  SeqCollection *strips = SEQ_query_all_strips_recursive(seqbase_main);
 
-  for (iseq = seqbase->first; iseq; iseq = iseq->next) {
-    Sequence *rval;
-
-    if (seq == iseq) {
-      return meta;
-    }
-    if (iseq->seqbase.first &&
-        (rval = seq_find_metastrip_by_sequence(&iseq->seqbase, iseq, seq))) {
-      return rval;
+  Sequence *seq = NULL;
+  SEQ_ITERATOR_FOREACH (seq, strips) {
+    if (seq->type == SEQ_TYPE_META && &seq->seqbase == meta_seqbase) {
+      break;
     }
   }
 
-  return NULL;
+  SEQ_collection_free(strips);
+  return seq;
 }
 
-/**
- * Only use as last resort when the StripElem is available but no the Sequence.
- * (needed for RNA)
- */
 Sequence *SEQ_sequence_from_strip_elem(ListBase *seqbase, StripElem *se)
 {
   Sequence *iseq;
@@ -472,7 +407,7 @@ Sequence *SEQ_sequence_from_strip_elem(ListBase *seqbase, StripElem *se)
   for (iseq = seqbase->first; iseq; iseq = iseq->next) {
     Sequence *seq_found;
     if ((iseq->strip && iseq->strip->stripdata) &&
-        (ARRAY_HAS_ITEM(se, iseq->strip->stripdata, iseq->len))) {
+        ARRAY_HAS_ITEM(se, iseq->strip->stripdata, iseq->len)) {
       break;
     }
     if ((seq_found = SEQ_sequence_from_strip_elem(&iseq->seqbase, se))) {
@@ -521,10 +456,10 @@ void SEQ_alpha_mode_from_file_extension(Sequence *seq)
   }
 }
 
-/* called on draw, needs to be fast,
- * we could cache and use a flag if we want to make checks for file paths resolving for eg. */
-bool SEQ_sequence_has_source(Sequence *seq)
+bool SEQ_sequence_has_source(const Sequence *seq)
 {
+  /* Called on draw, needs to be fast,
+   * we could cache and use a flag if we want to make checks for file paths resolving for eg. */
   switch (seq->type) {
     case SEQ_TYPE_MASK:
       return (seq->mask != NULL);
@@ -582,5 +517,21 @@ void SEQ_set_scale_to_fit(const Sequence *seq,
       transform->scale_x = 1.0f;
       transform->scale_y = 1.0f;
       break;
+  }
+}
+
+void SEQ_ensure_unique_name(Sequence *seq, Scene *scene)
+{
+  char name[SEQ_NAME_MAXSTR];
+
+  BLI_strncpy_utf8(name, seq->name + 2, sizeof(name));
+  SEQ_sequence_base_unique_name_recursive(scene, &scene->ed->seqbase, seq);
+  BKE_animdata_fix_paths_rename(
+      &scene->id, scene->adt, NULL, "sequence_editor.sequences_all", name, seq->name + 2, 0, 0, 0);
+
+  if (seq->type == SEQ_TYPE_META) {
+    LISTBASE_FOREACH (Sequence *, seq_child, &seq->seqbase) {
+      SEQ_ensure_unique_name(seq_child, scene);
+    }
   }
 }

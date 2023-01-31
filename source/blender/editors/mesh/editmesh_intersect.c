@@ -1,18 +1,4 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 /** \file
  * \ingroup edmesh
@@ -57,7 +43,7 @@
 #define USE_NET_ISLAND_CONNECT
 
 /**
- * Compare selected with its self.
+ * Compare selected with itself.
  */
 static int bm_face_isect_self(BMFace *f, void *UNUSED(user_data))
 {
@@ -113,11 +99,16 @@ static void edbm_intersect_select(BMEditMesh *em, struct Mesh *me, bool do_selec
           BM_edge_select_set(em->bm, e, true);
         }
       }
+      EDBM_selectmode_flush(em);
     }
   }
 
-  EDBM_mesh_normals_update(em);
-  EDBM_update_generic(me, true, true);
+  EDBM_update(me,
+              &(const struct EDBMUpdate_Params){
+                  .calc_looptri = true,
+                  .calc_normals = true,
+                  .is_destructive = true,
+              });
 }
 
 /* -------------------------------------------------------------------- */
@@ -189,11 +180,12 @@ static int edbm_intersect_exec(bContext *C, wmOperator *op)
     default: /* ISECT_SEPARATE_NONE */
       break;
   }
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   uint objects_len = 0;
   uint isect_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *obedit = objects[ob_index];
     BMEditMesh *em = BKE_editmesh_from_object(obedit);
@@ -359,11 +351,12 @@ static int edbm_intersect_boolean_exec(bContext *C, wmOperator *op)
   bool has_isect;
 
   test_fn = use_swap ? bm_face_isect_pair_swap : bm_face_isect_pair;
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   uint objects_len = 0;
   uint isect_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *obedit = objects[ob_index];
     BMEditMesh *em = BKE_editmesh_from_object(obedit);
@@ -476,7 +469,8 @@ void MESH_OT_intersect_boolean(struct wmOperatorType *ot)
                   false,
                   "Swap",
                   "Use with difference intersection to swap which side is kept");
-  RNA_def_boolean(ot->srna, "use_self", false, "Self", "Do self-union or self-intersection");
+  RNA_def_boolean(
+      ot->srna, "use_self", false, "Self Intersection", "Do self-union or self-intersection");
   RNA_def_float_distance(
       ot->srna, "threshold", 0.000001f, 0.0, 0.01, "Merge Threshold", "", 0.0, 0.001);
   RNA_def_enum(ot->srna,
@@ -823,10 +817,11 @@ static int edbm_face_split_by_edges_exec(bContext *C, wmOperator *UNUSED(op))
 
   BLI_SMALLSTACK_DECLARE(loop_stack, BMLoop *);
 
+  const Scene *scene = CTX_data_scene(C);
   ViewLayer *view_layer = CTX_data_view_layer(C);
   uint objects_len = 0;
   Object **objects = BKE_view_layer_array_from_objects_in_edit_mode_unique_data(
-      view_layer, CTX_wm_view3d(C), &objects_len);
+      scene, view_layer, CTX_wm_view3d(C), &objects_len);
   for (uint ob_index = 0; ob_index < objects_len; ob_index++) {
     Object *obedit = objects[ob_index];
     BMEditMesh *em = BKE_editmesh_from_object(obedit);
@@ -963,8 +958,12 @@ static int edbm_face_split_by_edges_exec(bContext *C, wmOperator *UNUSED(op))
     }
 #endif
 
-    EDBM_mesh_normals_update(em);
-    EDBM_update_generic(obedit->data, true, true);
+    EDBM_update(obedit->data,
+                &(const struct EDBMUpdate_Params){
+                    .calc_looptri = true,
+                    .calc_normals = true,
+                    .is_destructive = true,
+                });
 
 #ifdef USE_NET_ISLAND_CONNECT
     /* we may have remaining isolated regions remaining,
@@ -1068,8 +1067,12 @@ static int edbm_face_split_by_edges_exec(bContext *C, wmOperator *UNUSED(op))
 
       BLI_ghash_free(face_edge_map, NULL, NULL);
 
-      EDBM_mesh_normals_update(em);
-      EDBM_update_generic(obedit->data, true, true);
+      EDBM_update(obedit->data,
+                  &(const struct EDBMUpdate_Params){
+                      .calc_looptri = true,
+                      .calc_normals = true,
+                      .is_destructive = true,
+                  });
     }
 
     BLI_stack_free(edges_loose);

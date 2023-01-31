@@ -1,22 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- * Original author: Benoit Bolsee
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup ikplugin
@@ -47,7 +30,7 @@
 /* ********************** THE IK SOLVER ******************* */
 
 /* allocates PoseTree, and links that to root bone/channel */
-/* Note: detecting the IK chain is duplicate code...
+/* NOTE: detecting the IK chain is duplicate code...
  * in drawarmature.c and in transform_conversions.c */
 static void initialize_posetree(struct Object *UNUSED(ob), bPoseChannel *pchan_tip)
 {
@@ -149,7 +132,7 @@ static void initialize_posetree(struct Object *UNUSED(ob), bPoseChannel *pchan_t
     tree->iterations = MAX2(data->iterations, tree->iterations);
     tree->stretch = tree->stretch && !(data->flag & CONSTRAINT_IK_STRETCH);
 
-    /* skip common pose channels and add remaining*/
+    /* Skip common pose channels and add remaining. */
     size = MIN2(segcount, tree->totchannel);
     a = t = 0;
     while (a < size && t < tree->totchannel) {
@@ -272,8 +255,10 @@ static void where_is_ik_bone(bPoseChannel *pchan,
   pchan->flag |= POSE_DONE;
 }
 
-/* called from within the core BKE_pose_where_is loop, all animsystems and constraints
- * were executed & assigned. Now as last we do an IK pass */
+/**
+ * Called from within the core #BKE_pose_where_is loop, all animation-systems and constraints
+ * were executed & assigned. Now as last we do an IK pass.
+ */
 static void execute_posetree(struct Depsgraph *depsgraph,
                              struct Scene *scene,
                              Object *ob,
@@ -421,7 +406,7 @@ static void execute_posetree(struct Depsgraph *depsgraph,
   }
   copy_v3_v3(rootmat[3], pchan->pose_head);
 
-  mul_m4_m4m4(imat, ob->obmat, rootmat);
+  mul_m4_m4m4(imat, ob->object_to_world, rootmat);
   invert_m4_m4(goalinv, imat);
 
   for (target = tree->targets.first; target; target = target->next) {
@@ -480,7 +465,7 @@ static void execute_posetree(struct Depsgraph *depsgraph,
       /* end effector in world space */
       copy_m4_m4(end_pose, pchan->pose_mat);
       copy_v3_v3(end_pose[3], pchan->pose_tail);
-      mul_m4_series(world_pose, goalinv, ob->obmat, end_pose);
+      mul_m4_series(world_pose, goalinv, ob->object_to_world, end_pose);
 
       /* blend position */
       goalpos[0] = fac * goalpos[0] + mfac * world_pose[3][0];

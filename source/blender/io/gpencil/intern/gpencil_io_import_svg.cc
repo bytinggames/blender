@@ -1,28 +1,12 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2020 Blender Foundation
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2020 Blender Foundation. All rights reserved. */
 
 /** \file
  * \ingroup bgpencil
  */
 
-#include "BLI_float3.hh"
 #include "BLI_math.h"
+#include "BLI_math_vec_types.hh"
 #include "BLI_span.hh"
 
 #include "DNA_gpencil_types.h"
@@ -42,24 +26,24 @@
 #define NANOSVG_ALL_COLOR_KEYWORDS
 #define NANOSVG_IMPLEMENTATION
 
-#include "nanosvg/nanosvg.h"
+#include "nanosvg.h"
 
 using blender::MutableSpan;
 
 namespace blender::io::gpencil {
 
 /* Constructor. */
-GpencilImporterSVG::GpencilImporterSVG(const char *filename, const GpencilIOParams *iparams)
+GpencilImporterSVG::GpencilImporterSVG(const char *filepath, const GpencilIOParams *iparams)
     : GpencilImporter(iparams)
 {
-  filename_set(filename);
+  filepath_set(filepath);
 }
 
 bool GpencilImporterSVG::read()
 {
   bool result = true;
   NSVGimage *svg_data = nullptr;
-  svg_data = nsvgParseFromFile(filename_, "mm", 96.0f);
+  svg_data = nsvgParseFromFile(filepath_, "mm", 96.0f);
   if (svg_data == nullptr) {
     std::cout << " Could not open SVG.\n ";
     return false;
@@ -69,9 +53,7 @@ bool GpencilImporterSVG::read()
   params_.ob = create_object();
   if (params_.ob == nullptr) {
     std::cout << "Unable to create new object.\n";
-    if (svg_data) {
-      nsvgDelete(svg_data);
-    }
+    nsvgDelete(svg_data);
 
     return false;
   }
@@ -102,7 +84,7 @@ bool GpencilImporterSVG::read()
     bGPDlayer *gpl = (bGPDlayer *)BLI_findstring(
         &gpd_->layers, layer_id, offsetof(bGPDlayer, info));
     if (gpl == nullptr) {
-      gpl = BKE_gpencil_layer_addnew(gpd_, layer_id, true);
+      gpl = BKE_gpencil_layer_addnew(gpd_, layer_id, true, false);
       /* Disable lights. */
       gpl->flag &= ~GP_LAYER_USE_LIGHTS;
     }
@@ -111,8 +93,8 @@ bool GpencilImporterSVG::read()
     /* Check frame. */
     bGPDframe *gpf = BKE_gpencil_layer_frame_get(gpl, cfra_, GP_GETFRAME_ADD_NEW);
     /* Create materials. */
-    bool is_stroke = (bool)shape->stroke.type;
-    bool is_fill = (bool)shape->fill.type;
+    bool is_stroke = bool(shape->stroke.type);
+    bool is_fill = bool(shape->fill.type);
     if ((!is_stroke) && (!is_fill)) {
       is_stroke = true;
     }
@@ -150,6 +132,8 @@ bool GpencilImporterSVG::read()
         for (bGPDspoint &pt : MutableSpan(gps->points, gps->totpoints)) {
           sub_v3_v3(&pt.x, gp_center);
         }
+        /* Calc stroke bounding box. */
+        BKE_gpencil_stroke_boundingbox_calc(gps);
       }
     }
   }
@@ -164,11 +148,11 @@ void GpencilImporterSVG::create_stroke(bGPdata *gpd,
                                        const int32_t mat_index,
                                        const float matrix[4][4])
 {
-  const bool is_stroke = (bool)shape->stroke.type;
-  const bool is_fill = (bool)shape->fill.type;
+  const bool is_stroke = bool(shape->stroke.type);
+  const bool is_fill = bool(shape->fill.type);
 
   const int edges = params_.resolution;
-  const float step = 1.0f / (float)(edges - 1);
+  const float step = 1.0f / float(edges - 1);
 
   const int totpoints = (path->npts / 3) * params_.resolution;
 
@@ -228,19 +212,19 @@ void GpencilImporterSVG::create_stroke(bGPdata *gpd,
 }
 
 /* Unpack internal NanoSVG color. */
-static void unpack_nano_color(const unsigned int pack, float r_col[4])
+static void unpack_nano_color(const uint pack, float r_col[4])
 {
-  unsigned char rgb_u[4];
+  uchar rgb_u[4];
 
   rgb_u[0] = ((pack) >> 0) & 0xFF;
   rgb_u[1] = ((pack) >> 8) & 0xFF;
   rgb_u[2] = ((pack) >> 16) & 0xFF;
   rgb_u[3] = ((pack) >> 24) & 0xFF;
 
-  r_col[0] = (float)rgb_u[0] / 255.0f;
-  r_col[1] = (float)rgb_u[1] / 255.0f;
-  r_col[2] = (float)rgb_u[2] / 255.0f;
-  r_col[3] = (float)rgb_u[3] / 255.0f;
+  r_col[0] = float(rgb_u[0]) / 255.0f;
+  r_col[1] = float(rgb_u[1]) / 255.0f;
+  r_col[2] = float(rgb_u[2]) / 255.0f;
+  r_col[3] = float(rgb_u[3]) / 255.0f;
 }
 
 void GpencilImporterSVG::convert_color(const int32_t color, float r_linear_rgba[4])

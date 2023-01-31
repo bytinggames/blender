@@ -1,21 +1,5 @@
-/*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
- * All rights reserved.
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2001-2002 NaN Holding BV. All rights reserved. */
 
 /** \file
  * \ingroup creator
@@ -40,7 +24,6 @@
 
 #include "DNA_genfile.h"
 
-#include "BLI_args.h"
 #include "BLI_string.h"
 #include "BLI_system.h"
 #include "BLI_task.h"
@@ -54,18 +37,22 @@
 #include "BKE_cachefile.h"
 #include "BKE_callbacks.h"
 #include "BKE_context.h"
-#include "BKE_font.h"
 #include "BKE_global.h"
 #include "BKE_gpencil_modifier.h"
 #include "BKE_idtype.h"
-#include "BKE_image.h"
+#include "BKE_main.h"
 #include "BKE_material.h"
 #include "BKE_modifier.h"
 #include "BKE_node.h"
 #include "BKE_particle.h"
 #include "BKE_shader_fx.h"
 #include "BKE_sound.h"
+#include "BKE_vfont.h"
 #include "BKE_volume.h"
+
+#ifndef WITH_PYTHON_MODULE
+#  include "BLI_args.h"
+#endif
 
 #include "DEG_depsgraph.h"
 
@@ -110,6 +97,18 @@
 #include "creator_intern.h" /* Own include. */
 
 /* -------------------------------------------------------------------- */
+/** \name Local Defines
+ * \{ */
+
+/* When building as a Python module, don't use special argument handling
+ * so the module loading logic can control the `argv` & `argc`. */
+#if defined(WIN32) && !defined(WITH_PYTHON_MODULE)
+#  define USE_WIN32_UNICODE_ARGS
+#endif
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Local Application State
  * \{ */
 
@@ -132,7 +131,6 @@ struct ApplicationState app_state = {
 /** \name Application Level Callbacks
  *
  * Initialize callbacks for the modules that need them.
- *
  * \{ */
 
 static void callback_mem_error(const char *errorStr)
@@ -149,10 +147,17 @@ static void main_callback_setup(void)
 
 /* free data on early exit (if Python calls 'sys.exit()' while parsing args for eg). */
 struct CreatorAtExitData {
+#ifndef WITH_PYTHON_MODULE
   bArgs *ba;
-#ifdef WIN32
+#endif
+
+#ifdef USE_WIN32_UNICODE_ARGS
   const char **argv;
   int argv_num;
+#endif
+
+#if defined(WITH_PYTHON_MODULE) && !defined(USE_WIN32_UNICODE_ARGS)
+  void *_empty; /* Prevent empty struct error with MSVC. */
 #endif
 };
 
@@ -160,12 +165,16 @@ static void callback_main_atexit(void *user_data)
 {
   struct CreatorAtExitData *app_init_data = user_data;
 
+#ifndef WITH_PYTHON_MODULE
   if (app_init_data->ba) {
     BLI_args_destroy(app_init_data->ba);
     app_init_data->ba = NULL;
   }
+#else
+  UNUSED_VARS(app_init_data); /* May be unused. */
+#endif
 
-#ifdef WIN32
+#ifdef USE_WIN32_UNICODE_ARGS
   if (app_init_data->argv) {
     while (app_init_data->argv_num) {
       free((void *)app_init_data->argv[--app_init_data->argv_num]);
@@ -173,6 +182,8 @@ static void callback_main_atexit(void *user_data)
     free((void *)app_init_data->argv);
     app_init_data->argv = NULL;
   }
+#else
+  UNUSED_VARS(app_init_data); /* May be unused. */
 #endif
 }
 
@@ -211,6 +222,42 @@ char **environ = NULL;
 /** \} */
 
 /* -------------------------------------------------------------------- */
+/** \name GMP Allocator Workaround
+ * \{ */
+
+#if (defined(WITH_TBB_MALLOC) && defined(_MSC_VER) && defined(NDEBUG) && defined(WITH_GMP)) || \
+    defined(DOXYGEN)
+#  include "gmp.h"
+#  include "tbb/scalable_allocator.h"
+
+void *gmp_alloc(size_t size)
+{
+  return scalable_malloc(size);
+}
+void *gmp_realloc(void *ptr, size_t old_size, size_t new_size)
+{
+  return scalable_realloc(ptr, new_size);
+}
+
+void gmp_free(void *ptr, size_t size)
+{
+  scalable_free(ptr);
+}
+/**
+ * Use TBB's scalable_allocator on Windows.
+ * `TBBmalloc` correctly captures all allocations already,
+ * however, GMP is built with MINGW since it doesn't build with MSVC,
+ * which TBB has issues hooking into automatically.
+ */
+void gmp_blender_init_allocator()
+{
+  mp_set_memory_functions(gmp_alloc, gmp_realloc, gmp_free);
+}
+#endif
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Main Function
  * \{ */
 
@@ -222,7 +269,7 @@ char **environ = NULL;
  *   or exit immediately when running in background-mode.
  */
 int main(int argc,
-#ifdef WIN32
+#ifdef USE_WIN32_UNICODE_ARGS
          const char **UNUSED(argv_c)
 #else
          const char **argv
@@ -235,7 +282,7 @@ int main(int argc,
   bArgs *ba;
 #endif
 
-#ifdef WIN32
+#ifdef USE_WIN32_UNICODE_ARGS
   char **argv;
   int argv_num;
 #endif
@@ -261,11 +308,11 @@ int main(int argc,
   _putenv_s("OMP_WAIT_POLICY", "PASSIVE");
 #  endif
 
+#  ifdef USE_WIN32_UNICODE_ARGS
   /* Win32 Unicode Arguments. */
-  /* NOTE: cannot use `guardedalloc` allocation here, as it's not yet initialized
-   *       (it depends on the arguments passed in, which is what we're getting here!)
-   */
   {
+    /* NOTE: Can't use `guardedalloc` allocation here, as it's not yet initialized
+     * (it depends on the arguments passed in, which is what we're getting here!) */
     wchar_t **argv_16 = CommandLineToArgvW(GetCommandLineW(), &argc);
     argv = malloc(argc * sizeof(char *));
     for (argv_num = 0; argv_num < argc; argv_num++) {
@@ -277,7 +324,8 @@ int main(int argc,
     app_init_data.argv = argv;
     app_init_data.argv_num = argv_num;
   }
-#endif /* WIN32 */
+#  endif /* USE_WIN32_UNICODE_ARGS */
+#endif   /* WIN32 */
 
   /* NOTE: Special exception for guarded allocator type switch:
    *       we need to perform switch from lock-free to fully
@@ -343,6 +391,10 @@ int main(int argc,
   CCL_init_logging(argv[0]);
 #endif
 
+#if defined(WITH_TBB_MALLOC) && defined(_MSC_VER) && defined(NDEBUG) && defined(WITH_GMP)
+  gmp_blender_init_allocator();
+#endif
+
   main_callback_setup();
 
 #if defined(__APPLE__) && !defined(WITH_PYTHON_MODULE) && !defined(WITH_HEADLESS)
@@ -368,7 +420,6 @@ int main(int argc,
   BKE_appdir_program_path_init(argv[0]);
 
   BLI_threadapi_init();
-  BLI_thread_put_process_on_fast_node();
 
   DNA_sdna_current_init();
 
@@ -376,7 +427,6 @@ int main(int argc,
 
   BKE_idtype_init();
   BKE_cachefiles_init();
-  BKE_images_init();
   BKE_modifier_init();
   BKE_gpencil_modifier_init();
   BKE_shaderfx_init();
@@ -466,6 +516,9 @@ int main(int argc,
 
   WM_init(C, argc, (const char **)argv);
 
+  /* Need to be after WM init so that userpref are loaded. */
+  RE_engines_init_experimental();
+
 #ifndef WITH_PYTHON
   printf(
       "\n* WARNING * - Blender compiled without Python!\n"
@@ -503,7 +556,7 @@ int main(int argc,
   (void)ba;
 #endif
 
-#ifdef WIN32
+#ifdef USE_WIN32_UNICODE_ARGS
   argv = NULL;
   (void)argv;
 #endif
@@ -514,7 +567,9 @@ int main(int argc,
     WM_exit(C);
   }
   else {
-    if (!G.file_loaded) {
+    /* When no file is loaded, show the splash screen. */
+    const char *blendfile_path = BKE_main_blendfile_path_from_global();
+    if (blendfile_path[0] == '\0') {
       WM_init_splash(C);
     }
     WM_main(C);
