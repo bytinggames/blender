@@ -23,6 +23,7 @@ const float growTopVertPlank = 0.1f; // grows the top plank by 10% of the distan
 #include "UI_resources.h"
 
 #include "RNA_access.h"
+#include "RNA_prototypes.h"
 
 #include "MOD_modifiertypes.h"
 #include "MOD_ui_common.h"
@@ -52,8 +53,10 @@ typedef struct nodeEdge {
 nodeEdge_t *nodeEdge_t_new()
 {
   nodeEdge_t *n = malloc(sizeof(nodeEdge_t));
-  if (n == NULL)
-    printf("well... rails == NULL, malloc didn't work");  // TODO: ask bernie
+  if (n == NULL) {
+    printf("well... rails == NULL, malloc didn't work");
+    return NULL;
+  }
   n->v1AfterV2 = false;
   return n;
 }
@@ -86,7 +89,7 @@ static int isect_ray_poly(const float ray_start[3],
       float dist;
       bool curhit;
       float uv[2];
-      curhit = isect_ray_tri_v3(ray_start, ray_dir, v_first->co, v_prev->co, v->co, &dist, &uv);
+      curhit = isect_ray_tri_v3(ray_start, ray_dir, v_first->co, v_prev->co, v->co, &dist, uv);
       if (curhit && dist < best_dist) {
         hit = true;
         best_dist = dist;
@@ -148,7 +151,7 @@ static BMVert *extrudeRelative(BMesh *bm, BMVert *vert, const float offset[3], B
   float co[3];
   copy_v3_v3(co, vert->co);
   add_v3_v3(co, offset);
-  return extrude(bm, vert, co, r_edge);
+  return extrude(bm, vert, co, &r_edge);
 }
 
 static bool isThereANeighbourLineOnVertex(BMEdge* edgeWithoutFace, bool v1)
@@ -396,8 +399,16 @@ static Mesh *modifyMesh(struct ModifierData *md,
       lastRail = rails;
     }
     else {
+      if (lastRail == NULL) {
+        printf("lastRail shouldn't be NULL");
+        continue;
+      }
       lastRail->next = malloc(sizeof(nodeRail_t));
       lastRail = lastRail->next;
+    }
+    if (lastRail == NULL) {
+      printf("lastRail shouldn't be NULL");
+      continue;
     }
 
     lastRail->next = NULL;
@@ -421,10 +432,15 @@ static Mesh *modifyMesh(struct ModifierData *md,
       currentEdgeList->v1AfterV2 = true;
     }
 
+    if (diskLink == NULL) {
+      printf("diskLink shouldn't be NULL");
+      continue;
+    }
+
       BMEdge *prev = e;
       BMEdge *current = NULL;
       while (true) {
-        if (diskLink->next == current) // dead end
+      if (diskLink->next == current && current != NULL)  // dead end
         {
           // check if last vertex has the same position as the first vertex (ring detection)
           // get last vertex
@@ -446,9 +462,11 @@ static Mesh *modifyMesh(struct ModifierData *md,
             lastRail->lastEdgeInRing = currentEdgeList;
           }
           break;
-        }
-        if (!(diskLink->next->v1_disk_link.next == diskLink->next->v1_disk_link.prev &&
-            diskLink->next->v2_disk_link.next == diskLink->next->v2_disk_link.prev)) // detected branch: not allowed
+      }
+      if (diskLink->next == NULL ||
+          (!(diskLink->next->v1_disk_link.next == diskLink->next->v1_disk_link.prev &&
+             diskLink->next->v2_disk_link.next ==
+                 diskLink->next->v2_disk_link.prev)))  // detected branch: not allowed
           break;
         current = diskLink->next;
         if (current->l != NULL)  // check if next edge has no faces
@@ -476,8 +494,6 @@ static Mesh *modifyMesh(struct ModifierData *md,
   float slopeDir2[3]; // slope dir for next v
   float *slopeDirv1;  // slope dir for v1
   float *slopeDirv2;  // slope dir for v2
-
-  float store[3];
 
   nodeRail_t *railIter = rails;
 
@@ -582,14 +598,34 @@ static Mesh *modifyMesh(struct ModifierData *md,
   result = BKE_mesh_from_bmesh_for_eval_nomain(bm, &cd_mask_extra, mesh);
   BM_mesh_free(bm);
 
-  if (result->mloopuv != NULL) {
-    for (int i = 0; i < result->totloop; i++) {
-      if (result->mloopuv[i].uv[0] == 0 && result->mloopuv[i].uv[1] == 0) {
-        result->mloopuv[i].uv[0] = 6.5f / 8.f;
-        result->mloopuv[i].uv[1] = 3.5f / 8.f;
-      }
-    }
-  }
+  //// TODO
+  // if (result->mloop != NULL)
+  //{
+  //   bool hasLayer = CustomData_has_layer(&result->ldata, CD_MLOOPUV);
+  //   if (hasLayer) {
+  //     int layerCount = CustomData_number_of_layers(&result->ldata, CD_MLOOPUV);
+
+  //    float* data = CustomData_get(&result->ldata, 0, CD_MLOOPUV);
+
+  //    for (int i = 0; i < result->totloop; i++)
+  //    {
+  //      if (result->mloop[i].uv[0] == 0 && result->mloopuv[i].uv[1] == 0) {
+  //        result->mloopuv[i].uv[0] = 6.5f / 8.f;
+  //        result->mloopuv[i].uv[1] = 3.5f / 8.f;
+  //      }
+  //    }
+  //  }
+  //}
+
+  //// OLD
+  // if (result->mloopuv != NULL) {
+  //   for (int i = 0; i < result->totloop; i++) {
+  //     if (result->mloopuv[i].uv[0] == 0 && result->mloopuv[i].uv[1] == 0) {
+  //       result->mloopuv[i].uv[0] = 6.5f / 8.f;
+  //       result->mloopuv[i].uv[1] = 3.5f / 8.f;
+  //     }
+  //   }
+  // }
 
   return result;
 }
@@ -641,7 +677,6 @@ ModifierTypeInfo modifierType_QuarterPipe = {
     /* deformVertsEM */ NULL,
     /* deformMatricesEM */ NULL,
     /* modifyMesh */ modifyMesh,
-    /* modifyHair */ NULL,
     /* modifyGeometrySet */ NULL,
 
     /* initData */ initData,
