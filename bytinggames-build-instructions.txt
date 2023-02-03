@@ -1,0 +1,21 @@
+git clone https://github.com/bytinggames/blender.git
+cd blender
+git remote add upstream https://github.com/blender/blender.git
+git fetch upstream
+git checkout quarterpipe-modifier
+git checkout -b quarterpipe-modifier-2
+git rebase master
+# add the changes of quarterpipe-v3.4 to this branch (only the MOD_quarterpipe.c changes)
+git push
+make update
+y
+# ignore that python is missing and don't call make update again, cause I think this breaked stuff for me
+
+# change the .gitmodules file so that the urls point to blender, not to bytinggames: example: from "../blender-translations.git" to "../../blender/blender-translations.git"
+git submodule sync --recursive
+
+# for visual studio:
+make full nobuild
+
+#for release:
+make

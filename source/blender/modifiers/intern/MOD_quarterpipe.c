@@ -42,7 +42,9 @@ const float growTopVertPlank = 0.1f; // grows the top plank by 10% of the distan
 #include "bmesh.h"
 
 #include "DNA_customdata_types.h"
+#include "MOD_quarterpipe.h"
 
+static void quarterpipe_set_uvs(BMesh *bm);
 
 typedef struct nodeEdge {
   BMEdge *val;
@@ -595,39 +597,43 @@ static Mesh *modifyMesh(struct ModifierData *md,
     railIter = railIter->next;
   }
 
+  quarterpipe_set_uvs(bm);
+  
   result = BKE_mesh_from_bmesh_for_eval_nomain(bm, &cd_mask_extra, mesh);
   BM_mesh_free(bm);
 
-  //// TODO
-  // if (result->mloop != NULL)
-  //{
-  //   bool hasLayer = CustomData_has_layer(&result->ldata, CD_MLOOPUV);
-  //   if (hasLayer) {
-  //     int layerCount = CustomData_number_of_layers(&result->ldata, CD_MLOOPUV);
-
-  //    float* data = CustomData_get(&result->ldata, 0, CD_MLOOPUV);
-
-  //    for (int i = 0; i < result->totloop; i++)
-  //    {
-  //      if (result->mloop[i].uv[0] == 0 && result->mloopuv[i].uv[1] == 0) {
-  //        result->mloopuv[i].uv[0] = 6.5f / 8.f;
-  //        result->mloopuv[i].uv[1] = 3.5f / 8.f;
-  //      }
-  //    }
-  //  }
-  //}
-
-  //// OLD
-  // if (result->mloopuv != NULL) {
-  //   for (int i = 0; i < result->totloop; i++) {
-  //     if (result->mloopuv[i].uv[0] == 0 && result->mloopuv[i].uv[1] == 0) {
-  //       result->mloopuv[i].uv[0] = 6.5f / 8.f;
-  //       result->mloopuv[i].uv[1] = 3.5f / 8.f;
-  //     }
-  //   }
-  // }
-
   return result;
+}
+
+void quarterpipe_set_uvs(BMesh *bm)
+{
+  // const short oflag = 1; // should this really be one..? maybe see bmo_primitive.c for more information
+
+  BMFace *f;
+  BMLoop *l;
+  BMIter fiter, liter;
+  const float width = 0.25f;
+
+  const int cd_loop_uv_offset = CustomData_get_offset(&bm->ldata, CD_PROP_FLOAT2);
+
+  int loop_index;
+
+  BLI_assert(cd_loop_uv_offset != -1); /* the caller can ensure that we have UVs */
+
+  BM_ITER_MESH (f, &fiter, bm, BM_FACES_OF_MESH) {
+    // TODO: can I really skip this check? somehow this crasshes on me
+    /*if (!BMO_face_flag_test(bm, f, oflag)) {
+      continue;
+    }*/
+
+    BM_ITER_ELEM_INDEX (l, &liter, f, BM_LOOPS_OF_FACE, loop_index) {
+       float *luv = BM_ELEM_CD_GET_FLOAT_P(l, cd_loop_uv_offset);
+      if (luv[0] == 0 && luv[1] == 0) {
+        luv[0] = 6.5f / 8.f;
+        luv[1] = 3.5f / 8.f;
+      }
+    }
+  }
 }
 
 static void panel_draw(const bContext *UNUSED(C), Panel *panel)
