@@ -100,7 +100,7 @@ set(SRC
   intern/MOD_weightvgproximity.cc
   intern/MOD_weld.cc
   intern/MOD_wireframe.cc
-  intern/MOD_quarterpipe.c
+  intern/MOD_quarterpipe.cc
 
   MOD_modifiertypes.hh
   MOD_nodes.h

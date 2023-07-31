@@ -25,8 +25,8 @@ const float growTopVertPlank = 0.1f; // grows the top plank by 10% of the distan
 #include "RNA_access.h"
 #include "RNA_prototypes.h"
 
-#include "MOD_modifiertypes.h"
-#include "MOD_ui_common.h"
+#include "MOD_modifiertypes.hh"
+#include "MOD_ui_common.hh"
 
 #include <stdio.h>
 
@@ -42,7 +42,7 @@ const float growTopVertPlank = 0.1f; // grows the top plank by 10% of the distan
 #include "bmesh.h"
 
 #include "DNA_customdata_types.h"
-#include "MOD_quarterpipe.h"
+//#include "MOD_quarterpipe.hh"
 
 static void quarterpipe_set_uvs(BMesh *bm);
 
@@ -54,7 +54,7 @@ typedef struct nodeEdge {
 
 nodeEdge_t *nodeEdge_t_new()
 {
-  nodeEdge_t *n = malloc(sizeof(nodeEdge_t));
+  nodeEdge_t *n = (nodeEdge_t *)malloc(sizeof(nodeEdge_t));
   if (n == NULL) {
     printf("well... rails == NULL, malloc didn't work");
     return NULL;
@@ -337,15 +337,19 @@ static Mesh *modifyMesh(struct ModifierData *md,
 
   Mesh *result;
   BMesh *bm;
-  CustomData_MeshMasks cd_mask_extra = {
-      .vmask = CD_MASK_ORIGINDEX, .emask = CD_MASK_ORIGINDEX, .pmask = CD_MASK_ORIGINDEX};
+  CustomData_MeshMasks cd_mask_extra{};
+  cd_mask_extra.vmask = CD_MASK_ORIGINDEX;
+  cd_mask_extra.emask = CD_MASK_ORIGINDEX;
+  cd_mask_extra.pmask = CD_MASK_ORIGINDEX;
 
-  bm = BKE_mesh_to_bmesh_ex(mesh,
-                            &((struct BMeshCreateParams){0}),
-                            &((struct BMeshFromMeshParams){
-                                .calc_face_normal = true,
-                                .cd_mask_extra = cd_mask_extra,
-                            }));
+  BMeshCreateParams create_params{};
+  create_params.use_toolflags = false;
+
+  BMeshFromMeshParams convert_params{};
+  convert_params.calc_face_normal = true;
+  convert_params.cd_mask_extra = cd_mask_extra;
+
+  bm = BKE_mesh_to_bmesh_ex(mesh, &create_params, &convert_params);
 
 
   nodeRail_t *rails = NULL;
@@ -395,7 +399,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
 
     // add a new rail
     if (rails == NULL) {
-      rails = malloc(sizeof(nodeRail_t));
+      rails = (nodeRail_t *)malloc(sizeof(nodeRail_t));
       if (rails == NULL)
         printf("well... rails == NULL, malloc didn't work");  // TODO: ask bernie
       lastRail = rails;
@@ -405,7 +409,7 @@ static Mesh *modifyMesh(struct ModifierData *md,
         printf("lastRail shouldn't be NULL");
         continue;
       }
-      lastRail->next = malloc(sizeof(nodeRail_t));
+      lastRail->next = (nodeRail_t *)malloc(sizeof(nodeRail_t));
       lastRail = lastRail->next;
     }
     if (lastRail == NULL) {
@@ -636,7 +640,7 @@ void quarterpipe_set_uvs(BMesh *bm)
   }
 }
 
-static void panel_draw(const bContext *UNUSED(C), Panel *panel)
+static void panel_draw(const bContext * /*C*/, Panel *panel)
 {
   uiLayout *layout = panel->layout;
 
