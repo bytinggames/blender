@@ -62,8 +62,8 @@ static void library_foreach_path(ID *id, BPathForeachPathData *bpath_data)
 
   /* FIXME: Find if we should respect #BKE_BPATH_FOREACH_PATH_SKIP_PACKED here, and if not, explain
    * why. */
-  if (lib->packedfile !=
-      NULL /*&& (bpath_data->flag & BKE_BPATH_FOREACH_PATH_SKIP_PACKED) != 0 */) {
+  if (lib->packedfile != NULL /*&& (bpath_data->flag & BKE_BPATH_FOREACH_PATH_SKIP_PACKED) != 0 */)
+  {
     return;
   }
 
@@ -113,15 +113,15 @@ void BKE_library_filepath_set(Main *bmain, Library *lib, const char *filepath)
   /* in some cases this is used to update the absolute path from the
    * relative */
   if (lib->filepath != filepath) {
-    BLI_strncpy(lib->filepath, filepath, sizeof(lib->filepath));
+    STRNCPY(lib->filepath, filepath);
   }
 
-  BLI_strncpy(lib->filepath_abs, filepath, sizeof(lib->filepath_abs));
+  STRNCPY(lib->filepath_abs, filepath);
 
   /* Not essential but set `filepath_abs` is an absolute copy of value which
    * is more useful if its kept in sync. */
   if (BLI_path_is_rel(lib->filepath_abs)) {
-    /* NOTE(@campbellbarton): the file may be unsaved, in this case, setting the
+    /* NOTE(@ideasman42): the file may be unsaved, in this case, setting the
      * `filepath_abs` on an indirectly linked path is not allowed from the
      * outliner, and its not really supported but allow from here for now
      * since making local could cause this to be directly linked.

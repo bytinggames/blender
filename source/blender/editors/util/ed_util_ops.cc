@@ -50,15 +50,15 @@ static bool lib_id_preview_editing_poll(bContext *C)
     return false;
   }
   if (ID_IS_LINKED(id)) {
-    CTX_wm_operator_poll_msg_set(C, TIP_("Can't edit external library data"));
+    CTX_wm_operator_poll_msg_set(C, "Can't edit external library data");
     return false;
   }
   if (ID_IS_OVERRIDE_LIBRARY(id)) {
-    CTX_wm_operator_poll_msg_set(C, TIP_("Can't edit previews of overridden library data"));
+    CTX_wm_operator_poll_msg_set(C, "Can't edit previews of overridden library data");
     return false;
   }
   if (!BKE_previewimg_id_get_p(id)) {
-    CTX_wm_operator_poll_msg_set(C, TIP_("Data-block does not support previews"));
+    CTX_wm_operator_poll_msg_set(C, "Data-block does not support previews");
     return false;
   }
 
@@ -118,7 +118,7 @@ static bool lib_id_generate_preview_poll(bContext *C)
   const PointerRNA idptr = CTX_data_pointer_get(C, "id");
   const ID *id = (ID *)idptr.data;
   if (GS(id->name) == ID_NT) {
-    CTX_wm_operator_poll_msg_set(C, TIP_("Can't generate automatic preview for node group"));
+    CTX_wm_operator_poll_msg_set(C, "Can't generate automatic preview for node group");
     return false;
   }
 
@@ -229,7 +229,8 @@ static int lib_id_fake_user_toggle_exec(bContext *C, wmOperator *op)
   ID *id = (ID *)idptr.data;
 
   if (!BKE_id_is_editable(CTX_data_main(C), id) ||
-      ELEM(GS(id->name), ID_GR, ID_SCE, ID_SCR, ID_TXT, ID_OB, ID_WS)) {
+      ELEM(GS(id->name), ID_GR, ID_SCE, ID_SCR, ID_TXT, ID_OB, ID_WS))
+  {
     BKE_report(op->reports, RPT_ERROR, "Data-block type does not support fake user");
     return OPERATOR_CANCELLED;
   }
@@ -313,7 +314,7 @@ static int lib_id_override_editable_toggle_exec(bContext *C, wmOperator * /*op*/
   const bool is_system_override = BKE_lib_override_library_is_system_defined(bmain, id);
   if (is_system_override) {
     /* A system override is not editable. Make it an editable (non-system-defined) one. */
-    id->override_library->flag &= ~IDOVERRIDE_LIBRARY_FLAG_SYSTEM_DEFINED;
+    id->override_library->flag &= ~LIBOVERRIDE_FLAG_SYSTEM_DEFINED;
   }
   else {
     /* Reset override, which makes it non-editable (i.e. a system define override). */

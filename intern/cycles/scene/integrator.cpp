@@ -139,13 +139,9 @@ NODE_DEFINE(Integrator)
   return type;
 }
 
-Integrator::Integrator() : Node(get_node_type())
-{
-}
+Integrator::Integrator() : Node(get_node_type()) {}
 
-Integrator::~Integrator()
-{
-}
+Integrator::~Integrator() {}
 
 void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene)
 {
@@ -193,7 +189,8 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
   foreach (Shader *shader, scene->shaders) {
     /* keep this in sync with SD_HAS_TRANSPARENT_SHADOW in shader.cpp */
     if ((shader->has_surface_transparent && shader->get_use_transparent_shadow()) ||
-        shader->has_volume) {
+        shader->has_volume)
+    {
       kintegrator->transparent_shadows = true;
       break;
     }
@@ -255,8 +252,10 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
   kintegrator->scrambling_distance = scrambling_distance;
   kintegrator->sobol_index_mask = reverse_integer_bits(next_power_of_two(aa_samples - 1) - 1);
 
-  kintegrator->use_light_tree = scene->integrator->use_light_tree;
-  if (light_sampling_threshold > 0.0f) {
+  /* NOTE: The kintegrator->use_light_tree is assigned to the efficient value in the light manager,
+   * and the synchronization code is expected to tag the light manager for update when the
+   * `use_light_tree` is changed. */
+  if (light_sampling_threshold > 0.0f && !kintegrator->use_light_tree) {
     kintegrator->light_inv_rr_threshold = scene->film->get_exposure() / light_sampling_threshold;
   }
   else {
@@ -268,7 +267,8 @@ void Integrator::device_update(Device *device, DeviceScene *dscene, Scene *scene
       next_power_of_two(aa_samples - 1), MIN_TAB_SOBOL_SAMPLES, MAX_TAB_SOBOL_SAMPLES);
   if (kintegrator->sampling_pattern == SAMPLING_PATTERN_TABULATED_SOBOL &&
       dscene->sample_pattern_lut.size() !=
-          (sequence_size * NUM_TAB_SOBOL_PATTERNS * NUM_TAB_SOBOL_DIMENSIONS)) {
+          (sequence_size * NUM_TAB_SOBOL_PATTERNS * NUM_TAB_SOBOL_DIMENSIONS))
+  {
     kintegrator->tabulated_sobol_sequence_size = sequence_size;
 
     if (dscene->sample_pattern_lut.size() != 0) {

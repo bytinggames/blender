@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2017 Blender Foundation. All rights reserved. */
+ * Copyright 2017 Blender Foundation */
 
 /** \file
  * \ingroup draw
@@ -36,7 +36,13 @@
 
 BLI_INLINE eParticleRefineShaderType drw_hair_shader_type_get()
 {
-  if (GPU_compute_shader_support() && GPU_shader_storage_buffer_objects_support()) {
+  /* NOTE: Hair refine is faster using transform feedback via vertex processing pipeline with Metal
+   * and Apple Silicon GPUs. This is also because vertex work can more easily be executed in
+   * parallel with fragment work, whereas compute inserts an explicit dependency,
+   * due to switching of command encoder types. */
+  if (GPU_compute_shader_support() && GPU_shader_storage_buffer_objects_support() &&
+      (GPU_backend_get_type() != GPU_BACKEND_METAL))
+  {
     return PART_REFINE_SHADER_COMPUTE;
   }
   if (GPU_transform_feedback_support()) {
@@ -295,7 +301,7 @@ DRWShadingGroup *DRW_shgroup_hair_create_sub(Object *object,
   DRW_shgroup_uniform_bool_copy(shgrp, "hairCloseTip", hair_close_tip);
   if (gpu_material) {
     /* NOTE: This needs to happen before the drawcall to allow correct attribute extraction.
-     * (see T101896) */
+     * (see #101896) */
     DRW_shgroup_add_material_resources(shgrp, gpu_material);
   }
   /* TODO(fclem): Until we have a better way to cull the hair and render with orco, bypass
@@ -311,7 +317,7 @@ void DRW_hair_update()
   if (!GPU_transform_feedback_support()) {
     /**
      * Workaround to transform feedback not working on mac.
-     * On some system it crashes (see T58489) and on some other it renders garbage (see T60171).
+     * On some system it crashes (see #58489) and on some other it renders garbage (see #60171).
      *
      * So instead of using transform feedback we render to a texture,
      * read back the result to system memory and re-upload as VBO data.

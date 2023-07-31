@@ -245,8 +245,8 @@ static void gizmo_mesh_placement_setup(const bContext *C, wmGizmoGroup *gzgroup)
 
   RNA_enum_set(ggd->cage->ptr,
                "transform",
-               ED_GIZMO_CAGE2D_XFORM_FLAG_SCALE | ED_GIZMO_CAGE2D_XFORM_FLAG_TRANSLATE |
-                   ED_GIZMO_CAGE2D_XFORM_FLAG_SCALE_SIGNED);
+               ED_GIZMO_CAGE_XFORM_FLAG_SCALE | ED_GIZMO_CAGE_XFORM_FLAG_TRANSLATE |
+                   ED_GIZMO_CAGE_XFORM_FLAG_SCALE_SIGNED);
 
   WM_gizmo_set_flag(ggd->cage, WM_GIZMO_DRAW_VALUE, true);
 
@@ -338,7 +338,8 @@ static int add_primitive_cube_gizmo_exec(bContext *C, wmOperator *op)
                                 "create_cube matrix=%m4 size=%f calc_uvs=%b",
                                 matrix,
                                 1.0f,
-                                calc_uvs)) {
+                                calc_uvs))
+  {
     return OPERATOR_CANCELLED;
   }
 

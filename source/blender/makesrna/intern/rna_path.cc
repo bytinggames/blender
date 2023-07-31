@@ -489,8 +489,9 @@ static bool rna_path_parse(const PointerRNA *ptr,
     *r_item_ptr = nextptr;
   }
 
-  if (prop_elem && (prop_elem->ptr.data != curptr.data || prop_elem->prop != prop ||
-                    prop_elem->index != index)) {
+  if (prop_elem &&
+      (prop_elem->ptr.data != curptr.data || prop_elem->prop != prop || prop_elem->index != index))
+  {
     prop_elem = MEM_cnew<PropertyElemRNA>(__func__);
     prop_elem->ptr = curptr;
     prop_elem->prop = prop;
@@ -618,7 +619,7 @@ char *RNA_path_append(const char *path,
     }
     else {
       char appendstr[128];
-      BLI_snprintf(appendstr, sizeof(appendstr), "%d", intkey);
+      SNPRINTF(appendstr, "%d", intkey);
       BLI_dynstr_append(dynstr, appendstr);
     }
 
@@ -811,7 +812,8 @@ static char *rna_idp_path(PointerRNA *ptr,
   link.index = -1;
 
   for (i = 0, iter = static_cast<IDProperty *>(haystack->data.group.first); iter;
-       iter = iter->next, i++) {
+       iter = iter->next, i++)
+  {
     if (needle == iter) { /* found! */
       link.name = iter->name;
       link.index = -1;
@@ -832,7 +834,7 @@ static char *rna_idp_path(PointerRNA *ptr,
      * That case must be ignored here, we only want to deal with runtime RNA properties stored in
      * IDProps.
      *
-     * See T84091. */
+     * See #84091. */
     PropertyRNA *prop = RNA_struct_find_property(ptr, iter->name);
     if (prop == nullptr || (prop->flag & PROP_IDPROPERTY) == 0) {
       continue;
@@ -906,7 +908,7 @@ static char *rna_path_from_ID_to_idpgroup(const PointerRNA *ptr)
   BLI_assert(ptr->owner_id != nullptr);
 
   /* TODO: Support Bones/PoseBones. no pointers stored to the bones from here, only the ID.
-   *       See example in T25746.
+   *       See example in #25746.
    *       Unless this is added only way to find this is to also search
    *       all bones and pose bones of an armature or object.
    */
@@ -1227,7 +1229,7 @@ char *RNA_path_full_struct_py(const PointerRNA *ptr)
 
   data_path = RNA_path_from_ID_to_struct(ptr);
 
-  /* XXX data_path may be NULL (see T36788),
+  /* XXX data_path may be NULL (see #36788),
    * do we want to get the 'bpy.data.foo["bar"].(null)' stuff? */
   ret = BLI_sprintfN("%s.%s", id_path, data_path);
 

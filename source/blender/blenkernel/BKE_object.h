@@ -11,6 +11,7 @@
 #include "BLI_sys_types.h"
 
 #include "DNA_object_enums.h"
+#include "DNA_userdef_enums.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -234,7 +235,7 @@ bool BKE_object_obdata_is_libdata(const struct Object *ob);
  */
 struct Object *BKE_object_duplicate(struct Main *bmain,
                                     struct Object *ob,
-                                    uint dupflag,
+                                    eDupli_ID_Flags dupflag,
                                     uint duplicate_options);
 
 /**
@@ -370,7 +371,7 @@ void BKE_object_dimensions_get(struct Object *ob, float r_vec[3]);
  * typically this caused by parenting, constraints or delta-scale.
  *
  * Re-using these values from the object causes a feedback loop
- * when multiple values are modified at once in some situations. see: T69536.
+ * when multiple values are modified at once in some situations. see: #69536.
  */
 void BKE_object_dimensions_set_ex(struct Object *ob,
                                   const float value[3],

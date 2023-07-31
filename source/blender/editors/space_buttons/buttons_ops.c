@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2009 Blender Foundation. All rights reserved. */
+ * Copyright 2009 Blender Foundation */
 
 /** \file
  * \ingroup spbuttons
@@ -200,7 +200,7 @@ static int file_browse_exec(bContext *C, wmOperator *op)
     const bool is_relative = RNA_boolean_get(op->ptr, "relative_path");
     id = fbo->ptr.owner_id;
 
-    BLI_strncpy(path, str, FILE_MAX);
+    STRNCPY(path, str);
     BLI_path_abs(path, id ? ID_BLEND_PATH(bmain, id) : BKE_main_blendfile_path(bmain));
 
     if (BLI_is_dir(path)) {
@@ -233,7 +233,7 @@ static int file_browse_exec(bContext *C, wmOperator *op)
     ED_undo_push(C, undostr);
   }
 
-  /* Special annoying exception, filesel on redo panel T26618. */
+  /* Special annoying exception, filesel on redo panel #26618. */
   {
     wmOperator *redo_op = WM_operator_last_redo(C);
     if (redo_op) {

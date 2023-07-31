@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright Blender Foundation. All rights reserved. */
+ * Copyright Blender Foundation */
 
 /** \file
  * \ingroup edphys
@@ -166,7 +166,7 @@ static bool fluid_validatepaths(FluidJob *job, ReportList *reports)
 
   const char *relbase = BKE_modifier_path_relbase(job->bmain, job->ob);
 
-  /* We do not accept empty paths, they can end in random places silently, see T51176. */
+  /* We do not accept empty paths, they can end in random places silently, see #51176. */
   if (fds->cache_directory[0] == '\0') {
     char cache_name[64];
     BKE_fluid_cache_new_name_for_current_session(sizeof(cache_name), cache_name);
@@ -239,7 +239,7 @@ static void fluid_bake_sequence(FluidJob *job)
   frames = fds->cache_frame_end - fds->cache_frame_start + 1;
 
   if (frames <= 0) {
-    BLI_strncpy(fds->error, N_("No frames to bake"), sizeof(fds->error));
+    STRNCPY(fds->error, N_("No frames to bake"));
     return;
   }
 
@@ -617,7 +617,8 @@ static int fluid_free_exec(struct bContext *C, struct wmOperator *op)
 
   /* Cannot free data if other bakes currently working */
   if (fmd->domain->cache_flag & (FLUID_DOMAIN_BAKING_DATA | FLUID_DOMAIN_BAKING_NOISE |
-                                 FLUID_DOMAIN_BAKING_MESH | FLUID_DOMAIN_BAKING_PARTICLES)) {
+                                 FLUID_DOMAIN_BAKING_MESH | FLUID_DOMAIN_BAKING_PARTICLES))
+  {
     BKE_report(op->reports, RPT_ERROR, "Bake free failed: pending bake jobs found");
     return OPERATOR_CANCELLED;
   }

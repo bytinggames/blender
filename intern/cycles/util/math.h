@@ -483,6 +483,12 @@ ccl_device_inline float compatible_signf(float f)
 
 ccl_device_inline float smoothstepf(float f)
 {
+  if (f <= 0.0f) {
+    return 0.0f;
+  }
+  if (f >= 1.0f) {
+    return 1.0f;
+  }
   float ff = f * f;
   return (3.0f * ff - 2.0f * ff * f);
 }
@@ -495,6 +501,11 @@ ccl_device_inline int mod(int x, int m)
 ccl_device_inline float3 float2_to_float3(const float2 a)
 {
   return make_float3(a.x, a.y, 0.0f);
+}
+
+ccl_device_inline float2 float3_to_float2(const float3 a)
+{
+  return make_float2(a.x, a.y);
 }
 
 ccl_device_inline float3 float4_to_float3(const float4 a)
@@ -543,16 +554,6 @@ CCL_NAMESPACE_END
 #include "util/rect.h"
 
 CCL_NAMESPACE_BEGIN
-
-#if !defined(__KERNEL_METAL__)
-/* Interpolation */
-
-template<class A, class B> A lerp(const A &a, const A &b, const B &t)
-{
-  return (A)(a * ((B)1 - t) + b * t);
-}
-
-#endif /* __KERNEL_METAL__ */
 
 /* Triangle */
 

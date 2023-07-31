@@ -35,7 +35,7 @@ static void view3d_smoothview_apply_with_interp(
  * undo is pushed then the change is rewound, and smooth-view completes from it's timer.
  * In the case smooth-view executed the change immediately - an undo push is called.
  *
- * NOTE(@campbellbarton): While this is not ideal it's necessary as making the undo-push
+ * NOTE(@ideasman42): While this is not ideal it's necessary as making the undo-push
  * once smooth-view is complete because smooth-view is non-blocking and it's possible other
  * operations are executed once smooth-view has started.
  * \{ */
@@ -85,7 +85,7 @@ void ED_view3d_smooth_view_undo_end(bContext *C,
     return;
   }
 
-  /* NOTE(@campbellbarton): It is not possible that a single viewport references different cameras
+  /* NOTE(@ideasman42): It is not possible that a single viewport references different cameras
    * so even in the case there is a quad-view with multiple camera views set, these will all
    * reference the same camera. In this case it doesn't matter which region is used.
    * If in the future multiple cameras are supported, this logic can be extended. */
@@ -270,7 +270,8 @@ void ED_view3d_smooth_view_ex(
       (sms.dst.lens == v3d->lens) &&            /* Lens. */
       equals_v3v3(sms.dst.ofs, rv3d->ofs) &&    /* Offset. */
       equals_v4v4(sms.dst.quat, rv3d->viewquat) /* Rotation. */
-  ) {
+  )
+  {
     /* Early return if nothing changed. */
     return;
   }

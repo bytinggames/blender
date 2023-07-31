@@ -74,11 +74,11 @@ static PyObject *bpy_script_paths(PyObject *UNUSED(self))
   const char *path;
 
   path = BKE_appdir_folder_id(BLENDER_SYSTEM_SCRIPTS, NULL);
-  item = PyC_UnicodeFromByte(path ? path : "");
+  item = PyC_UnicodeFromBytes(path ? path : "");
   BLI_assert(item != NULL);
   PyTuple_SET_ITEM(ret, 0, item);
   path = BKE_appdir_folder_id(BLENDER_USER_SCRIPTS, NULL);
-  item = PyC_UnicodeFromByte(path ? path : "");
+  item = PyC_UnicodeFromBytes(path ? path : "");
   BLI_assert(item != NULL);
   PyTuple_SET_ITEM(ret, 1, item);
 
@@ -90,7 +90,7 @@ static bool bpy_blend_foreach_path_cb(BPathForeachPathData *bpath_data,
                                       const char *path_src)
 {
   PyObject *py_list = bpath_data->user_data;
-  PyList_APPEND(py_list, PyC_UnicodeFromByte(path_src));
+  PyList_APPEND(py_list, PyC_UnicodeFromBytes(path_src));
   return false; /* Never edits the path. */
 }
 
@@ -134,7 +134,8 @@ static PyObject *bpy_blend_paths(PyObject *UNUSED(self), PyObject *args, PyObjec
                                         PyC_ParseBool,
                                         &packed,
                                         PyC_ParseBool,
-                                        &local)) {
+                                        &local))
+  {
     return NULL;
   }
 
@@ -188,7 +189,8 @@ static PyObject *bpy_flip_name(PyObject *UNUSED(self), PyObject *args, PyObject 
       0,
   };
   if (!_PyArg_ParseTupleAndKeywordsFast(
-          args, kw, &_parser, &name_src, &name_src_len, PyC_ParseBool, &strip_digits)) {
+          args, kw, &_parser, &name_src, &name_src_len, PyC_ParseBool, &strip_digits))
+  {
     return NULL;
   }
 
@@ -238,7 +240,7 @@ static PyObject *bpy_user_resource(PyObject *UNUSED(self), PyObject *args, PyObj
    * but best leave it up to the script author to create */
   path = BKE_appdir_folder_id_user_notest(type.value_found, subdir);
 
-  return PyC_UnicodeFromByte(path ? path : "");
+  return PyC_UnicodeFromBytes(path ? path : "");
 }
 
 PyDoc_STRVAR(bpy_system_resource_doc,
@@ -279,7 +281,7 @@ static PyObject *bpy_system_resource(PyObject *UNUSED(self), PyObject *args, PyO
 
   path = BKE_appdir_folder_id(type.value_found, subdir);
 
-  return PyC_UnicodeFromByte(path ? path : "");
+  return PyC_UnicodeFromBytes(path ? path : "");
 }
 
 PyDoc_STRVAR(
@@ -320,13 +322,14 @@ static PyObject *bpy_resource_path(PyObject *UNUSED(self), PyObject *args, PyObj
       0,
   };
   if (!_PyArg_ParseTupleAndKeywordsFast(
-          args, kw, &_parser, PyC_ParseStringEnum, &type, &major, &minor)) {
+          args, kw, &_parser, PyC_ParseStringEnum, &type, &major, &minor))
+  {
     return NULL;
   }
 
   path = BKE_appdir_resource_path_id_with_version(type.value_found, false, (major * 100) + minor);
 
-  return PyC_UnicodeFromByte(path ? path : "");
+  return PyC_UnicodeFromBytes(path ? path : "");
 }
 
 /* This is only exposed for tests, see: `tests/python/bl_pyapi_bpy_driver_secure_eval.py`. */
@@ -366,7 +369,8 @@ static PyObject *bpy_driver_secure_code_test(PyObject *UNUSED(self), PyObject *a
                                         &PyDict_Type,
                                         &py_namespace,
                                         PyC_ParseBool,
-                                        &verbose)) {
+                                        &verbose))
+  {
     return NULL;
   }
   return PyBool_FromLong(BPY_driver_secure_bytecode_test(py_code, py_namespace, verbose));

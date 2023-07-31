@@ -22,7 +22,7 @@ static PyObject *bpy_atexit(PyObject *UNUSED(self), PyObject *UNUSED(args), PyOb
   /* close down enough of blender at least not to crash */
   struct bContext *C = BPY_context_get();
 
-  WM_exit_ex(C, false);
+  WM_exit_ex(C, false, false);
 
   Py_RETURN_NONE;
 }
@@ -32,7 +32,7 @@ static PyObject *func_bpy_atregister = NULL; /* borrowed reference, `atexit` hol
 
 static void atexit_func_call(const char *func_name, PyObject *atexit_func_arg)
 {
-  /* NOTE(@campbellbarton): no error checking, if any of these fail we'll get a crash
+  /* NOTE(@ideasman42): no error checking, if any of these fail we'll get a crash
    * this is intended, but if its problematic it could be changed. */
 
   PyObject *atexit_mod = PyImport_ImportModuleLevel("atexit", NULL, NULL, NULL, 0);

@@ -394,7 +394,7 @@ bool OSLShaderManager::osl_compile(const string &inputfile, const string &output
 
   /* Compile.
    *
-   * Mutex protected because the OSL compiler does not appear to be thread safe, see T92503. */
+   * Mutex protected because the OSL compiler does not appear to be thread safe, see #92503. */
   static thread_mutex osl_compiler_mutex;
   thread_scoped_lock lock(osl_compiler_mutex);
 
@@ -665,6 +665,27 @@ OSLNode *OSLShaderManager::osl_node(ShaderGraph *graph,
   return node;
 }
 
+/* Static function, so only this file needs to be compile with RTTT. */
+void OSLShaderManager::osl_image_slots(Device *device,
+                                       ImageManager *image_manager,
+                                       set<int> &image_slots)
+{
+  set<OSLRenderServices *> services_shared;
+  device->foreach_device([&services_shared](Device *sub_device) {
+    OSLGlobals *og = (OSLGlobals *)sub_device->get_cpu_osl_memory();
+    services_shared.insert(og->services);
+  });
+
+  for (OSLRenderServices *services : services_shared) {
+    for (auto it = services->textures.begin(); it != services->textures.end(); ++it) {
+      if (it->second->handle.get_manager() == image_manager) {
+        const int slot = it->second->handle.svm_slot();
+        image_slots.insert(slot);
+      }
+    }
+  }
+}
+
 /* Graph Compiler */
 
 OSLCompiler::OSLCompiler(OSLShaderManager *manager, OSL::ShadingSystem *ss, Scene *scene)
@@ -682,8 +703,11 @@ string OSLCompiler::id(ShaderNode *node)
 {
   /* assign layer unique name based on pointer address + bump mode */
   stringstream stream;
-  stream.imbue(std::locale("C")); /* Ensure that no grouping characters (e.g. commas with en_US
-                                     locale) are added to the pointer string */
+
+  /* Ensure that no grouping characters (e.g. commas with en_US locale)
+   * are added to the pointer string. */
+  stream.imbue(std::locale("C"));
+
   stream << "node_" << node->type->name << "_" << node;
 
   return stream.str();
@@ -1327,57 +1351,31 @@ void OSLCompiler::parameter_texture_ies(const char *name, int svm_slot)
 
 #else
 
-void OSLCompiler::add(ShaderNode * /*node*/, const char * /*name*/, bool /*isfilepath*/)
-{
-}
+void OSLCompiler::add(ShaderNode * /*node*/, const char * /*name*/, bool /*isfilepath*/) {}
 
-void OSLCompiler::parameter(ShaderNode * /*node*/, const char * /*name*/)
-{
-}
+void OSLCompiler::parameter(ShaderNode * /*node*/, const char * /*name*/) {}
 
-void OSLCompiler::parameter(const char * /*name*/, float /*f*/)
-{
-}
+void OSLCompiler::parameter(const char * /*name*/, float /*f*/) {}
 
-void OSLCompiler::parameter_color(const char * /*name*/, float3 /*f*/)
-{
-}
+void OSLCompiler::parameter_color(const char * /*name*/, float3 /*f*/) {}
 
-void OSLCompiler::parameter_vector(const char * /*name*/, float3 /*f*/)
-{
-}
+void OSLCompiler::parameter_vector(const char * /*name*/, float3 /*f*/) {}
 
-void OSLCompiler::parameter_point(const char * /*name*/, float3 /*f*/)
-{
-}
+void OSLCompiler::parameter_point(const char * /*name*/, float3 /*f*/) {}
 
-void OSLCompiler::parameter_normal(const char * /*name*/, float3 /*f*/)
-{
-}
+void OSLCompiler::parameter_normal(const char * /*name*/, float3 /*f*/) {}
 
-void OSLCompiler::parameter(const char * /*name*/, int /*f*/)
-{
-}
+void OSLCompiler::parameter(const char * /*name*/, int /*f*/) {}
 
-void OSLCompiler::parameter(const char * /*name*/, const char * /*s*/)
-{
-}
+void OSLCompiler::parameter(const char * /*name*/, const char * /*s*/) {}
 
-void OSLCompiler::parameter(const char * /*name*/, ustring /*s*/)
-{
-}
+void OSLCompiler::parameter(const char * /*name*/, ustring /*s*/) {}
 
-void OSLCompiler::parameter(const char * /*name*/, const Transform & /*tfm*/)
-{
-}
+void OSLCompiler::parameter(const char * /*name*/, const Transform & /*tfm*/) {}
 
-void OSLCompiler::parameter_array(const char * /*name*/, const float /*f*/[], int /*arraylen*/)
-{
-}
+void OSLCompiler::parameter_array(const char * /*name*/, const float /*f*/[], int /*arraylen*/) {}
 
-void OSLCompiler::parameter_color_array(const char * /*name*/, const array<float3> & /*f*/)
-{
-}
+void OSLCompiler::parameter_color_array(const char * /*name*/, const array<float3> & /*f*/) {}
 
 void OSLCompiler::parameter_texture(const char * /* name */,
                                     ustring /* filename */,
@@ -1385,13 +1383,9 @@ void OSLCompiler::parameter_texture(const char * /* name */,
 {
 }
 
-void OSLCompiler::parameter_texture(const char * /* name */, const ImageHandle & /*handle*/)
-{
-}
+void OSLCompiler::parameter_texture(const char * /* name */, const ImageHandle & /*handle*/) {}
 
-void OSLCompiler::parameter_texture_ies(const char * /* name */, int /* svm_slot */)
-{
-}
+void OSLCompiler::parameter_texture_ies(const char * /* name */, int /* svm_slot */) {}
 
 #endif /* WITH_OSL */
 

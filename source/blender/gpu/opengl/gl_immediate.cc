@@ -79,7 +79,8 @@ uchar *GLImmediate::begin()
     recreate_buffer = true;
   }
   else if (bytes_needed < DEFAULT_INTERNAL_BUFFER_SIZE &&
-           buffer_size() > DEFAULT_INTERNAL_BUFFER_SIZE) {
+           buffer_size() > DEFAULT_INTERNAL_BUFFER_SIZE)
+  {
     /* shrink the internal buffer */
     buffer_size() = DEFAULT_INTERNAL_BUFFER_SIZE;
     recreate_buffer = true;
@@ -153,7 +154,7 @@ void GLImmediate::end()
     glEnable(GL_PRIMITIVE_RESTART);
 #endif
     /* These lines are causing crash on startup on some old GPU + drivers.
-     * They are not required so just comment them. (T55722) */
+     * They are not required so just comment them. (#55722) */
     // glBindBuffer(GL_ARRAY_BUFFER, 0);
     // glBindVertexArray(0);
   }

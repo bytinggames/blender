@@ -73,9 +73,7 @@ void ED_mball_editmball_make(Object *obedit)
   mb->editelems = &mb->elems;
 }
 
-void ED_mball_editmball_load(Object *UNUSED(obedit))
-{
-}
+void ED_mball_editmball_load(Object *UNUSED(obedit)) {}
 
 /** \} */
 
@@ -633,12 +631,13 @@ void MBALL_OT_delete_metaelems(wmOperatorType *ot)
   ot->idname = "MBALL_OT_delete_metaelems";
 
   /* callback functions */
-  ot->invoke = WM_operator_confirm;
+  ot->invoke = WM_operator_confirm_or_exec;
   ot->exec = delete_metaelems_exec;
   ot->poll = ED_operator_editmball;
 
   /* flags */
   ot->flag = OPTYPE_REGISTER | OPTYPE_UNDO;
+  WM_operator_properties_confirm_or_exec(ot);
 }
 
 /** \} */
@@ -749,7 +748,7 @@ Base *ED_mball_base_and_elem_from_select_buffer(Base **bases,
   const uint hit_object = select_id & 0xFFFF;
   Base *base = NULL;
   MetaElem *ml = NULL;
-  /* TODO(@campbellbarton): optimize, eg: sort & binary search. */
+  /* TODO(@ideasman42): optimize, eg: sort & binary search. */
   for (uint base_index = 0; base_index < bases_len; base_index++) {
     if (bases[base_index]->object->runtime.select_id == hit_object) {
       base = bases[base_index];

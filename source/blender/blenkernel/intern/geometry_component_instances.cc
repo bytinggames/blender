@@ -2,9 +2,9 @@
 
 #include <mutex>
 
-#include "BLI_float4x4.hh"
 #include "BLI_index_mask.hh"
 #include "BLI_map.hh"
+#include "BLI_math_matrix_types.hh"
 #include "BLI_rand.hh"
 #include "BLI_set.hh"
 #include "BLI_span.hh"
@@ -37,9 +37,7 @@ using blender::bke::Instances;
 /** \name Geometry Component Implementation
  * \{ */
 
-InstancesComponent::InstancesComponent() : GeometryComponent(GEO_COMPONENT_TYPE_INSTANCES)
-{
-}
+InstancesComponent::InstancesComponent() : GeometryComponent(GEO_COMPONENT_TYPE_INSTANCES) {}
 
 InstancesComponent::~InstancesComponent()
 {
@@ -58,7 +56,7 @@ GeometryComponent *InstancesComponent::copy() const
 
 void InstancesComponent::clear()
 {
-  BLI_assert(this->is_mutable());
+  BLI_assert(this->is_mutable() || this->is_expired());
   if (ownership_ == GeometryOwnershipType::Owned) {
     delete instances_;
   }
@@ -117,30 +115,32 @@ namespace blender::bke {
 
 static float3 get_transform_position(const float4x4 &transform)
 {
-  return transform.translation();
+  return transform.location();
 }
 
 static void set_transform_position(float4x4 &transform, const float3 position)
 {
-  copy_v3_v3(transform.values[3], position);
+  transform.location() = position;
 }
 
 class InstancePositionAttributeProvider final : public BuiltinAttributeProvider {
  public:
   InstancePositionAttributeProvider()
       : BuiltinAttributeProvider(
-            "position", ATTR_DOMAIN_INSTANCE, CD_PROP_FLOAT3, NonCreatable, Writable, NonDeletable)
+            "position", ATTR_DOMAIN_INSTANCE, CD_PROP_FLOAT3, NonCreatable, NonDeletable)
   {
   }
 
-  GVArray try_get_for_read(const void *owner) const final
+  GAttributeReader try_get_for_read(const void *owner) const final
   {
     const Instances *instances = static_cast<const Instances *>(owner);
     if (instances == nullptr) {
       return {};
     }
     Span<float4x4> transforms = instances->transforms();
-    return VArray<float3>::ForDerivedSpan<float4x4, get_transform_position>(transforms);
+    return {VArray<float3>::ForDerivedSpan<float4x4, get_transform_position>(transforms),
+            domain_,
+            nullptr};
   }
 
   GAttributeWriter try_get_for_write(void *owner) const final
@@ -200,11 +200,8 @@ static ComponentAttributeProviders create_attribute_providers_for_instances()
                                            CD_PROP_INT32,
                                            CD_PROP_INT32,
                                            BuiltinAttributeProvider::Creatable,
-                                           BuiltinAttributeProvider::Writable,
                                            BuiltinAttributeProvider::Deletable,
                                            instance_custom_data_access,
-                                           make_array_read_attribute<int>,
-                                           make_array_write_attribute<int>,
                                            nullptr);
 
   static CustomDataAttributeProvider instance_custom_data(ATTR_DOMAIN_INSTANCE,

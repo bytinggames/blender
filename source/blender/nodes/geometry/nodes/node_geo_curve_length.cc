@@ -8,8 +8,8 @@ namespace blender::nodes::node_geo_curve_length_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Geometry>(N_("Curve")).supported_type(GEO_COMPONENT_TYPE_CURVE);
-  b.add_output<decl::Float>(N_("Length"));
+  b.add_input<decl::Geometry>("Curve").supported_type(GEO_COMPONENT_TYPE_CURVE);
+  b.add_output<decl::Float>("Length");
 }
 
 static void node_geo_exec(GeoNodeExecParams params)
@@ -21,7 +21,7 @@ static void node_geo_exec(GeoNodeExecParams params)
   }
 
   const Curves &curves_id = *curve_set.get_curves_for_read();
-  const bke::CurvesGeometry &curves = bke::CurvesGeometry::wrap(curves_id.geometry);
+  const bke::CurvesGeometry &curves = curves_id.geometry.wrap();
   const VArray<bool> cyclic = curves.cyclic();
 
   curves.ensure_evaluated_lengths();

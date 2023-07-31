@@ -17,6 +17,7 @@ extern "C" {
 
 #ifdef __cplusplus
 namespace blender::bke {
+class CurvesGeometry;
 class CurvesGeometryRuntime;
 }  // namespace blender::bke
 using CurvesGeometryRuntimeHandle = blender::bke::CurvesGeometryRuntime;
@@ -106,6 +107,9 @@ typedef struct CurvesGeometry {
    * Every curve offset must be at least one larger than the previous. In other words, every curve
    * must have at least one point. The first value is 0 and the last value is #point_num.
    *
+   * This array is shared based on the bke::MeshRuntime::poly_offsets_sharing_info.
+   * Avoid accessing directly when possible.
+   *
    * \note This is *not* stored as an attribute because its size is one larger than #curve_num.
    */
   int *curve_offsets;
@@ -134,6 +138,11 @@ typedef struct CurvesGeometry {
    * Runtime data for curves, stored as a pointer to allow defining this as a C++ class.
    */
   CurvesGeometryRuntimeHandle *runtime;
+
+#ifdef __cplusplus
+  blender::bke::CurvesGeometry &wrap();
+  const blender::bke::CurvesGeometry &wrap() const;
+#endif
 } CurvesGeometry;
 
 /**
@@ -191,6 +200,7 @@ typedef struct Curves {
 /** #Curves.flag */
 enum {
   HA_DS_EXPAND = (1 << 0),
+  CV_SCULPT_COLLISION_ENABLED = (1 << 1),
 };
 
 /** #Curves.symmetry */

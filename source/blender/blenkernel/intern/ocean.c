@@ -222,9 +222,9 @@ void BKE_ocean_eval_uv(struct Ocean *oc, struct OceanResult *ocr, float u, float
   j1 = j1 % oc->_N;
 
 #  define BILERP(m) \
-    (interpf(interpf(m[i1 * oc->_N + j1], m[i0 * oc->_N + j1], frac_x), \
-             interpf(m[i1 * oc->_N + j0], m[i0 * oc->_N + j0], frac_x), \
-             frac_z))
+    interpf(interpf(m[i1 * oc->_N + j1], m[i0 * oc->_N + j1], frac_x), \
+            interpf(m[i1 * oc->_N + j0], m[i0 * oc->_N + j0], frac_x), \
+            frac_z)
 
   {
     if (oc->_do_disp_y) {
@@ -852,7 +852,8 @@ bool BKE_ocean_init(struct Ocean *o,
       (o->_h0_minus = (fftw_complex *)MEM_mallocN(sizeof(fftw_complex) * (size_t)M * N,
                                                   "ocean_h0_minus")) &&
       (o->_kx = (float *)MEM_mallocN(sizeof(float) * o->_M, "ocean_kx")) &&
-      (o->_kz = (float *)MEM_mallocN(sizeof(float) * o->_N, "ocean_kz"))) {
+      (o->_kz = (float *)MEM_mallocN(sizeof(float) * o->_N, "ocean_kz")))
+  {
     /* Success. */
   }
   else {
@@ -1119,8 +1120,8 @@ void BKE_ocean_free(struct Ocean *oc)
 #  define CACHE_TYPE_SPRAY 4
 #  define CACHE_TYPE_SPRAY_INVERSE 5
 
-static void cache_filename(
-    char *string, const char *path, const char *relbase, int frame, int type)
+static void cache_filepath(
+    char *filepath, const char *dirname, const char *relbase, int frame, int type)
 {
   char cachepath[FILE_MAX];
   const char *fname;
@@ -1144,10 +1145,10 @@ static void cache_filename(
       break;
   }
 
-  BLI_path_join(cachepath, sizeof(cachepath), path, fname);
+  BLI_path_join(cachepath, sizeof(cachepath), dirname, fname);
 
   BKE_image_path_from_imtype(
-      string, cachepath, relbase, frame, R_IMF_IMTYPE_OPENEXR, true, true, "");
+      filepath, cachepath, relbase, frame, R_IMF_IMTYPE_OPENEXR, true, true, "");
 }
 
 /* silly functions but useful to inline when the args do a lot of indirections */
@@ -1345,7 +1346,7 @@ struct OceanCache *BKE_ocean_init_cache(const char *bakepath,
 
 void BKE_ocean_simulate_cache(struct OceanCache *och, int frame)
 {
-  char string[FILE_MAX];
+  char filepath[FILE_MAX];
   int f = frame;
 
   /* ibufs array is zero based, but filenames are based on frame numbers */
@@ -1361,20 +1362,20 @@ void BKE_ocean_simulate_cache(struct OceanCache *och, int frame)
   /* Use default color spaces since we know for sure cache
    * files were saved with default settings too. */
 
-  cache_filename(string, och->bakepath, och->relbase, frame, CACHE_TYPE_DISPLACE);
-  och->ibufs_disp[f] = IMB_loadiffname(string, 0, NULL);
+  cache_filepath(filepath, och->bakepath, och->relbase, frame, CACHE_TYPE_DISPLACE);
+  och->ibufs_disp[f] = IMB_loadiffname(filepath, 0, NULL);
 
-  cache_filename(string, och->bakepath, och->relbase, frame, CACHE_TYPE_FOAM);
-  och->ibufs_foam[f] = IMB_loadiffname(string, 0, NULL);
+  cache_filepath(filepath, och->bakepath, och->relbase, frame, CACHE_TYPE_FOAM);
+  och->ibufs_foam[f] = IMB_loadiffname(filepath, 0, NULL);
 
-  cache_filename(string, och->bakepath, och->relbase, frame, CACHE_TYPE_SPRAY);
-  och->ibufs_spray[f] = IMB_loadiffname(string, 0, NULL);
+  cache_filepath(filepath, och->bakepath, och->relbase, frame, CACHE_TYPE_SPRAY);
+  och->ibufs_spray[f] = IMB_loadiffname(filepath, 0, NULL);
 
-  cache_filename(string, och->bakepath, och->relbase, frame, CACHE_TYPE_SPRAY_INVERSE);
-  och->ibufs_spray_inverse[f] = IMB_loadiffname(string, 0, NULL);
+  cache_filepath(filepath, och->bakepath, och->relbase, frame, CACHE_TYPE_SPRAY_INVERSE);
+  och->ibufs_spray_inverse[f] = IMB_loadiffname(filepath, 0, NULL);
 
-  cache_filename(string, och->bakepath, och->relbase, frame, CACHE_TYPE_NORMAL);
-  och->ibufs_norm[f] = IMB_loadiffname(string, 0, NULL);
+  cache_filepath(filepath, och->bakepath, och->relbase, frame, CACHE_TYPE_NORMAL);
+  och->ibufs_norm[f] = IMB_loadiffname(filepath, 0, NULL);
 }
 
 void BKE_ocean_bake(struct Ocean *o,
@@ -1382,7 +1383,7 @@ void BKE_ocean_bake(struct Ocean *o,
                     void (*update_cb)(void *, float progress, int *cancel),
                     void *update_cb_data)
 {
-  /* NOTE(@campbellbarton): some of these values remain uninitialized unless certain options
+  /* NOTE(@ideasman42): some of these values remain uninitialized unless certain options
    * are enabled, take care that #BKE_ocean_eval_ij() initializes a member before use. */
   OceanResult ocr;
 
@@ -1395,7 +1396,7 @@ void BKE_ocean_bake(struct Ocean *o,
   float *prev_foam;
   int res_x = och->resolution_x;
   int res_y = och->resolution_y;
-  char string[FILE_MAX];
+  char filepath[FILE_MAX];
   // RNG *rng;
 
   if (!o) {
@@ -1437,7 +1438,7 @@ void BKE_ocean_bake(struct Ocean *o,
         rgb_to_rgba_unit_alpha(&ibuf_disp->rect_float[4 * (res_x * y + x)], ocr.disp);
 
         if (o->_do_jacobian) {
-          /* TODO(@campbellbarton): cleanup unused code. */
+          /* TODO(@ideasman42): cleanup unused code. */
 
           float /* r, */ /* UNUSED */ pr = 0.0f, foam_result;
           float neg_disp, neg_eplus;
@@ -1494,34 +1495,34 @@ void BKE_ocean_bake(struct Ocean *o,
     }
 
     /* write the images */
-    cache_filename(string, och->bakepath, och->relbase, f, CACHE_TYPE_DISPLACE);
-    if (0 == BKE_imbuf_write(ibuf_disp, string, &imf)) {
-      printf("Cannot save Displacement File Output to %s\n", string);
+    cache_filepath(filepath, och->bakepath, och->relbase, f, CACHE_TYPE_DISPLACE);
+    if (0 == BKE_imbuf_write(ibuf_disp, filepath, &imf)) {
+      printf("Cannot save Displacement File Output to %s\n", filepath);
     }
 
     if (o->_do_jacobian) {
-      cache_filename(string, och->bakepath, och->relbase, f, CACHE_TYPE_FOAM);
-      if (0 == BKE_imbuf_write(ibuf_foam, string, &imf)) {
-        printf("Cannot save Foam File Output to %s\n", string);
+      cache_filepath(filepath, och->bakepath, och->relbase, f, CACHE_TYPE_FOAM);
+      if (0 == BKE_imbuf_write(ibuf_foam, filepath, &imf)) {
+        printf("Cannot save Foam File Output to %s\n", filepath);
       }
 
       if (o->_do_spray) {
-        cache_filename(string, och->bakepath, och->relbase, f, CACHE_TYPE_SPRAY);
-        if (0 == BKE_imbuf_write(ibuf_spray, string, &imf)) {
-          printf("Cannot save Spray File Output to %s\n", string);
+        cache_filepath(filepath, och->bakepath, och->relbase, f, CACHE_TYPE_SPRAY);
+        if (0 == BKE_imbuf_write(ibuf_spray, filepath, &imf)) {
+          printf("Cannot save Spray File Output to %s\n", filepath);
         }
 
-        cache_filename(string, och->bakepath, och->relbase, f, CACHE_TYPE_SPRAY_INVERSE);
-        if (0 == BKE_imbuf_write(ibuf_spray_inverse, string, &imf)) {
-          printf("Cannot save Spray Inverse File Output to %s\n", string);
+        cache_filepath(filepath, och->bakepath, och->relbase, f, CACHE_TYPE_SPRAY_INVERSE);
+        if (0 == BKE_imbuf_write(ibuf_spray_inverse, filepath, &imf)) {
+          printf("Cannot save Spray Inverse File Output to %s\n", filepath);
         }
       }
     }
 
     if (o->_do_normals) {
-      cache_filename(string, och->bakepath, och->relbase, f, CACHE_TYPE_NORMAL);
-      if (0 == BKE_imbuf_write(ibuf_normal, string, &imf)) {
-        printf("Cannot save Normal File Output to %s\n", string);
+      cache_filepath(filepath, och->bakepath, och->relbase, f, CACHE_TYPE_NORMAL);
+      if (0 == BKE_imbuf_write(ibuf_normal, filepath, &imf)) {
+        printf("Cannot save Normal File Output to %s\n", filepath);
       }
     }
 
@@ -1634,9 +1635,7 @@ bool BKE_ocean_init(struct Ocean *UNUSED(o),
   return false;
 }
 
-void BKE_ocean_free_data(struct Ocean *UNUSED(oc))
-{
-}
+void BKE_ocean_free_data(struct Ocean *UNUSED(oc)) {}
 
 void BKE_ocean_free(struct Ocean *oc)
 {
@@ -1688,9 +1687,7 @@ OceanCache *BKE_ocean_init_cache(const char *UNUSED(bakepath),
   return och;
 }
 
-void BKE_ocean_simulate_cache(struct OceanCache *UNUSED(och), int UNUSED(frame))
-{
-}
+void BKE_ocean_simulate_cache(struct OceanCache *UNUSED(och), int UNUSED(frame)) {}
 
 void BKE_ocean_bake(struct Ocean *UNUSED(o),
                     struct OceanCache *UNUSED(och),

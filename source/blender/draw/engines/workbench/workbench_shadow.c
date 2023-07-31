@@ -221,7 +221,8 @@ static float workbench_shadow_object_shadow_distance(WORKBENCH_PrivateData *wpd,
                            wpd->shadow_cached_direction,
                            wpd->shadow_far_plane,
                            &dist_isect,
-                           true)) {
+                           true))
+    {
       if (dist_isect < dist) {
         dist = dist_isect;
       }
@@ -251,7 +252,8 @@ static bool workbench_shadow_camera_in_object_shadow(WORKBENCH_PrivateData *wpd,
   if ((oed->shadow_min[0] > wpd->shadow_near_max[0]) ||
       (oed->shadow_max[0] < wpd->shadow_near_min[0]) ||
       (oed->shadow_min[1] > wpd->shadow_near_max[1]) ||
-      (oed->shadow_max[1] < wpd->shadow_near_min[1])) {
+      (oed->shadow_max[1] < wpd->shadow_near_min[1]))
+  {
     return false;
   }
   /* Test projected near rectangle sides */
@@ -319,7 +321,7 @@ void workbench_shadow_cache_populate(WORKBENCH_Data *data, Object *ob, const boo
       use_shadow_pass_technique = false;
     }
 
-    /* We cannot use Shadow Pass technique on non-manifold object (see T76168). */
+    /* We cannot use Shadow Pass technique on non-manifold object (see #76168). */
     if (use_shadow_pass_technique && !is_manifold && (wpd->cull_state != 0)) {
       use_shadow_pass_technique = false;
     }

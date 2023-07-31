@@ -9,12 +9,12 @@
 
 #include "DNA_defs.h"
 
-/* XXX(@campbellbarton): temp feature. */
+/* XXX(@ideasman42): temp feature. */
 #define DURIAN_CAMERA_SWITCH
 
 /**
  * Check for cyclic set-scene.
- * Libraries can cause this case which is normally prevented, see (T42009).
+ * Libraries can cause this case which is normally prevented, see (#42009).
  */
 #define USE_SETSCENE_CHECK
 
@@ -23,6 +23,7 @@
 #include "DNA_customdata_types.h" /* Scene's runtime custom-data masks. */
 #include "DNA_layer_types.h"
 #include "DNA_listBase.h"
+#include "DNA_scene_enums.h"
 #include "DNA_vec_types.h"
 #include "DNA_view3d_types.h"
 
@@ -177,6 +178,8 @@ typedef struct AudioData {
   char _pad2[4];
 } AudioData;
 
+/** \} */
+
 /* -------------------------------------------------------------------- */
 /** \name Render Layers
  * \{ */
@@ -309,6 +312,7 @@ typedef enum eScenePassType {
 #define RE_PASSNAME_FREESTYLE "Freestyle"
 #define RE_PASSNAME_BLOOM "BloomCol"
 #define RE_PASSNAME_VOLUME_LIGHT "VolumeDir"
+#define RE_PASSNAME_TRANSPARENT "Transp"
 
 #define RE_PASSNAME_CRYPTOMATTE_OBJECT "CryptoObject"
 #define RE_PASSNAME_CRYPTOMATTE_ASSET "CryptoAsset"
@@ -670,8 +674,7 @@ typedef struct RenderData {
   /** Frames to jump during render/playback. */
   int frame_step;
 
-  /** Standalone player stereo settings. */ /* XXX deprecated since .2.5 */
-  short stereomode DNA_DEPRECATED;
+  char _pad10[2];
 
   /** For the dimensions presets menu. */
   short dimensionspreset;
@@ -793,6 +796,8 @@ typedef struct RenderData {
   float simplify_particles;
   float simplify_particles_render;
   float simplify_volumes;
+  float simplify_shadows;
+  float simplify_shadows_render;
 
   /** Freestyle line thickness options. */
   int line_thickness_mode;
@@ -1691,6 +1696,13 @@ typedef struct ToolSettings {
 
   struct SequencerToolSettings *sequencer_tool_settings;
 
+  short snap_mode_tools; /* If SCE_SNAP_MODE_NONE, use #ToolSettings::snap_mode. #eSnapMode. */
+  char plane_axis;       /* X, Y or Z. */
+  char plane_depth;      /* #eV3DPlaceDepth. */
+  char plane_orient;     /* #eV3DPlaceOrient. */
+  char use_plane_axis_auto;
+  char _pad7[2];
+
 } ToolSettings;
 
 /** \} */
@@ -1829,6 +1841,8 @@ typedef struct SceneEEVEE {
   int shadow_method DNA_DEPRECATED;
   int shadow_cube_size;
   int shadow_cascade_size;
+  int shadow_pool_size;
+  char _pad[4];
 
   struct LightCache *light_cache DNA_DEPRECATED;
   struct LightCache *light_cache_data;
@@ -1976,6 +1990,7 @@ typedef struct Scene {
 
   struct PreviewImage *preview;
 
+  /** ViewLayer, defined in DNA_layer_types.h */
   ListBase view_layers;
   /** Not an actual data-block, but memory owned by scene. */
   struct Collection *master_collection;
@@ -2157,7 +2172,7 @@ extern const char *RE_engine_id_CYCLES;
 /** \name Scene Defines
  * \{ */
 
-/* Note that much higher max-frames give imprecise sub-frames, see: T46859. */
+/* Note that much higher max-frames give imprecise sub-frames, see: #46859. */
 /* Current precision is 16 for the sub-frames closer to MAXFRAME. */
 
 /* For general use. */
@@ -2186,7 +2201,7 @@ extern const char *RE_engine_id_CYCLES;
 #define BASE_EDITABLE(v3d, base) \
   (BASE_VISIBLE(v3d, base) && !ID_IS_LINKED((base)->object) && \
    (!ID_IS_OVERRIDE_LIBRARY_REAL((base)->object) || \
-    ((base)->object->id.override_library->flag & IDOVERRIDE_LIBRARY_FLAG_SYSTEM_DEFINED) == 0))
+    ((base)->object->id.override_library->flag & LIBOVERRIDE_FLAG_SYSTEM_DEFINED) == 0))
 #define BASE_SELECTED_EDITABLE(v3d, base) \
   (BASE_EDITABLE(v3d, base) && (((base)->flag & BASE_SELECTED) != 0))
 
@@ -2292,10 +2307,6 @@ typedef enum eSnapMode {
   SCE_SNAP_MODE_EDGE_PERPENDICULAR = (1 << 5),
   SCE_SNAP_MODE_FACE_NEAREST = (1 << 8),
 
-  SCE_SNAP_MODE_GEOM = (SCE_SNAP_MODE_VERTEX | SCE_SNAP_MODE_EDGE | SCE_SNAP_MODE_FACE_RAYCAST |
-                        SCE_SNAP_MODE_EDGE_PERPENDICULAR | SCE_SNAP_MODE_EDGE_MIDPOINT |
-                        SCE_SNAP_MODE_FACE_NEAREST),
-
   /** #ToolSettings.snap_node_mode */
   SCE_SNAP_MODE_NODE_X = (1 << 0),
   SCE_SNAP_MODE_NODE_Y = (1 << 1),
@@ -2307,8 +2318,12 @@ typedef enum eSnapMode {
 /* Due to dependency conflicts with Cycles, header cannot directly include `BLI_utildefines.h`. */
 /* TODO: move this macro to a more general place. */
 #ifdef ENUM_OPERATORS
-ENUM_OPERATORS(eSnapMode, SCE_SNAP_MODE_GRID)
+ENUM_OPERATORS(eSnapMode, SCE_SNAP_MODE_FACE_NEAREST)
 #endif
+
+#define SCE_SNAP_MODE_GEOM \
+  (SCE_SNAP_MODE_VERTEX | SCE_SNAP_MODE_EDGE | SCE_SNAP_MODE_FACE_RAYCAST | \
+   SCE_SNAP_MODE_EDGE_PERPENDICULAR | SCE_SNAP_MODE_EDGE_MIDPOINT | SCE_SNAP_MODE_FACE_NEAREST)
 
 /** #SequencerToolSettings.snap_mode */
 #define SEQ_SNAP_TO_STRIPS (1 << 0)
@@ -2371,15 +2386,6 @@ enum {
 
 /* object_vgroup.cc */
 
-/** #ToolSettings.vgroupsubset */
-typedef enum eVGroupSelect {
-  WT_VGROUP_ALL = 0,
-  WT_VGROUP_ACTIVE = 1,
-  WT_VGROUP_BONE_SELECT = 2,
-  WT_VGROUP_BONE_DEFORM = 3,
-  WT_VGROUP_BONE_DEFORM_OFF = 4,
-} eVGroupSelect;
-
 #define WT_VGROUP_MASK_ALL \
   ((1 << WT_VGROUP_ACTIVE) | (1 << WT_VGROUP_BONE_SELECT) | (1 << WT_VGROUP_BONE_DEFORM) | \
    (1 << WT_VGROUP_BONE_DEFORM_OFF) | (1 << WT_VGROUP_ALL))
@@ -2429,6 +2435,7 @@ typedef enum ePaintFlags {
  * (for now just a duplicate of sculpt symmetry flags).
  */
 typedef enum ePaintSymmetryFlags {
+  PAINT_SYMM_NONE = 0,
   PAINT_SYMM_X = (1 << 0),
   PAINT_SYMM_Y = (1 << 1),
   PAINT_SYMM_Z = (1 << 2),
@@ -2438,6 +2445,13 @@ typedef enum ePaintSymmetryFlags {
   PAINT_TILE_Z = (1 << 6),
 } ePaintSymmetryFlags;
 ENUM_OPERATORS(ePaintSymmetryFlags, PAINT_TILE_Z);
+#ifdef __cplusplus
+inline ePaintSymmetryFlags operator++(ePaintSymmetryFlags &flags, int)
+{
+  flags = ePaintSymmetryFlags(char(flags) + 1);
+  return flags;
+}
+#endif
 
 #define PAINT_SYMM_AXIS_ALL (PAINT_SYMM_X | PAINT_SYMM_Y | PAINT_SYMM_Z)
 
@@ -2694,6 +2708,7 @@ enum {
   SCE_EEVEE_OVERSCAN = (1 << 21),
   SCE_EEVEE_DOF_HQ_SLIGHT_FOCUS = (1 << 22),
   SCE_EEVEE_DOF_JITTER = (1 << 23),
+  SCE_EEVEE_SHADOW_ENABLED = (1 << 24),
 };
 
 /** #SceneEEVEE.shadow_method */

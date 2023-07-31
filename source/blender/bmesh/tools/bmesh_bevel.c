@@ -307,7 +307,10 @@ typedef struct BevelParams {
   GHash *vert_hash;
   /** Records new faces: key BMFace*, value one of {VERT/EDGE/RECON}_POLY. */
   GHash *face_hash;
-  /** Use for all allocs while bevel runs. NOTE: If we need to free we can switch to mempool. */
+  /**
+   * Use for all allocations while bevel runs.
+   * \note If we need to free we can switch to `BLI_mempool`.
+   */
   MemArena *mem_arena;
   /** Profile vertex location and spacings. */
   ProfileSpacing pro_spacing;
@@ -772,7 +775,8 @@ static bool contig_ldata_across_edge(BMesh *bm, BMEdge *e, BMFace *f1, BMFace *f
   for (int i = 0; i < bm->ldata.totlayer; i++) {
     if (CustomData_layer_has_math(&bm->ldata, i)) {
       if (!contig_ldata_across_loops(bm, lv1f1, lv1f2, i) ||
-          !contig_ldata_across_loops(bm, lv2f1, lv2f2, i)) {
+          !contig_ldata_across_loops(bm, lv2f1, lv2f2, i))
+      {
         return false;
       }
     }
@@ -1348,7 +1352,7 @@ static void offset_meet(BevelParams *bp,
     /* Special case: e1 and e2 are parallel; put offset point perp to both, from v.
      * need to find a suitable plane.
      * This code used to just use offset and dir1, but that makes for visible errors
-     * on a circle with > 200 sides, which trips this "nearly perp" code (see T61214).
+     * on a circle with > 200 sides, which trips this "nearly perp" code (see #61214).
      * so use the average of the two, and the offset formula for angle bisector.
      * If offsets are different, we're out of luck:
      * Use the max of the two (so get consistent looking results if the same situation
@@ -1501,9 +1505,9 @@ static void offset_meet(BevelParams *bp,
   }
 }
 
-/* This was changed from 0.25f to fix bug T86768.
- * Original bug T44961 remains fixed with this value.
- * Update: changed again from 0.0001f to fix bug T95335.
+/* This was changed from 0.25f to fix bug #86768.
+ * Original bug #44961 remains fixed with this value.
+ * Update: changed again from 0.0001f to fix bug #95335.
  * Original two bugs remained fixed.
  */
 #define BEVEL_GOOD_ANGLE 0.1f
@@ -1840,7 +1844,8 @@ static void move_profile_plane(BoundVert *bndv, BMVert *bmvert)
   cross_v3_v3v3(no3, d2, pro->proj_dir);
 
   if (normalize_v3(no) > BEVEL_EPSILON_BIG && normalize_v3(no2) > BEVEL_EPSILON_BIG &&
-      normalize_v3(no3) > BEVEL_EPSILON_BIG) {
+      normalize_v3(no3) > BEVEL_EPSILON_BIG)
+  {
     float dot2 = dot_v3v3(no, no2);
     float dot3 = dot_v3v3(no, no3);
     if (fabsf(dot2) < (1 - BEVEL_EPSILON_BIG) && fabsf(dot3) < (1 - BEVEL_EPSILON_BIG)) {
@@ -2262,7 +2267,7 @@ static void snap_to_superellipsoid(float co[3], const float super_r, bool midlin
   co[2] = z;
 }
 
-#define BEV_EXTEND_EDGE_DATA_CHECK(eh, flag) (BM_elem_flag_test(eh->e, flag))
+#define BEV_EXTEND_EDGE_DATA_CHECK(eh, flag) BM_elem_flag_test(eh->e, flag)
 
 static void check_edge_data_seam_sharp_edges(BevVert *bv, int flag, bool neg)
 {
@@ -2270,7 +2275,8 @@ static void check_edge_data_seam_sharp_edges(BevVert *bv, int flag, bool neg)
 
   /* First edge with seam or sharp edge data. */
   while ((!neg && !BEV_EXTEND_EDGE_DATA_CHECK(e, flag)) ||
-         (neg && BEV_EXTEND_EDGE_DATA_CHECK(e, flag))) {
+         (neg && BEV_EXTEND_EDGE_DATA_CHECK(e, flag)))
+  {
     e = e->next;
     if (e == efirst) {
       break;
@@ -2292,14 +2298,16 @@ static void check_edge_data_seam_sharp_edges(BevVert *bv, int flag, bool neg)
 
     while (((!neg && !BEV_EXTEND_EDGE_DATA_CHECK(ne, flag)) ||
             (neg && BEV_EXTEND_EDGE_DATA_CHECK(ne, flag))) &&
-           ne != efirst) {
+           ne != efirst)
+    {
       if (ne->is_bev) {
         flag_count++;
       }
       ne = ne->next;
     }
     if (ne == e || (ne == efirst && ((!neg && !BEV_EXTEND_EDGE_DATA_CHECK(efirst, flag)) ||
-                                     (neg && BEV_EXTEND_EDGE_DATA_CHECK(efirst, flag))))) {
+                                     (neg && BEV_EXTEND_EDGE_DATA_CHECK(efirst, flag)))))
+    {
       break;
     }
     /* Set seam_len / sharp_len of starting edge. */
@@ -3084,7 +3092,8 @@ static void build_boundary(BevelParams *bp, BevVert *bv, bool construct)
        * and emiter will be set to the first edge of such an edge.
        * A miter kind of BEVEL_MITER_SHARP means no special miter */
       if ((miter_outer != BEVEL_MITER_SHARP && !emiter && ang_kind == ANGLE_LARGER) ||
-          (miter_inner != BEVEL_MITER_SHARP && ang_kind == ANGLE_SMALLER)) {
+          (miter_inner != BEVEL_MITER_SHARP && ang_kind == ANGLE_SMALLER))
+      {
         if (ang_kind == ANGLE_LARGER) {
           emiter = e;
         }
@@ -3157,7 +3166,8 @@ static void build_boundary(BevelParams *bp, BevVert *bv, bool construct)
     else { /* construct == false. */
       AngleKind ang_kind = edges_angle_kind(e, e2, bv->v);
       if ((miter_outer != BEVEL_MITER_SHARP && !emiter && ang_kind == ANGLE_LARGER) ||
-          (miter_inner != BEVEL_MITER_SHARP && ang_kind == ANGLE_SMALLER)) {
+          (miter_inner != BEVEL_MITER_SHARP && ang_kind == ANGLE_SMALLER))
+      {
         if (ang_kind == ANGLE_LARGER) {
           emiter = e;
         }
@@ -4491,7 +4501,8 @@ static int tri_corner_test(BevelParams *bp, BevVert *bv)
   }
   float angdiff = fabsf(fabsf(totang) - 3.0f * (float)M_PI_2);
   if ((bp->pro_super_r == PRO_SQUARE_R && angdiff > (float)M_PI / 16.0f) ||
-      (angdiff > (float)M_PI_4)) {
+      (angdiff > (float)M_PI_4))
+  {
     return -1;
   }
   if (bv->edgecount != 3 || bv->selcount != 3) {
@@ -5355,7 +5366,8 @@ static void bevel_build_rings(BevelParams *bp, BMesh *bm, BevVert *bv, BoundVert
 
   VMesh *vm1;
   if (bp->pro_super_r == PRO_SQUARE_R && bv->selcount >= 3 && !odd &&
-      bp->profile_type != BEVEL_PROFILE_CUSTOM) {
+      bp->profile_type != BEVEL_PROFILE_CUSTOM)
+  {
     vm1 = square_out_adj_vmesh(bp, bv);
   }
   else if (vpipe) {
@@ -6109,7 +6121,8 @@ static int bevel_edge_order_extend(BMesh *bm, BevVert *bv, int i)
     BM_BEVEL_EDGE_TAG_ENABLE(nextbme);
     int tryj = bevel_edge_order_extend(bm, bv, j + 1);
     if (tryj > bestj ||
-        (tryj == bestj && edges_face_connected_at_vert(bv->edges[tryj].e, bv->edges[0].e))) {
+        (tryj == bestj && edges_face_connected_at_vert(bv->edges[tryj].e, bv->edges[0].e)))
+    {
       bestj = tryj;
       BLI_array_clear(save_path);
       for (int k = j + 1; k <= bestj; k++) {
@@ -6168,7 +6181,8 @@ static bool fast_bevel_edge_order(BevVert *bv)
       }
     }
     if (nsucs == 0 || (nsucs == 2 && j != 1) || nsucs > 2 ||
-        (j == bv->edgecount - 1 && !edges_face_connected_at_vert(bmenext, bv->edges[0].e))) {
+        (j == bv->edgecount - 1 && !edges_face_connected_at_vert(bmenext, bv->edges[0].e)))
+    {
       for (int k = 1; k < j; k++) {
         BM_BEVEL_EDGE_TAG_DISABLE(bv->edges[k].e);
         bv->edges[k].e = NULL;
@@ -6348,7 +6362,8 @@ static BevVert *bevel_vert_construct(BMesh *bm, BevelParams *bp, BMVert *v)
   }
 
   if ((nsel == 0 && bp->affect_type != BEVEL_AFFECT_VERTICES) ||
-      (tot_edges < 2 && bp->affect_type == BEVEL_AFFECT_VERTICES)) {
+      (tot_edges < 2 && bp->affect_type == BEVEL_AFFECT_VERTICES))
+  {
     /* Signal this vert isn't being beveled. */
     BM_elem_flag_disable(v, BM_ELEM_TAG);
     return NULL;
@@ -6746,8 +6761,8 @@ static bool bev_rebuild_polygon(BMesh *bm, BevelParams *bp, BMFace *f)
         /* Want to undo seam and smooth for corner segments
          * if those attrs aren't contiguous around face. */
         if (k < n - 1 && ee[k] == ee[k + 1]) {
-          if (BM_elem_flag_test(ee[k], BM_ELEM_SEAM) &&
-              !BM_elem_flag_test(bme_prev, BM_ELEM_SEAM)) {
+          if (BM_elem_flag_test(ee[k], BM_ELEM_SEAM) && !BM_elem_flag_test(bme_prev, BM_ELEM_SEAM))
+          {
             BM_elem_flag_disable(bme_new, BM_ELEM_SEAM);
           }
           /* Actually want "sharp" to be contiguous, so reverse the test. */
@@ -7803,7 +7818,8 @@ void BM_mesh_bevel(BMesh *bm,
 
   /* Get separate non-custom profile samples for the miter profiles if they are needed */
   if (bp.profile_type == BEVEL_PROFILE_CUSTOM &&
-      (bp.miter_inner != BEVEL_MITER_SHARP || bp.miter_outer != BEVEL_MITER_SHARP)) {
+      (bp.miter_inner != BEVEL_MITER_SHARP || bp.miter_outer != BEVEL_MITER_SHARP))
+  {
     set_profile_spacing(&bp, &bp.pro_spacing_miter, false);
   }
 

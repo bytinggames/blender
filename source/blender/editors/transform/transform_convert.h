@@ -142,7 +142,7 @@ extern TransConvertTypeInfo TransConvertType_Curves;
 
 extern TransConvertTypeInfo TransConvertType_Graph;
 
-/* transform_convert_gpencil.c */
+/* transform_convert_gpencil_legacy.c */
 
 extern TransConvertTypeInfo TransConvertType_GPencil;
 
@@ -260,7 +260,7 @@ extern TransConvertTypeInfo TransConvertType_PaintCurve;
 
 extern TransConvertTypeInfo TransConvertType_Particle;
 
-/* transform_convert_sculpt.c */
+/* transform_convert_sculpt.cc */
 
 extern TransConvertTypeInfo TransConvertType_Sculpt;
 
@@ -275,6 +275,10 @@ extern TransConvertTypeInfo TransConvertType_SequencerImage;
 /* transform_convert_tracking.c */
 
 extern TransConvertTypeInfo TransConvertType_Tracking;
+
+/* transform_convert_tracking_curves.c */
+
+extern TransConvertTypeInfo TransConvertType_TrackingCurves;
 
 #ifdef __cplusplus
 }

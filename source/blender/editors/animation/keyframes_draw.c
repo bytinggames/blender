@@ -16,12 +16,13 @@
 #include "BLI_rect.h"
 
 #include "DNA_anim_types.h"
-#include "DNA_gpencil_types.h"
+#include "DNA_gpencil_legacy_types.h"
 #include "DNA_mask_types.h"
 #include "DNA_object_types.h"
 #include "DNA_scene_types.h"
 
 #include "GPU_immediate.h"
+#include "GPU_shader_shared.h"
 #include "GPU_state.h"
 
 #include "UI_interface.h"

@@ -220,7 +220,7 @@ int imagewrap(Tex *tex,
     }
   }
 
-  /* Keep this before interpolation T29761. */
+  /* Keep this before interpolation #29761. */
   if (ima) {
     if ((tex->imaflag & TEX_USEALPHA) && (ima->alpha_mode != IMA_ALPHA_IGNORE)) {
       if ((tex->imaflag & TEX_CALCALPHA) == 0) {
@@ -235,7 +235,7 @@ int imagewrap(Tex *tex,
     filterx = (0.5f * tex->filtersize) / ibuf->x;
     filtery = (0.5f * tex->filtersize) / ibuf->y;
 
-    /* Important that this value is wrapped T27782.
+    /* Important that this value is wrapped #27782.
      * this applies the modifications made by the checks above,
      * back to the floating point values */
     fx -= (float)(xi - x) / (float)ibuf->x;
@@ -1137,7 +1137,8 @@ static int imagewraposa_aniso(Tex *tex,
 
   if (tex->extend == TEX_CLIPCUBE) {
     if ((fx + minx) < 0.0f || (fy + miny) < 0.0f || (fx - minx) > 1.0f || (fy - miny) > 1.0f ||
-        texvec[2] < -1.0f || texvec[2] > 1.0f) {
+        texvec[2] < -1.0f || texvec[2] > 1.0f)
+    {
       if (ima) {
         BKE_image_pool_release_ibuf(ima, ibuf, pool);
       }
@@ -1565,7 +1566,8 @@ int imagewraposa(Tex *tex,
 
   if (tex->extend == TEX_CLIPCUBE) {
     if (fx + minx < 0.0f || fy + miny < 0.0f || fx - minx > 1.0f || fy - miny > 1.0f ||
-        texvec[2] < -1.0f || texvec[2] > 1.0f) {
+        texvec[2] < -1.0f || texvec[2] > 1.0f)
+    {
       if (ima) {
         BKE_image_pool_release_ibuf(ima, ibuf, pool);
       }

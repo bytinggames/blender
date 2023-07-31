@@ -193,7 +193,8 @@ static BMFace *tc_mesh_customdatacorrect_find_best_face_substitute(BMFace *f)
 
     /* Check the loops edge isn't selected. */
     if (!BM_elem_flag_test(l_radial_next->v, BM_ELEM_SELECT) &&
-        !BM_elem_flag_test(l_radial_next->next->v, BM_ELEM_SELECT)) {
+        !BM_elem_flag_test(l_radial_next->next->v, BM_ELEM_SELECT))
+    {
       /* Prefer edges with unselected vertices.
        * Useful for extrude. */
       best_face = f_test;
@@ -273,7 +274,8 @@ static void tc_mesh_customdatacorrect_init_vert(struct TransCustomDataLayer *tcl
 
     if (tcld->use_merge_group) {
       if ((l_prev = BM_loop_find_prev_nodouble(l, l->next, FLT_EPSILON)) &&
-          (l_next = BM_loop_find_next_nodouble(l, l_prev, FLT_EPSILON))) {
+          (l_next = BM_loop_find_next_nodouble(l, l_prev, FLT_EPSILON)))
+      {
         loop_weights[j] = angle_v3v3v3(l_prev->v->co, l->v->co, l_next->v->co);
       }
       else {
@@ -456,7 +458,8 @@ void transform_convert_mesh_customdatacorrect_init(TransInfo *t)
                 TFM_SHRINKFATTEN,
                 TFM_TRACKBALL,
                 TFM_PUSHPULL,
-                TFM_ALIGN)) {
+                TFM_ALIGN))
+  {
     {
       if (!(t->settings->uvcalc_flag & UVCALC_TRANSFORM_CORRECT)) {
         /* No custom-data correction. */
@@ -556,16 +559,18 @@ static void tc_mesh_customdatacorrect_apply_vert(struct TransCustomDataLayer *tc
        *
        * Since we only need to check if the vertex is in this corner,
        * its not important _which_ loop - as long as its not overlapping
-       * 'sv->co_orig_3d', see: T45096. */
+       * 'sv->co_orig_3d', see: #45096. */
       project_plane_normalized_v3_v3v3(v_proj[0], co_prev, v_proj_axis);
       while (UNLIKELY(((co_prev_ok = (len_squared_v3v3(v_proj[1], v_proj[0]) > eps)) == false) &&
-                      ((l_prev = l_prev->prev) != l->next))) {
+                      ((l_prev = l_prev->prev) != l->next)))
+      {
         co_prev = tc_mesh_vert_orig_co_get(tcld, l_prev->v);
         project_plane_normalized_v3_v3v3(v_proj[0], co_prev, v_proj_axis);
       }
       project_plane_normalized_v3_v3v3(v_proj[2], co_next, v_proj_axis);
       while (UNLIKELY(((co_next_ok = (len_squared_v3v3(v_proj[1], v_proj[2]) > eps)) == false) &&
-                      ((l_next = l_next->next) != l->prev))) {
+                      ((l_next = l_next->next) != l->prev)))
+      {
         co_next = tc_mesh_vert_orig_co_get(tcld, l_next->v);
         project_plane_normalized_v3_v3v3(v_proj[2], co_next, v_proj_axis);
       }
@@ -919,8 +924,8 @@ static bool bmesh_test_dist_add(BMVert *v0,
                                 int *index,
                                 const float mtx[3][3])
 {
-  if ((BM_elem_flag_test(v0, BM_ELEM_SELECT) == 0) &&
-      (BM_elem_flag_test(v0, BM_ELEM_HIDDEN) == 0)) {
+  if ((BM_elem_flag_test(v0, BM_ELEM_SELECT) == 0) && (BM_elem_flag_test(v0, BM_ELEM_HIDDEN) == 0))
+  {
     const int i0 = BM_elem_index_get(v0);
     const int i1 = BM_elem_index_get(v1);
 
@@ -1079,7 +1084,8 @@ void transform_convert_mesh_connectivity_distance(struct BMesh *bm,
           BM_ITER_ELEM (e_other, &eiter, v2, BM_EDGES_OF_VERT) {
             if (e_other != e && BM_elem_flag_test(e_other, tag_queued) == 0 &&
                 !BM_elem_flag_test(e_other, BM_ELEM_HIDDEN) &&
-                (BM_elem_flag_test(e, tag_loose) || BM_elem_flag_test(e_other, tag_loose))) {
+                (BM_elem_flag_test(e, tag_loose) || BM_elem_flag_test(e_other, tag_loose)))
+            {
               BM_elem_flag_enable(e_other, tag_queued);
               BLI_LINKSTACK_PUSH(queue_next, e_other);
             }
@@ -1111,7 +1117,8 @@ void transform_convert_mesh_connectivity_distance(struct BMesh *bm,
                 if (e_other != e && BM_elem_flag_test(e_other, tag_queued) == 0 &&
                     !BM_elem_flag_test(e_other, BM_ELEM_HIDDEN) &&
                     (BM_elem_flag_test(e_other, tag_loose) ||
-                     dists[BM_elem_index_get(BM_edge_other_vert(e_other, v_other))] != FLT_MAX)) {
+                     dists[BM_elem_index_get(BM_edge_other_vert(e_other, v_other))] != FLT_MAX))
+                {
                   BM_elem_flag_enable(e_other, tag_queued);
                   BLI_LINKSTACK_PUSH(queue_next, e_other);
                 }
@@ -1321,7 +1328,7 @@ void transform_convert_mesh_crazyspace_detect(TransInfo *t,
      * correction with \a quats, relative to the coordinates after
      * the modifiers that support deform matrices \a defcos. */
 
-#if 0 /* TODO(@campbellbarton): fix crazy-space & extrude so it can be enabled for general use. \
+#if 0 /* TODO(@ideasman42): fix crazy-space & extrude so it can be enabled for general use. \
        */
       if ((totleft > 0) || (totleft == -1))
 #else
@@ -1430,7 +1437,8 @@ static void VertsToTransData(TransInfo *t,
   copy_v3_v3(td->iloc, td->loc);
 
   if ((t->mode == TFM_SHRINKFATTEN) && (em->selectmode & SCE_SELECT_FACE) &&
-      BM_elem_flag_test(eve, BM_ELEM_SELECT) && BM_vert_calc_normal_ex(eve, BM_ELEM_SELECT, _no)) {
+      BM_elem_flag_test(eve, BM_ELEM_SELECT) && BM_vert_calc_normal_ex(eve, BM_ELEM_SELECT, _no))
+  {
     no = _no;
   }
   else {
@@ -1508,7 +1516,7 @@ static void createTransEditVerts(bContext *UNUSED(C), TransInfo *t)
     }
 
     /* Snap rotation along normal needs a common axis for whole islands,
-     * otherwise one get random crazy results, see T59104.
+     * otherwise one get random crazy results, see #59104.
      * However, we do not want to use the island center for the pivot/translation reference. */
     const bool is_snap_rotate = ((t->mode == TFM_TRANSLATION) &&
                                  /* There is not guarantee that snapping
@@ -1517,7 +1525,7 @@ static void createTransEditVerts(bContext *UNUSED(C), TransInfo *t)
                                   (t->settings->snap_flag & SCE_SNAP_ROTATE) != 0) &&
                                  (t->around != V3D_AROUND_LOCAL_ORIGINS));
 
-    /* Even for translation this is needed because of island-orientation, see: T51651. */
+    /* Even for translation this is needed because of island-orientation, see: #51651. */
     const bool is_island_center = (t->around == V3D_AROUND_LOCAL_ORIGINS) || is_snap_rotate;
     if (is_island_center) {
       /* In this specific case, near-by vertices will need to know
@@ -1747,8 +1755,8 @@ static BMPartialUpdate *tc_mesh_partial_ensure(TransInfo *t,
   BLI_bitmap *verts_mask = NULL;
   int verts_mask_count = 0; /* Number of elements enabled in `verts_mask`. */
 
-  if ((partial_type == PARTIAL_TYPE_GROUP) &&
-      ((t->flag & T_PROP_EDIT) || tc->use_mirror_axis_any)) {
+  if ((partial_type == PARTIAL_TYPE_GROUP) && ((t->flag & T_PROP_EDIT) || tc->use_mirror_axis_any))
+  {
     verts_group = MEM_callocN(sizeof(*verts_group) * em->bm->totvert, __func__);
     int i;
     TransData *td;
@@ -1823,7 +1831,8 @@ static BMPartialUpdate *tc_mesh_partial_ensure(TransInfo *t,
     for (i = 0; i < tc->data_mirror_len; i++, td_mirror++) {
       BMVert *v_mirr = (BMVert *)POINTER_OFFSET(td_mirror->loc_src, -offsetof(BMVert, co));
       if (!BLI_BITMAP_TEST(verts_mask, BM_elem_index_get(v_mirr)) &&
-          equals_v3v3(td_mirror->loc, td_mirror->iloc)) {
+          equals_v3v3(td_mirror->loc, td_mirror->iloc))
+      {
         continue;
       }
 
@@ -1913,7 +1922,8 @@ static void tc_mesh_partial_types_calc(TransInfo *t, struct PartialTypeState *r_
        * Uniform negative scale can keep normals as-is since the faces are flipped,
        * normals remain unchanged. */
       if ((t->con.mode & CON_APPLY) ||
-          (t->values_final[0] != t->values_final[1] || t->values_final[0] != t->values_final[2])) {
+          (t->values_final[0] != t->values_final[1] || t->values_final[0] != t->values_final[2]))
+      {
         partial_for_normals = PARTIAL_TYPE_ALL;
       }
       break;
@@ -1958,7 +1968,8 @@ static void tc_mesh_partial_update(TransInfo *t,
                                                      partial_state_prev->for_normals);
 
   if ((partial_for_looptri == PARTIAL_TYPE_ALL) && (partial_for_normals == PARTIAL_TYPE_ALL) &&
-      (em->bm->totvert == em->bm->totvertsel)) {
+      (em->bm->totvert == em->bm->totvertsel))
+  {
     /* The additional cost of generating the partial connectivity data isn't justified
      * when all data needs to be updated.
      *
@@ -2046,7 +2057,7 @@ static void recalcData_mesh(TransInfo *t)
 
     bool do_mirror = !(t->flag & T_NO_MIRROR);
     FOREACH_TRANS_DATA_CONTAINER (t, tc) {
-      /* Apply clipping after so we never project past the clip plane T25423. */
+      /* Apply clipping after so we never project past the clip plane #25423. */
       transform_convert_clip_mirror_modifier_apply(tc);
 
       if (do_mirror) {
@@ -2131,7 +2142,7 @@ static void special_aftertrans_update__mesh(bContext *UNUSED(C), TransInfo *t)
   FOREACH_TRANS_DATA_CONTAINER (t, tc) {
     /* table needs to be created for each edit command, since vertices can move etc */
     ED_mesh_mirror_spatial_table_end(tc->obedit);
-    /* TODO(@campbellbarton): xform: We need support for many mirror objects at once! */
+    /* TODO(@ideasman42): xform: We need support for many mirror objects at once! */
     break;
   }
 }

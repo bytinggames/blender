@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2005 Blender Foundation. All rights reserved. */
+ * Copyright 2005 Blender Foundation */
 
 /** \file
  * \ingroup modifiers
@@ -10,9 +10,9 @@
 #include "BLI_utildefines.h"
 
 #include "BLI_array.hh"
-#include "BLI_float4x4.hh"
 #include "BLI_math_geom.h"
 #include "BLI_math_matrix.h"
+#include "BLI_math_matrix_types.hh"
 #include "BLI_vector.hh"
 #include "BLI_vector_set.hh"
 
@@ -32,7 +32,7 @@
 #include "BKE_lib_id.h"
 #include "BKE_lib_query.h"
 #include "BKE_material.h"
-#include "BKE_mesh.h"
+#include "BKE_mesh.hh"
 #include "BKE_mesh_boolean_convert.hh"
 #include "BKE_mesh_wrapper.h"
 #include "BKE_modifier.h"
@@ -43,8 +43,8 @@
 #include "RNA_access.h"
 #include "RNA_prototypes.h"
 
-#include "MOD_ui_common.h"
-#include "MOD_util.h"
+#include "MOD_ui_common.hh"
+#include "MOD_util.hh"
 
 #include "DEG_depsgraph_query.h"
 
@@ -127,7 +127,7 @@ static Mesh *get_quick_mesh(
   if (mesh_self->totpoly == 0 || mesh_operand_ob->totpoly == 0) {
     switch (operation) {
       case eBooleanModifierOp_Intersect:
-        result = BKE_mesh_new_nomain(0, 0, 0, 0, 0);
+        result = BKE_mesh_new_nomain(0, 0, 0, 0);
         break;
 
       case eBooleanModifierOp_Union:
@@ -148,7 +148,7 @@ static Mesh *get_quick_mesh(
             mul_m4_v3(omat, positions[i]);
           }
 
-          BKE_mesh_tag_coords_changed(result);
+          BKE_mesh_tag_positions_changed(result);
         }
 
         break;
@@ -237,7 +237,7 @@ static BMesh *BMD_mesh_bm_create(
   BMesh *bm = BM_mesh_create(&allocsize, &bmesh_create_params);
 
   /* Keep `mesh` first, needed so active layers are set based on `mesh` not `mesh_operand_ob`,
-   * otherwise the wrong active render layer is used, see T92384.
+   * otherwise the wrong active render layer is used, see #92384.
    *
    * NOTE: while initializing customer data layers the is not essential,
    * it avoids the overhead of having to re-allocate #BMHeader.data when the 2nd mesh is added
@@ -603,7 +603,6 @@ static Mesh *modifyMesh(ModifierData *md, const ModifierEvalContext *ctx, Mesh *
 static void requiredDataMask(ModifierData * /*md*/, CustomData_MeshMasks *r_cddata_masks)
 {
   r_cddata_masks->vmask |= CD_MASK_MDEFORMVERT;
-  r_cddata_masks->emask |= CD_MASK_MEDGE;
   r_cddata_masks->fmask |= CD_MASK_MTFACE;
 }
 

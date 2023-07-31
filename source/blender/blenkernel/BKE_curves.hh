@@ -2,31 +2,26 @@
 
 #pragma once
 
-#include "BKE_curves.h"
-
 /** \file
  * \ingroup bke
  * \brief Low-level operations for curves.
  */
 
-#include <mutex>
-
 #include "BLI_bounds_types.hh"
-#include "BLI_cache_mutex.hh"
-#include "BLI_float3x3.hh"
-#include "BLI_float4x4.hh"
 #include "BLI_generic_virtual_array.hh"
+#include "BLI_implicit_sharing.hh"
 #include "BLI_index_mask.hh"
+#include "BLI_math_matrix_types.hh"
 #include "BLI_math_vector_types.hh"
 #include "BLI_offset_indices.hh"
 #include "BLI_shared_cache.hh"
 #include "BLI_span.hh"
-#include "BLI_task.hh"
 #include "BLI_vector.hh"
 #include "BLI_virtual_array.hh"
 
 #include "BKE_attribute.hh"
 #include "BKE_attribute_math.hh"
+#include "BKE_curves.h"
 
 namespace blender::bke {
 
@@ -59,6 +54,9 @@ struct BasisCache {
  */
 class CurvesGeometryRuntime {
  public:
+  /** Implicit sharing user count for #CurvesGeometry::curve_offsets. */
+  const ImplicitSharingInfo *curve_offsets_sharing_info = nullptr;
+
   /**
    * The cached number of curves with each type. Unlike other caches here, this is not computed
    * lazily, since it is needed so often and types are not adjusted much anyway.
@@ -69,24 +67,22 @@ class CurvesGeometryRuntime {
    * Cache of offsets into the evaluated array for each curve, accounting for all previous
    * evaluated points, Bezier curve vector segments, different resolutions per curve, etc.
    */
-  mutable Vector<int> evaluated_offsets_cache;
-  mutable Vector<int> all_bezier_evaluated_offsets;
-  mutable CacheMutex offsets_cache_mutex;
+  struct EvaluatedOffsets {
+    Vector<int> evaluated_offsets;
+    Vector<int> all_bezier_offsets;
+  };
+  mutable SharedCache<EvaluatedOffsets> evaluated_offsets_cache;
 
-  mutable Vector<curves::nurbs::BasisCache> nurbs_basis_cache;
-  mutable CacheMutex nurbs_basis_cache_mutex;
+  mutable SharedCache<Vector<curves::nurbs::BasisCache>> nurbs_basis_cache;
 
-  /** Cache of evaluated positions. */
-  mutable Vector<float3> evaluated_position_cache;
-  mutable CacheMutex position_cache_mutex;
   /**
-   * The evaluated positions result, using a separate span in case all curves are poly curves,
-   * in which case a separate array of evaluated positions is unnecessary.
+   * Cache of evaluated positions for all curves. The positions span will
+   * be used directly rather than the cache when all curves are poly type.
    */
-  mutable Span<float3> evaluated_positions_span;
+  mutable SharedCache<Vector<float3>> evaluated_position_cache;
 
   /**
-   * A cache of bounds shared between data-blocks with unchanged positions and radii.
+   * A cache of bounds shared between data-blocks with unchanged positions.
    * When data changes affect the bounds, the cache is "un-shared" with other geometries.
    * See #SharedCache comments.
    */
@@ -97,16 +93,13 @@ class CurvesGeometryRuntime {
    * cyclic, it needs one more length value to correspond to the last segment, so in order to
    * make slicing this array for a curve fast, an extra float is stored for every curve.
    */
-  mutable Vector<float> evaluated_length_cache;
-  mutable CacheMutex length_cache_mutex;
+  mutable SharedCache<Vector<float>> evaluated_length_cache;
 
   /** Direction of the curve at each evaluated point. */
-  mutable Vector<float3> evaluated_tangent_cache;
-  mutable CacheMutex tangent_cache_mutex;
+  mutable SharedCache<Vector<float3>> evaluated_tangent_cache;
 
   /** Normal direction vectors for each evaluated point. */
-  mutable Vector<float3> evaluated_normal_cache;
-  mutable CacheMutex normal_cache_mutex;
+  mutable SharedCache<Vector<float3>> evaluated_normal_cache;
 };
 
 /**
@@ -128,17 +121,6 @@ class CurvesGeometry : public ::CurvesGeometry {
   CurvesGeometry &operator=(CurvesGeometry &&other);
   ~CurvesGeometry();
 
-  static CurvesGeometry &wrap(::CurvesGeometry &dna_struct)
-  {
-    CurvesGeometry *geometry = reinterpret_cast<CurvesGeometry *>(&dna_struct);
-    return *geometry;
-  }
-  static const CurvesGeometry &wrap(const ::CurvesGeometry &dna_struct)
-  {
-    const CurvesGeometry *geometry = reinterpret_cast<const CurvesGeometry *>(&dna_struct);
-    return *geometry;
-  }
-
   /* --------------------------------------------------------------------
    * Accessors.
    */
@@ -156,7 +138,9 @@ class CurvesGeometry : public ::CurvesGeometry {
 
   /**
    * The index of the first point in every curve. The size of this span is one larger than the
-   * number of curves. Consider using #points_by_curve rather than using the offsets directly.
+   * number of curves, but the spans will be empty if there are no curves/points.
+   *
+   * Consider using #points_by_curve rather than these offsets directly.
    */
   Span<int> offsets() const;
   MutableSpan<int> offsets_for_write();
@@ -406,7 +390,16 @@ class CurvesGeometry : public ::CurvesGeometry {
   {
     return this->adapt_domain(GVArray(varray), from, to).typed<T>();
   }
+
+  /* --------------------------------------------------------------------
+   * File Read/Write.
+   */
+
+  void blend_read(BlendDataReader &reader);
+  void blend_write(BlendWriter &writer, ID &id);
 };
+
+static_assert(sizeof(blender::bke::CurvesGeometry) == sizeof(::CurvesGeometry));
 
 /**
  * Used to propagate deformation data through modifier evaluation so that sculpt tools can work on
@@ -429,9 +422,7 @@ class CurvesEditHints {
    */
   std::optional<Array<float3x3>> deform_mats;
 
-  CurvesEditHints(const Curves &curves_id_orig) : curves_id_orig(curves_id_orig)
-  {
-  }
+  CurvesEditHints(const Curves &curves_id_orig) : curves_id_orig(curves_id_orig) {}
 
   /**
    * The edit hints have to correspond to the original curves, i.e. the number of deformed points
@@ -875,7 +866,8 @@ inline Span<int> CurvesGeometry::bezier_evaluated_offsets_for_curve(const int cu
   const OffsetIndices points_by_curve = this->points_by_curve();
   const IndexRange points = points_by_curve[curve_index];
   const IndexRange range = curves::per_curve_point_offsets_range(points, curve_index);
-  return this->runtime->all_bezier_evaluated_offsets.as_span().slice(range);
+  const Span<int> offsets = this->runtime->evaluated_offsets_cache.data().all_bezier_offsets;
+  return offsets.slice(range);
 }
 
 inline IndexRange CurvesGeometry::lengths_range_for_curve(const int curve_index,
@@ -890,9 +882,8 @@ inline IndexRange CurvesGeometry::lengths_range_for_curve(const int curve_index,
 inline Span<float> CurvesGeometry::evaluated_lengths_for_curve(const int curve_index,
                                                                const bool cyclic) const
 {
-  BLI_assert(this->runtime->length_cache_mutex.is_cached());
   const IndexRange range = this->lengths_range_for_curve(curve_index, cyclic);
-  return this->runtime->evaluated_length_cache.as_span().slice(range);
+  return this->runtime->evaluated_length_cache.data().as_span().slice(range);
 }
 
 inline float CurvesGeometry::evaluated_length_total_for_curve(const int curve_index,
@@ -966,3 +957,12 @@ struct CurvesSurfaceTransforms {
 };
 
 }  // namespace blender::bke
+
+inline blender::bke::CurvesGeometry &CurvesGeometry::wrap()
+{
+  return *reinterpret_cast<blender::bke::CurvesGeometry *>(this);
+}
+inline const blender::bke::CurvesGeometry &CurvesGeometry::wrap() const
+{
+  return *reinterpret_cast<const blender::bke::CurvesGeometry *>(this);
+}

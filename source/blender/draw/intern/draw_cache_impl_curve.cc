@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2017 Blender Foundation. All rights reserved. */
+ * Copyright 2017 Blender Foundation */
 
 /** \file
  * \ingroup draw
@@ -111,7 +111,7 @@ static void curve_eval_render_wire_verts_edges_len_get(const blender::bke::Curve
   *r_vert_len = points_by_curve.total_size();
   *r_edge_len = 0;
   for (const int i : curves.curves_range()) {
-    *r_edge_len += blender::bke::curves::segments_num(points_by_curve.size(i), cyclic[i]);
+    *r_edge_len += blender::bke::curves::segments_num(points_by_curve[i].size(), cyclic[i]);
   }
 }
 
@@ -121,7 +121,8 @@ static int curve_render_normal_len_get(const ListBase *lb, const CurveCache *ob_
   const BevList *bl;
   const Nurb *nu;
   for (bl = (const BevList *)ob_curve_cache->bev.first, nu = (const Nurb *)lb->first; nu && bl;
-       bl = bl->next, nu = nu->next) {
+       bl = bl->next, nu = nu->next)
+  {
     int nr = bl->nr;
     int skip = nu->resolu / 16;
 #if 0
@@ -213,11 +214,10 @@ static CurveRenderData *curve_render_data_create(Curve *cu,
 
   if (types & CU_DATATYPE_WIRE) {
     if (rdata->curve_eval != nullptr) {
-      curve_eval_render_wire_verts_edges_len_get(
-          blender::bke::CurvesGeometry::wrap(rdata->curve_eval->geometry),
-          &rdata->wire.curve_len,
-          &rdata->wire.vert_len,
-          &rdata->wire.edge_len);
+      curve_eval_render_wire_verts_edges_len_get(rdata->curve_eval->geometry.wrap(),
+                                                 &rdata->wire.curve_len,
+                                                 &rdata->wire.vert_len,
+                                                 &rdata->wire.edge_len);
     }
   }
 
@@ -473,8 +473,7 @@ static void curve_create_curves_pos(CurveRenderData *rdata, GPUVertBuf *vbo_curv
   GPU_vertbuf_init_with_format(vbo_curves_pos, &format);
   GPU_vertbuf_data_alloc(vbo_curves_pos, vert_len);
 
-  const blender::bke::CurvesGeometry &curves = blender::bke::CurvesGeometry::wrap(
-      rdata->curve_eval->geometry);
+  const blender::bke::CurvesGeometry &curves = rdata->curve_eval->geometry.wrap();
   const Span<float3> positions = curves.evaluated_positions();
   GPU_vertbuf_attr_fill(vbo_curves_pos, attr_id.pos, positions.data());
 }
@@ -495,10 +494,10 @@ static void curve_create_attribute(CurveRenderData *rdata, GPUVertBuf *vbo_attr)
   GPU_vertbuf_init_with_format(vbo_attr, &format);
   GPU_vertbuf_data_alloc(vbo_attr, vert_len);
 
-  const bke::CurvesGeometry &curves = bke::CurvesGeometry::wrap(rdata->curve_eval->geometry);
+  const bke::CurvesGeometry &curves = rdata->curve_eval->geometry.wrap();
   curves.ensure_can_interpolate_to_evaluated();
-  const VArraySpan<ColorGeometry4f> colors = curves.attributes().lookup<ColorGeometry4f>(
-      ".viewer", ATTR_DOMAIN_POINT);
+  const VArraySpan colors = *curves.attributes().lookup<ColorGeometry4f>(".viewer",
+                                                                         ATTR_DOMAIN_POINT);
   ColorGeometry4f *vbo_data = static_cast<ColorGeometry4f *>(GPU_vertbuf_get_data(vbo_attr));
   curves.interpolate_to_evaluated(colors, MutableSpan<ColorGeometry4f>{vbo_data, vert_len});
 }
@@ -519,7 +518,7 @@ static void curve_create_curves_lines(CurveRenderData *rdata, GPUIndexBuf *ibo_c
   GPUIndexBufBuilder elb;
   GPU_indexbuf_init_ex(&elb, GPU_PRIM_LINE_STRIP, index_len, vert_len);
 
-  const bke::CurvesGeometry &curves = bke::CurvesGeometry::wrap(rdata->curve_eval->geometry);
+  const bke::CurvesGeometry &curves = rdata->curve_eval->geometry.wrap();
   const OffsetIndices points_by_curve = curves.evaluated_points_by_curve();
   const VArray<bool> cyclic = curves.cyclic();
 
@@ -586,7 +585,8 @@ static void curve_create_edit_curves_nor(CurveRenderData *rdata,
   for (bl = (const BevList *)rdata->ob_curve_cache->bev.first,
       nu = (const Nurb *)rdata->nurbs->first;
        nu && bl;
-       bl = bl->next, nu = nu->next) {
+       bl = bl->next, nu = nu->next)
+  {
     const BevPoint *bevp = bl->bevpoints;
     int nr = bl->nr;
     int skip = nu->resolu / 16;
@@ -902,7 +902,8 @@ void DRW_curve_batch_cache_create_requested(Object *ob, const struct Scene *scen
     curve_create_curves_lines(rdata, cache->ibo.curves_lines);
   }
   if (DRW_vbo_requested(cache->edit.pos) || DRW_vbo_requested(cache->edit.data) ||
-      DRW_ibo_requested(cache->ibo.edit_verts) || DRW_ibo_requested(cache->ibo.edit_lines)) {
+      DRW_ibo_requested(cache->ibo.edit_verts) || DRW_ibo_requested(cache->ibo.edit_lines))
+  {
     curve_create_edit_data_and_handles(
         rdata, cache->edit.pos, cache->edit.data, cache->ibo.edit_verts, cache->ibo.edit_lines);
   }

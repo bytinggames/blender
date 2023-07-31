@@ -203,7 +203,7 @@ static void rna_Image_alpha_mode_update(Main *bmain, Scene *scene, PointerRNA *p
 {
   Image *ima = (Image *)ptr->owner_id;
   /* When operating on a generated image, avoid re-generating when changing the alpha-mode
-   * as it doesn't impact generated images, causing them to reload pixel data, see T82785. */
+   * as it doesn't impact generated images, causing them to reload pixel data, see #82785. */
   if (ima->source == IMA_SRC_GENERATED) {
     return;
   }
@@ -386,23 +386,22 @@ static int rna_UDIMTile_channels_get(PointerRNA *ptr)
 
 static void rna_UDIMTile_label_get(PointerRNA *ptr, char *value)
 {
-  ImageTile *tile = (ImageTile *)ptr->data;
-  Image *image = (Image *)ptr->owner_id;
+  const ImageTile *tile = (ImageTile *)ptr->data;
+  const Image *image = (Image *)ptr->owner_id;
 
-  /* We don't know the length of the target string here, so we assume
-   * that it has been allocated according to what rna_UDIMTile_label_length returned. */
-  BKE_image_get_tile_label(image, tile, value, sizeof(tile->label));
+  /* Pass in a fixed size buffer as the value may be allocated based on the callbacks length. */
+  char value_buf[sizeof(tile->label)];
+  int len = BKE_image_get_tile_label(image, tile, value_buf, sizeof(tile->label));
+  memcpy(value, value_buf, len + 1);
 }
 
 static int rna_UDIMTile_label_length(PointerRNA *ptr)
 {
-  ImageTile *tile = (ImageTile *)ptr->data;
-  Image *image = (Image *)ptr->owner_id;
+  const ImageTile *tile = (ImageTile *)ptr->data;
+  const Image *image = (Image *)ptr->owner_id;
 
   char label[sizeof(tile->label)];
-  BKE_image_get_tile_label(image, tile, label, sizeof(label));
-
-  return strlen(label);
+  return BKE_image_get_tile_label(image, tile, label, sizeof(label));
 }
 
 static void rna_UDIMTile_tile_number_set(PointerRNA *ptr, int value)
@@ -654,11 +653,16 @@ static void rna_Image_pixels_set(PointerRNA *ptr, const float *values)
       }
     }
 
+    /* NOTE: Do update from the set() because typically pixels.foreach_set() is used to update
+     * the values, and it does not invoke the update(). */
+
     ibuf->userflags |= IB_DISPLAY_BUFFER_INVALID | IB_MIPMAP_INVALID;
     BKE_image_mark_dirty(ima, ibuf);
     if (!G.background) {
       BKE_image_free_gputextures(ima);
     }
+
+    BKE_image_partial_update_mark_full_update(ima);
     WM_main_add_notifier(NC_IMAGE | ND_DISPLAY, &ima->id);
   }
 

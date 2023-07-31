@@ -9,7 +9,7 @@
 
 #include "MEM_guardedalloc.h"
 
-#include "DNA_gpencil_types.h"
+#include "DNA_gpencil_legacy_types.h"
 
 #include "BLI_math.h"
 #include "BLI_string.h"
@@ -174,17 +174,17 @@ static void transdata_elem_translate_fn(void *__restrict iter_data_v,
  * \{ */
 
 static void translate_dist_to_str(char *r_str,
-                                  const int len_max,
+                                  const int r_str_maxncpy,
                                   const float val,
                                   const UnitSettings *unit)
 {
   if (unit) {
     BKE_unit_value_as_string(
-        r_str, len_max, val * unit->scale_length, 4, B_UNIT_LENGTH, unit, false);
+        r_str, r_str_maxncpy, val * unit->scale_length, 4, B_UNIT_LENGTH, unit, false);
   }
   else {
     /* Check range to prevent string buffer overflow. */
-    BLI_snprintf(r_str, len_max, IN_RANGE_INCL(val, -1e10f, 1e10f) ? "%.4f" : "%.4e", val);
+    BLI_snprintf(r_str, r_str_maxncpy, IN_RANGE_INCL(val, -1e10f, 1e10f) ? "%.4f" : "%.4e", val);
   }
 }
 
@@ -500,7 +500,7 @@ static void applyTranslationValue(TransInfo *t, const float vec[3])
     float pivot_local[3];
     if (rotate_mode != TRANSLATE_ROTATE_OFF) {
       copy_v3_v3(pivot_local, t->tsnap.snap_source);
-      /* The pivot has to be in local-space (see T49494) */
+      /* The pivot has to be in local-space (see #49494) */
       if (tc->use_local_mat) {
         mul_m4_v3(tc->imat, pivot_local);
       }
@@ -609,7 +609,6 @@ static void applyTranslation(TransInfo *t, const int UNUSED(mval[2]))
       add_v3_v3(global_dir, values_ofs);
     }
 
-    t->tsnap.snapElem = SCE_SNAP_MODE_NONE;
     transform_snap_mixed_apply(t, global_dir);
     translate_snap_grid(t, global_dir);
 
@@ -622,7 +621,8 @@ static void applyTranslation(TransInfo *t, const int UNUSED(mval[2]))
     float incr_dir[3];
     copy_v3_v3(incr_dir, global_dir);
     if (!(transform_snap_is_active(t) && validSnap(t)) &&
-        transform_snap_increment_ex(t, (t->con.mode & CON_APPLY) != 0, incr_dir)) {
+        transform_snap_increment_ex(t, (t->con.mode & CON_APPLY) != 0, incr_dir))
+    {
 
       /* Test for mixed snap with grid. */
       float snap_dist_sq = FLT_MAX;
@@ -693,7 +693,7 @@ void initTranslation(TransInfo *t)
   copy_v3_fl(t->num.val_inc, t->snap[0]);
   t->num.unit_sys = t->scene->unit.system;
   if (t->spacetype == SPACE_VIEW3D) {
-    /* Handling units makes only sense in 3Dview... See T38877. */
+    /* Handling units makes only sense in 3Dview... See #38877. */
     t->num.unit_type[0] = B_UNIT_LENGTH;
     t->num.unit_type[1] = B_UNIT_LENGTH;
     t->num.unit_type[2] = B_UNIT_LENGTH;

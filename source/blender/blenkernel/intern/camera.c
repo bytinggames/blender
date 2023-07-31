@@ -159,12 +159,8 @@ static void camera_blend_read_expand(BlendExpander *expander, ID *id)
   BLO_expand(expander, ca->ipo);  // XXX deprecated - old animation system
 
   LISTBASE_FOREACH (CameraBGImage *, bgpic, &ca->bg_images) {
-    if (bgpic->source == CAM_BGIMG_SOURCE_IMAGE) {
-      BLO_expand(expander, bgpic->ima);
-    }
-    else if (bgpic->source == CAM_BGIMG_SOURCE_MOVIE) {
-      BLO_expand(expander, bgpic->ima);
-    }
+    BLO_expand(expander, bgpic->ima);
+    BLO_expand(expander, bgpic->clip);
   }
 }
 
@@ -537,7 +533,7 @@ void BKE_camera_view_frame_ex(const Scene *scene,
   r_vec[3][2] = depth;
 
   if (do_clip) {
-    /* Ensure the frame isn't behind the near clipping plane, T62814. */
+    /* Ensure the frame isn't behind the near clipping plane, #62814. */
     float fac = ((camera->clip_start + 0.1f) / -r_vec[0][2]) * scale[2];
     for (uint i = 0; i < 4; i++) {
       if (camera->type == CAM_ORTHO) {
@@ -714,7 +710,8 @@ static bool camera_frame_fit_calc_from_data(CameraParams *params,
     }
 
     if (!isect_plane_plane_v3(plane_tx[Y_MIN], plane_tx[Y_MAX], plane_isect_1, plane_isect_1_no) ||
-        !isect_plane_plane_v3(plane_tx[Z_MIN], plane_tx[Z_MAX], plane_isect_2, plane_isect_2_no)) {
+        !isect_plane_plane_v3(plane_tx[Z_MIN], plane_tx[Z_MAX], plane_isect_2, plane_isect_2_no))
+    {
       return false;
     }
 
@@ -726,7 +723,8 @@ static bool camera_frame_fit_calc_from_data(CameraParams *params,
                             plane_isect_2,
                             plane_isect_2_other,
                             plane_isect_pt_1,
-                            plane_isect_pt_2)) {
+                            plane_isect_pt_2))
+    {
       return false;
     }
 
@@ -1010,7 +1008,8 @@ bool BKE_camera_multiview_spherical_stereo(const RenderData *rd, const Object *c
   cam = camera->data;
 
   if ((rd->views_format == SCE_VIEWS_FORMAT_STEREO_3D) && ELEM(cam->type, CAM_PANO, CAM_PERSP) &&
-      ((cam->stereo.flag & CAM_S3D_SPHERICAL) != 0)) {
+      ((cam->stereo.flag & CAM_S3D_SPHERICAL) != 0))
+  {
     return true;
   }
 
@@ -1035,7 +1034,7 @@ static Object *camera_multiview_advanced(const Scene *scene, Object *camera, con
     }
 
     if (STREQ(camera_name + (len_name - len_suffix), srv->suffix)) {
-      BLI_snprintf(name, sizeof(name), "%.*s%s", (len_name - len_suffix), camera_name, suffix);
+      SNPRINTF(name, "%.*s%s", (len_name - len_suffix), camera_name, suffix);
       len_suffix_max = len_suffix;
     }
   }

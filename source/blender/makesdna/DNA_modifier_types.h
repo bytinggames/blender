@@ -11,6 +11,15 @@
 #include "DNA_session_uuid_types.h"
 
 #ifdef __cplusplus
+namespace blender::bke::sim {
+struct ModifierSimulationCachePtr;
+}
+using ModifierSimulationCachePtrHandle = blender::bke::sim::ModifierSimulationCachePtr;
+#else
+typedef struct ModifierSimulationCachePtrHandle ModifierSimulationCachePtrHandle;
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 
@@ -106,7 +115,8 @@ typedef struct ModifierData {
   struct ModifierData *next, *prev;
 
   int type, mode;
-  char _pad0[4];
+  /** Time in seconds that the modifier took to evaluate. This is only set on evaluated objects. */
+  float execution_time;
   short flag;
   /** An "expand" bit for each of the modifier's (sub)panels (#uiPanelDataExpansion). */
   short ui_expand_flag;
@@ -2310,13 +2320,24 @@ typedef struct NodesModifierData {
   ModifierData modifier;
   struct bNodeTree *node_group;
   struct NodesModifierSettings settings;
+  /**
+   * Directory where baked simulation states are stored. This may be relative to the .blend file.
+   */
+  char *simulation_bake_directory;
+  void *_pad;
 
   /**
    * Contains logged information from the last evaluation.
    * This can be used to help the user to debug a node tree.
    */
   void *runtime_eval_log;
-  void *_pad1;
+
+  /**
+   * Simulation cache that is shared between original and evaluated modifiers. This allows the
+   * original modifier to be removed, without also removing the simulation state which may still be
+   * used by the evaluated modifier.
+   */
+  ModifierSimulationCachePtrHandle *simulation_cache;
 } NodesModifierData;
 
 typedef struct MeshToVolumeModifierData {

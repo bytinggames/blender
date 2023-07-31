@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2008 Blender Foundation. All rights reserved. */
+ * Copyright 2008 Blender Foundation */
 
 /** \file
  * \ingroup spview3d
@@ -15,7 +15,7 @@
 #include "BKE_action.h"
 #include "BKE_context.h"
 #include "BKE_global.h"
-#include "BKE_gpencil_modifier.h"
+#include "BKE_gpencil_modifier_legacy.h"
 #include "BKE_idprop.h"
 #include "BKE_layer.h"
 #include "BKE_lib_id.h"
@@ -170,7 +170,8 @@ static void sync_viewport_camera_smoothview(bContext *C,
   for (bScreen *screen = bmain->screens.first; screen != NULL; screen = screen->id.next) {
     for (ScrArea *area = screen->areabase.first; area != NULL; area = area->next) {
       for (SpaceLink *space_link = area->spacedata.first; space_link != NULL;
-           space_link = space_link->next) {
+           space_link = space_link->next)
+      {
         if (space_link->spacetype == SPACE_VIEW3D) {
           View3D *other_v3d = (View3D *)space_link;
           if (other_v3d == v3d) {
@@ -179,7 +180,8 @@ static void sync_viewport_camera_smoothview(bContext *C,
           if (other_v3d->camera == ob) {
             continue;
           }
-          if (v3d->scenelock) {
+          /* Checking the other view is needed to prevent local cameras being modified. */
+          if (v3d->scenelock && other_v3d->scenelock) {
             ListBase *lb = (space_link == area->spacedata.first) ? &area->regionbase :
                                                                    &space_link->regionbase;
             for (ARegion *other_region = lb->first; other_region != NULL;
@@ -329,7 +331,7 @@ void view3d_winmatrix_set(Depsgraph *depsgraph,
          clipend);
 #endif
 
-  /* Note the code here was tweaked to avoid an apparent compiler bug in clang 13 (see T91680). */
+  /* Note the code here was tweaked to avoid an apparent compiler bug in clang 13 (see #91680). */
   rctf viewplane;
   if (rect) {
     /* Smaller viewplane subset for selection picking. */
@@ -512,7 +514,8 @@ eV3DSelectObjectFilter ED_view3d_select_filter_from_mode(const Scene *scene, con
 {
   if (scene->toolsettings->object_flag & SCE_OBJECT_MODE_LOCK) {
     if (obact && (obact->mode & OB_MODE_ALL_WEIGHT_PAINT) &&
-        BKE_object_pose_armature_get((Object *)obact)) {
+        BKE_object_pose_armature_get((Object *)obact))
+    {
       return VIEW3D_SELECT_FILTER_WPAINT_POSE_MODE_LOCK;
     }
     return VIEW3D_SELECT_FILTER_OBJECT_MODE_LOCK;
@@ -623,7 +626,7 @@ int view3d_opengl_select_ex(ViewContext *vc,
       /* While this uses 'alloca' in a loop (which we typically avoid),
        * the number of items is nearly always 1, maybe 2..3 in rare cases. */
       LinkNode *ob_pose_list = NULL;
-      if (obact->type == OB_GPENCIL) {
+      if (obact->type == OB_GPENCIL_LEGACY) {
         GpencilVirtualModifierData virtualModifierData;
         const GpencilModifierData *md = BKE_gpencil_modifiers_get_virtual_modifierlist(
             obact, &virtualModifierData);
@@ -667,7 +670,7 @@ int view3d_opengl_select_ex(ViewContext *vc,
   G.f |= G_FLAG_PICKSEL;
 
   /* Important we use the 'viewmat' and don't re-calculate since
-   * the object & bone view locking takes 'rect' into account, see: T51629. */
+   * the object & bone view locking takes 'rect' into account, see: #51629. */
   ED_view3d_draw_setup_view(
       wm, vc->win, depsgraph, scene, region, v3d, vc->rv3d->viewmat, NULL, &rect);
 
@@ -675,7 +678,7 @@ int view3d_opengl_select_ex(ViewContext *vc,
     GPU_depth_test(GPU_DEPTH_LESS_EQUAL);
   }
 
-  /* If in xray mode, we select the wires in priority. */
+  /* If in X-ray mode, we select the wires in priority. */
   if (XRAY_ACTIVE(v3d) && use_nearest) {
     /* We need to call "GPU_select_*" API's inside DRW_draw_select_loop
      * because the OpenGL context created & destroyed inside this function. */
@@ -702,7 +705,7 @@ int view3d_opengl_select_ex(ViewContext *vc,
                          object_filter.user_data);
     hits = drw_select_loop_user_data.hits;
     /* FIX: This cleanup the state before doing another selection pass.
-     * (see T56695) */
+     * (see #56695) */
     GPU_select_cache_end();
   }
 

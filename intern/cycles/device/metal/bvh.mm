@@ -515,20 +515,31 @@ bool BVHMetal::build_BLAS_pointcloud(Progress &progress,
     /* Get AABBs for each motion step */
     size_t center_step = (num_motion_steps - 1) / 2;
     for (size_t step = 0; step < num_motion_steps; ++step) {
-      /* The center step for motion vertices is not stored in the attribute */
-      if (step != center_step) {
-        size_t attr_offset = (step > center_step) ? step - 1 : step;
-        points = motion_keys->data_float3() + attr_offset * num_points;
+      if (step == center_step) {
+        /* The center step for motion vertices is not stored in the attribute */
+        for (size_t j = 0; j < num_points; ++j) {
+          const PointCloud::Point point = pointcloud->get_point(j);
+          BoundBox bounds = BoundBox::empty;
+          point.bounds_grow(points, radius, bounds);
+
+          const size_t index = step * num_points + j;
+          aabb_data[index].min = (MTLPackedFloat3 &)bounds.min;
+          aabb_data[index].max = (MTLPackedFloat3 &)bounds.max;
+        }
       }
+      else {
+        size_t attr_offset = (step > center_step) ? step - 1 : step;
+        float4 *motion_points = motion_keys->data_float4() + attr_offset * num_points;
 
-      for (size_t j = 0; j < num_points; ++j) {
-        const PointCloud::Point point = pointcloud->get_point(j);
-        BoundBox bounds = BoundBox::empty;
-        point.bounds_grow(points, radius, bounds);
+        for (size_t j = 0; j < num_points; ++j) {
+          const PointCloud::Point point = pointcloud->get_point(j);
+          BoundBox bounds = BoundBox::empty;
+          point.bounds_grow(motion_points[j], bounds);
 
-        const size_t index = step * num_points + j;
-        aabb_data[index].min = (MTLPackedFloat3 &)bounds.min;
-        aabb_data[index].max = (MTLPackedFloat3 &)bounds.max;
+          const size_t index = step * num_points + j;
+          aabb_data[index].min = (MTLPackedFloat3 &)bounds.min;
+          aabb_data[index].max = (MTLPackedFloat3 &)bounds.max;
+        }
       }
     }
 
@@ -816,6 +827,11 @@ bool BVHMetal::build_TLAS(Progress &progress,
 
     uint32_t instance_index = 0;
     uint32_t motion_transform_index = 0;
+
+    // allocate look up buffer for wost case scenario
+    uint64_t count = objects.size();
+    blas_lookup.resize(count);
+
     for (Object *ob : objects) {
       /* Skip non-traceable objects */
       if (!ob->is_traceable())
@@ -843,12 +859,15 @@ bool BVHMetal::build_TLAS(Progress &progress,
       /* Set user instance ID to object index */
       int object_index = ob->get_device_index();
       uint32_t user_id = uint32_t(object_index);
+      int currIndex = instance_index++;
+      assert(user_id < blas_lookup.size());
+      blas_lookup[user_id] = accel_struct_index;
 
       /* Bake into the appropriate descriptor */
       if (motion_blur) {
         MTLAccelerationStructureMotionInstanceDescriptor *instances =
             (MTLAccelerationStructureMotionInstanceDescriptor *)[instanceBuf contents];
-        MTLAccelerationStructureMotionInstanceDescriptor &desc = instances[instance_index++];
+        MTLAccelerationStructureMotionInstanceDescriptor &desc = instances[currIndex];
 
         desc.accelerationStructureIndex = accel_struct_index;
         desc.userID = user_id;
@@ -894,7 +913,7 @@ bool BVHMetal::build_TLAS(Progress &progress,
       else {
         MTLAccelerationStructureUserIDInstanceDescriptor *instances =
             (MTLAccelerationStructureUserIDInstanceDescriptor *)[instanceBuf contents];
-        MTLAccelerationStructureUserIDInstanceDescriptor &desc = instances[instance_index++];
+        MTLAccelerationStructureUserIDInstanceDescriptor &desc = instances[currIndex];
 
         desc.accelerationStructureIndex = accel_struct_index;
         desc.userID = user_id;

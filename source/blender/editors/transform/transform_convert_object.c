@@ -211,7 +211,7 @@ static void ObjectToTransData(TransInfo *t, TransData *td, Object *ob)
   copy_m4_m4(ob->object_to_world, object_eval->object_to_world);
   /* Only copy negative scale flag, this is the only flag which is modified by
    * the BKE_object_where_is_calc(). The rest of the flags we need to keep,
-   * otherwise we might lose dupli flags  (see T61787). */
+   * otherwise we might lose dupli flags  (see #61787). */
   ob->transflag &= ~OB_NEG_SCALE;
   ob->transflag |= (object_eval->transflag & OB_NEG_SCALE);
 
@@ -274,7 +274,7 @@ static void ObjectToTransData(TransInfo *t, TransData *td, Object *ob)
     copy_m3_m4(totmat, ob->object_to_world);
 
     /* If the object scale is zero on any axis, this might result in a zero matrix.
-     * In this case, the transformation would not do anything, see: T50103. */
+     * In this case, the transformation would not do anything, see: #50103. */
     orthogonalize_m3_zero_axes(obmtx, 1.0f);
     orthogonalize_m3_zero_axes(totmat, 1.0f);
 
@@ -285,7 +285,7 @@ static void ObjectToTransData(TransInfo *t, TransData *td, Object *ob)
     invert_m3_m3_safe_ortho(td->mtx, td->smtx);
   }
   else {
-    /* no conversion to/from dataspace */
+    /* No conversion to/from data-space. */
     unit_m3(td->smtx);
     unit_m3(td->mtx);
   }
@@ -382,8 +382,8 @@ static void set_trans_object_base_flags(TransInfo *t)
       }
       if (parsel != NULL) {
         /* Rotation around local centers are allowed to propagate. */
-        if ((t->around == V3D_AROUND_LOCAL_ORIGINS) &&
-            ELEM(t->mode, TFM_ROTATION, TFM_TRACKBALL)) {
+        if ((t->around == V3D_AROUND_LOCAL_ORIGINS) && ELEM(t->mode, TFM_ROTATION, TFM_TRACKBALL))
+        {
           base->flag_legacy |= BA_TRANSFORM_CHILD;
         }
         else {
@@ -444,7 +444,8 @@ static int count_proportional_objects(TransInfo *t)
       /* all base not already selected or marked that is editable */
       if ((base->object->flag & (BA_TRANSFORM_CHILD | BA_TRANSFORM_PARENT)) == 0 &&
           (base->flag & BASE_SELECTED) == 0 &&
-          (BASE_EDITABLE(v3d, base) && BASE_SELECTABLE(v3d, base))) {
+          (BASE_EDITABLE(v3d, base) && BASE_SELECTABLE(v3d, base)))
+      {
         mark_children(base->object);
       }
     }
@@ -457,7 +458,8 @@ static int count_proportional_objects(TransInfo *t)
      */
     if ((ob->flag & (BA_TRANSFORM_CHILD | BA_TRANSFORM_PARENT)) == 0 &&
         (base->flag & BASE_SELECTED) == 0 &&
-        (BASE_EDITABLE(v3d, base) && BASE_SELECTABLE(v3d, base))) {
+        (BASE_EDITABLE(v3d, base) && BASE_SELECTABLE(v3d, base)))
+    {
       flush_trans_object_base_deps_flag(depsgraph, ob);
       total += 1;
     }
@@ -577,7 +579,8 @@ static void createTransObject(bContext *C, TransInfo *t)
        * or not a child of selection and it is editable and selectable */
       if ((ob->flag & (BA_TRANSFORM_CHILD | BA_TRANSFORM_PARENT)) == 0 &&
           (base->flag & BASE_SELECTED) == 0 && BASE_EDITABLE(v3d, base) &&
-          BASE_SELECTABLE(v3d, base)) {
+          BASE_SELECTABLE(v3d, base))
+      {
         td->protectflag = ob->protectflag;
         td->ext = tx;
         td->ext->rotOrder = ob->rotmode;
@@ -610,7 +613,8 @@ static void createTransObject(bContext *C, TransInfo *t)
       /* if base is not selected, not a parent of selection
        * or not a child of selection and it is editable and selectable */
       if ((base->flag_legacy & BA_WAS_SEL) && (base->flag & BASE_SELECTED) == 0 &&
-          BASE_EDITABLE(v3d, base) && BASE_SELECTABLE(v3d, base)) {
+          BASE_EDITABLE(v3d, base) && BASE_SELECTABLE(v3d, base))
+      {
 
         Object *ob_parent = ob->parent;
         if (ob_parent != NULL) {
@@ -657,7 +661,8 @@ static void createTransObject(bContext *C, TransInfo *t)
       Object *ob = base->object;
       if (ob->parent != NULL) {
         if (ob->parent && !BLI_gset_haskey(objects_in_transdata, ob->parent) &&
-            !BLI_gset_haskey(objects_in_transdata, ob)) {
+            !BLI_gset_haskey(objects_in_transdata, ob))
+        {
           if ((base->flag_legacy & BA_WAS_SEL) && (base->flag & BASE_SELECTED) == 0) {
             Base *base_parent = BKE_view_layer_base_find(view_layer, ob->parent);
             if (base_parent && !BASE_XFORM_INDIRECT(base_parent)) {
@@ -857,7 +862,7 @@ static bool motionpath_need_update_object(Scene *scene, Object *ob)
 {
   /* XXX: there's potential here for problems with unkeyed rotations/scale,
    *      but for now (until proper data-locality for baking operations),
-   *      this should be a better fix for T24451 and T37755
+   *      this should be a better fix for #24451 and #37755
    */
 
   if (autokeyframe_cfra_can_key(scene, &ob->id)) {

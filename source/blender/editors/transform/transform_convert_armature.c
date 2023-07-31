@@ -35,6 +35,7 @@
 #include "RNA_prototypes.h"
 
 #include "transform.h"
+#include "transform_orientations.h"
 #include "transform_snap.h"
 
 /* Own include. */
@@ -110,7 +111,8 @@ static void autokeyframe_pose(
 
   for (pchan = pose->chanbase.first; pchan; pchan = pchan->next) {
     if ((pchan->bone->flag & BONE_TRANSFORM) == 0 &&
-        !((pose->flag & POSE_MIRROR_EDIT) && (pchan->bone->flag & BONE_TRANSFORM_MIRROR))) {
+        !((pose->flag & POSE_MIRROR_EDIT) && (pchan->bone->flag & BONE_TRANSFORM_MIRROR)))
+    {
       continue;
     }
 
@@ -169,9 +171,8 @@ static void autokeyframe_pose(
         }
       }
       else if (ELEM(tmode, TFM_ROTATION, TFM_TRACKBALL)) {
-        if (ELEM(scene->toolsettings->transform_pivot_point,
-                 V3D_AROUND_CURSOR,
-                 V3D_AROUND_ACTIVE)) {
+        if (ELEM(scene->toolsettings->transform_pivot_point, V3D_AROUND_CURSOR, V3D_AROUND_ACTIVE))
+        {
           do_loc = true;
         }
 
@@ -180,9 +181,8 @@ static void autokeyframe_pose(
         }
       }
       else if (tmode == TFM_RESIZE) {
-        if (ELEM(scene->toolsettings->transform_pivot_point,
-                 V3D_AROUND_CURSOR,
-                 V3D_AROUND_ACTIVE)) {
+        if (ELEM(scene->toolsettings->transform_pivot_point, V3D_AROUND_CURSOR, V3D_AROUND_ACTIVE))
+        {
           do_loc = true;
         }
 
@@ -262,7 +262,8 @@ static bKinematicConstraint *has_targetless_ik(bPoseChannel *pchan)
 
   for (; con; con = con->next) {
     if (con->type == CONSTRAINT_TYPE_KINEMATIC && (con->flag & CONSTRAINT_OFF) == 0 &&
-        (con->enforce != 0.0f)) {
+        (con->enforce != 0.0f))
+    {
       bKinematicConstraint *data = con->data;
 
       if (data->tar == NULL) {
@@ -338,7 +339,7 @@ static short pose_grab_with_ik_add(bPoseChannel *pchan)
   copy_v3_v3(data->grabtarget, pchan->pose_tail);
 
   /* watch-it! has to be 0 here, since we're still on the
-   * same bone for the first time through the loop T25885. */
+   * same bone for the first time through the loop #25885. */
   data->rootbone = 0;
 
   /* we only include bones that are part of a continual connected chain */
@@ -631,8 +632,8 @@ static void add_pose_transdata(TransInfo *t, bPoseChannel *pchan, Object *ob, Tr
 
   /* exceptional case: rotate the pose bone which also applies transformation
    * when a parentless bone has BONE_NO_LOCAL_LOCATION [] */
-  if (!ELEM(t->mode, TFM_TRANSLATION, TFM_RESIZE) &&
-      (pchan->bone->flag & BONE_NO_LOCAL_LOCATION)) {
+  if (!ELEM(t->mode, TFM_TRANSLATION, TFM_RESIZE) && (pchan->bone->flag & BONE_NO_LOCAL_LOCATION))
+  {
     if (pchan->parent) {
       /* same as td->smtx but without pchan->bone->bone_mat */
       td->flag |= TD_PBONE_LOCAL_MTX_C;
@@ -1051,11 +1052,12 @@ static void createTransArmatureVerts(bContext *UNUSED(C), TransInfo *t)
             copy_v3_v3(td->iloc, ebo->tail);
 
             /* Don't allow single selected tips to have a modified center,
-             * causes problem with snapping (see T45974).
+             * causes problem with snapping (see #45974).
              * However, in rotation mode, we want to keep that 'rotate bone around root with
-             * only its tip selected' behavior (see T46325). */
+             * only its tip selected' behavior (see #46325). */
             if ((t->around == V3D_AROUND_LOCAL_ORIGINS) &&
-                ((t->mode == TFM_ROTATION) || (ebo->flag & BONE_ROOTSEL))) {
+                ((t->mode == TFM_ROTATION) || (ebo->flag & BONE_ROOTSEL)))
+            {
               copy_v3_v3(td->center, ebo->head);
             }
             else {
@@ -1271,7 +1273,7 @@ static void recalcData_edit_armature(TransInfo *t)
             rotation_between_vecs_to_quat(qrot, td->axismtx[1], vec);
             mul_qt_v3(qrot, up_axis);
 
-            /* roll has a tendency to flip in certain orientations - T34283, T33974. */
+            /* roll has a tendency to flip in certain orientations - #34283, #33974. */
             roll = ED_armature_ebone_roll_to_vector(ebo, up_axis, false);
             ebo->roll = angle_compat_rad(roll, td->ival);
           }
@@ -1508,7 +1510,8 @@ static void bone_children_clear_transflag(int mode, short around, ListBase *lb)
       bone->flag |= BONE_HINGE_CHILD_TRANSFORM;
     }
     else if ((bone->flag & BONE_TRANSFORM) && ELEM(mode, TFM_ROTATION, TFM_TRACKBALL) &&
-             (around == V3D_AROUND_LOCAL_ORIGINS)) {
+             (around == V3D_AROUND_LOCAL_ORIGINS))
+    {
       bone->flag |= BONE_TRANSFORM_CHILD;
     }
     else {
@@ -1612,7 +1615,7 @@ static short apply_targetless_ik(Object *ob)
           normalize_m3(rmat3);
 
           /* rotation */
-          /* T22409 is partially caused by this, as slight numeric error introduced during
+          /* #22409 is partially caused by this, as slight numeric error introduced during
            * the solving process leads to locked-axis values changing. However, we cannot modify
            * the values here, or else there are huge discrepancies between IK-solver (interactive)
            * and applied poses. */
@@ -1712,7 +1715,7 @@ static void special_aftertrans_update__pose(bContext *C, TransInfo *t)
       if ((t->flag & T_AUTOIK) && (t->options & CTX_AUTOCONFIRM)) {
         /* when running transform non-interactively (operator exec),
          * we need to update the pose otherwise no updates get called during
-         * transform and the auto-ik is not applied. see T26164. */
+         * transform and the auto-ik is not applied. see #26164. */
         struct Object *pose_ob = tc->poseobj;
         BKE_pose_where_is(t->depsgraph, t->scene, pose_ob);
       }

@@ -4,8 +4,8 @@
 
 #include "curves_sculpt_intern.hh"
 
-#include "BLI_float4x4.hh"
 #include "BLI_kdtree.h"
+#include "BLI_math_matrix.hh"
 #include "BLI_rand.hh"
 #include "BLI_vector.hh"
 
@@ -20,7 +20,7 @@
 #include "BKE_curves.hh"
 #include "BKE_curves_utils.hh"
 #include "BKE_geometry_set.hh"
-#include "BKE_mesh.h"
+#include "BKE_mesh.hh"
 #include "BKE_mesh_runtime.h"
 #include "BKE_mesh_sample.hh"
 #include "BKE_modifier.h"
@@ -91,7 +91,7 @@ struct AddOperationExecutor {
   Object *surface_ob_eval_ = nullptr;
   Mesh *surface_eval_ = nullptr;
   Span<float3> surface_positions_eval_;
-  Span<MLoop> surface_loops_eval_;
+  Span<int> surface_corner_verts_eval_;
   Span<MLoopTri> surface_looptris_eval_;
   VArraySpan<float2> surface_uv_map_eval_;
   BVHTreeFromMesh surface_bvh_eval_;
@@ -107,9 +107,7 @@ struct AddOperationExecutor {
 
   CurvesSurfaceTransforms transforms_;
 
-  AddOperationExecutor(const bContext &C) : ctx_(C)
-  {
-  }
+  AddOperationExecutor(const bContext &C) : ctx_(C) {}
 
   void execute(AddOperation &self, const bContext &C, const StrokeExtension &stroke_extension)
   {
@@ -117,7 +115,7 @@ struct AddOperationExecutor {
     curves_ob_orig_ = CTX_data_active_object(&C);
 
     curves_id_orig_ = static_cast<Curves *>(curves_ob_orig_->data);
-    curves_orig_ = &CurvesGeometry::wrap(curves_id_orig_->geometry);
+    curves_orig_ = &curves_id_orig_->geometry.wrap();
 
     if (curves_id_orig_->surface == nullptr || curves_id_orig_->surface->type != OB_MESH) {
       report_missing_surface(stroke_extension.reports);
@@ -143,7 +141,7 @@ struct AddOperationExecutor {
       return;
     }
     surface_positions_eval_ = surface_eval_->vert_positions();
-    surface_loops_eval_ = surface_eval_->loops();
+    surface_corner_verts_eval_ = surface_eval_->corner_verts();
     surface_looptris_eval_ = surface_eval_->looptris();
     BKE_bvhtree_from_mesh_get(&surface_bvh_eval_, surface_eval_, BVHTREE_FROM_LOOPTRI, 2);
     BLI_SCOPED_DEFER([&]() { free_bvhtree_from_mesh(&surface_bvh_eval_); });
@@ -166,9 +164,9 @@ struct AddOperationExecutor {
     /* Find UV map. */
     VArraySpan<float2> surface_uv_map;
     if (curves_id_orig_->surface_uv_map != nullptr) {
-      surface_uv_map = surface_orig.attributes().lookup<float2>(curves_id_orig_->surface_uv_map,
-                                                                ATTR_DOMAIN_CORNER);
-      surface_uv_map_eval_ = surface_eval_->attributes().lookup<float2>(
+      surface_uv_map = *surface_orig.attributes().lookup<float2>(curves_id_orig_->surface_uv_map,
+                                                                 ATTR_DOMAIN_CORNER);
+      surface_uv_map_eval_ = *surface_eval_->attributes().lookup<float2>(
           curves_id_orig_->surface_uv_map, ATTR_DOMAIN_CORNER);
     }
 
@@ -225,6 +223,7 @@ struct AddOperationExecutor {
                                    BRUSH_CURVES_SCULPT_FLAG_INTERPOLATE_SHAPE;
     add_inputs.interpolate_point_count = brush_settings_->flag &
                                          BRUSH_CURVES_SCULPT_FLAG_INTERPOLATE_POINT_COUNT;
+    add_inputs.interpolate_resolution = curves_orig_->attributes().contains("resolution");
     add_inputs.fallback_curve_length = brush_settings_->curve_length;
     add_inputs.fallback_point_count = std::max(2, brush_settings_->points_per_curve);
     add_inputs.transforms = &transforms_;
@@ -234,7 +233,8 @@ struct AddOperationExecutor {
     add_inputs.corner_normals_su = corner_normals_su;
 
     if (add_inputs.interpolate_length || add_inputs.interpolate_shape ||
-        add_inputs.interpolate_point_count) {
+        add_inputs.interpolate_point_count || add_inputs.interpolate_resolution)
+    {
       this->ensure_curve_roots_kdtree();
       add_inputs.old_roots_kdtree = self_->curve_roots_kdtree_;
     }
@@ -266,15 +266,17 @@ struct AddOperationExecutor {
     float3 ray_start_wo, ray_end_wo;
     ED_view3d_win_to_segment_clipped(
         ctx_.depsgraph, ctx_.region, ctx_.v3d, brush_pos_re_, ray_start_wo, ray_end_wo, true);
-    const float3 ray_start_cu = transforms_.world_to_curves * ray_start_wo;
-    const float3 ray_end_cu = transforms_.world_to_curves * ray_end_wo;
+    const float3 ray_start_cu = math::transform_point(transforms_.world_to_curves, ray_start_wo);
+    const float3 ray_end_cu = math::transform_point(transforms_.world_to_curves, ray_end_wo);
 
     const Vector<float4x4> symmetry_brush_transforms = get_symmetry_brush_transforms(
         eCurvesSymmetryType(curves_id_orig_->symmetry));
 
     for (const float4x4 &brush_transform : symmetry_brush_transforms) {
       const float4x4 transform = transforms_.curves_to_surface * brush_transform;
-      this->sample_in_center(r_sampled_uvs, transform * ray_start_cu, transform * ray_end_cu);
+      this->sample_in_center(r_sampled_uvs,
+                             math::transform_point(transform, ray_start_cu),
+                             math::transform_point(transform, ray_end_cu));
     }
   }
 
@@ -303,9 +305,9 @@ struct AddOperationExecutor {
     const MLoopTri &looptri = surface_looptris_eval_[looptri_index];
     const float3 brush_pos_su = ray_hit.co;
     const float3 bary_coords = bke::mesh_surface_sample::compute_bary_coord_in_triangle(
-        surface_positions_eval_, surface_loops_eval_, looptri, brush_pos_su);
+        surface_positions_eval_, surface_corner_verts_eval_, looptri, brush_pos_su);
 
-    const float2 uv = bke::mesh_surface_sample::sample_corner_attrribute_with_bary_coords(
+    const float2 uv = bke::mesh_surface_sample::sample_corner_attribute_with_bary_coords(
         bary_coords, looptri, surface_uv_map_eval_);
     r_sampled_uvs.append(uv);
   }
@@ -348,10 +350,12 @@ struct AddOperationExecutor {
             float3 start_wo, end_wo;
             ED_view3d_win_to_segment_clipped(
                 ctx_.depsgraph, ctx_.region, ctx_.v3d, pos_re, start_wo, end_wo, true);
-            const float3 start_cu = brush_transform * (transforms_.world_to_curves * start_wo);
-            const float3 end_cu = brush_transform * (transforms_.world_to_curves * end_wo);
-            r_start_su = transforms_.curves_to_surface * start_cu;
-            r_end_su = transforms_.curves_to_surface * end_cu;
+            const float3 start_cu = math::transform_point(transforms_.world_to_curves, start_wo);
+            const float3 start_cu_tx = math::transform_point(brush_transform, start_cu);
+            const float3 end_cu = math::transform_point(transforms_.world_to_curves, end_wo);
+            const float3 end_cu_tx = math::transform_point(brush_transform, end_cu);
+            r_start_su = math::transform_point(transforms_.curves_to_surface, start_cu_tx);
+            r_end_su = math::transform_point(transforms_.curves_to_surface, end_cu_tx);
           },
           use_front_face_,
           add_amount_,
@@ -361,7 +365,7 @@ struct AddOperationExecutor {
           positions_su);
 
       for (const int i : IndexRange(new_points)) {
-        const float2 uv = bke::mesh_surface_sample::sample_corner_attrribute_with_bary_coords(
+        const float2 uv = bke::mesh_surface_sample::sample_corner_attribute_with_bary_coords(
             bary_coords[i], surface_looptris_eval_[looptri_indices[i]], surface_uv_map_eval_);
         r_sampled_uvs.append(uv);
       }
@@ -393,17 +397,20 @@ struct AddOperationExecutor {
                                      view_ray_end_wo,
                                      true);
 
-    const float3 view_ray_start_cu = transforms_.world_to_curves * view_ray_start_wo;
-    const float3 view_ray_end_cu = transforms_.world_to_curves * view_ray_end_wo;
+    const float3 view_ray_start_cu = math::transform_point(transforms_.world_to_curves,
+                                                           view_ray_start_wo);
+    const float3 view_ray_end_cu = math::transform_point(transforms_.world_to_curves,
+                                                         view_ray_end_wo);
 
     const Vector<float4x4> symmetry_brush_transforms = get_symmetry_brush_transforms(
         eCurvesSymmetryType(curves_id_orig_->symmetry));
     for (const float4x4 &brush_transform : symmetry_brush_transforms) {
       const float4x4 transform = transforms_.curves_to_surface * brush_transform;
 
-      const float3 brush_pos_su = transform * brush_3d->position_cu;
-      const float3 view_direction_su = math::normalize(transform * view_ray_end_cu -
-                                                       transform * view_ray_start_cu);
+      const float3 brush_pos_su = math::transform_point(transform, brush_3d->position_cu);
+      const float3 view_direction_su = math::normalize(
+          math::transform_point(transform, view_ray_end_cu) -
+          math::transform_point(transform, view_ray_start_cu));
       const float brush_radius_su = transform_brush_radius(
           transform, brush_3d->position_cu, brush_3d->radius_cu);
 
@@ -428,9 +435,12 @@ struct AddOperationExecutor {
           brush_radius_su,
           [&](const int index, const float3 & /*co*/, const float /*dist_sq*/) {
             const MLoopTri &looptri = surface_looptris_eval_[index];
-            const float3 &v0_su = surface_positions_eval_[surface_loops_eval_[looptri.tri[0]].v];
-            const float3 &v1_su = surface_positions_eval_[surface_loops_eval_[looptri.tri[1]].v];
-            const float3 &v2_su = surface_positions_eval_[surface_loops_eval_[looptri.tri[2]].v];
+            const float3 &v0_su =
+                surface_positions_eval_[surface_corner_verts_eval_[looptri.tri[0]]];
+            const float3 &v1_su =
+                surface_positions_eval_[surface_corner_verts_eval_[looptri.tri[1]]];
+            const float3 &v2_su =
+                surface_positions_eval_[surface_corner_verts_eval_[looptri.tri[2]]];
             float3 normal_su;
             normal_tri_v3(normal_su, v0_su, v1_su, v2_su);
             if (math::dot(normal_su, view_direction_su) >= 0.0f) {
@@ -478,7 +488,7 @@ struct AddOperationExecutor {
           looptri_indices,
           positions_su);
       for (const int i : IndexRange(new_points)) {
-        const float2 uv = bke::mesh_surface_sample::sample_corner_attrribute_with_bary_coords(
+        const float2 uv = bke::mesh_surface_sample::sample_corner_attribute_with_bary_coords(
             bary_coords[i], surface_looptris_eval_[looptri_indices[i]], surface_uv_map_eval_);
         r_sampled_uvs.append(uv);
       }
@@ -495,10 +505,10 @@ struct AddOperationExecutor {
   {
     if (self_->curve_roots_kdtree_ == nullptr) {
       self_->curve_roots_kdtree_ = BLI_kdtree_3d_new(curves_orig_->curves_num());
+      const Span<int> offsets = curves_orig_->offsets();
+      const Span<float3> positions = curves_orig_->positions();
       for (const int curve_i : curves_orig_->curves_range()) {
-        const int root_point_i = curves_orig_->offsets()[curve_i];
-        const float3 &root_pos_cu = curves_orig_->positions()[root_point_i];
-        BLI_kdtree_3d_insert(self_->curve_roots_kdtree_, curve_i, root_pos_cu);
+        BLI_kdtree_3d_insert(self_->curve_roots_kdtree_, curve_i, positions[offsets[curve_i]]);
       }
       BLI_kdtree_3d_balance(self_->curve_roots_kdtree_);
     }

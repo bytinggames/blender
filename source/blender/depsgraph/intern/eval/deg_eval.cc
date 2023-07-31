@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2013 Blender Foundation. All rights reserved. */
+ * Copyright 2013 Blender Foundation */
 
 /** \file
  * \ingroup depsgraph
@@ -359,7 +359,8 @@ void depsgraph_ensure_view_layer(Depsgraph *graph)
    * This allows us to have proper view layer pointer. */
   Scene *scene_cow = graph->scene_cow;
   if (deg_copy_on_write_is_expanded(&scene_cow->id) &&
-      (scene_cow->id.recalc & ID_RECALC_COPY_ON_WRITE) == 0) {
+      (scene_cow->id.recalc & ID_RECALC_COPY_ON_WRITE) == 0)
+  {
     return;
   }
 
@@ -388,7 +389,7 @@ void deg_evaluate_on_refresh(Depsgraph *graph)
   graph->debug.begin_graph_evaluation();
 
 #ifdef WITH_PYTHON
-  /* Release the GIL so that Python drivers can be evaluated. See T91046. */
+  /* Release the GIL so that Python drivers can be evaluated. See #91046. */
   BPy_BEGIN_ALLOW_THREADS;
 #endif
 

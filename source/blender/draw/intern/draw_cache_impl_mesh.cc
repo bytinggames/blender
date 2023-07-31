@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2017 Blender Foundation. All rights reserved. */
+ * Copyright 2017 Blender Foundation */
 
 /** \file
  * \ingroup draw
@@ -36,7 +36,7 @@
 #include "BKE_editmesh.h"
 #include "BKE_editmesh_cache.h"
 #include "BKE_editmesh_tangent.h"
-#include "BKE_mesh.h"
+#include "BKE_mesh.hh"
 #include "BKE_mesh_runtime.h"
 #include "BKE_mesh_tangent.h"
 #include "BKE_modifier.h"
@@ -358,7 +358,7 @@ static DRW_MeshCDMask mesh_cd_calc_used_gpu_layers(const Object *object,
                         CustomData_get_named_layer(cd_ldata, CD_PROP_FLOAT2, name) :
                         CustomData_get_render_layer(cd_ldata, CD_PROP_FLOAT2);
           }
-          if (layer != -1) {
+          if (layer != -1 && !CustomData_layer_is_anonymous(cd_ldata, CD_PROP_FLOAT2, layer)) {
             cd_used.uv |= (1 << layer);
           }
           break;
@@ -369,7 +369,7 @@ static DRW_MeshCDMask mesh_cd_calc_used_gpu_layers(const Object *object,
                         CustomData_get_named_layer(cd_ldata, CD_PROP_FLOAT2, name) :
                         CustomData_get_render_layer(cd_ldata, CD_PROP_FLOAT2);
 
-            /* Only fallback to orco (below) when we have no UV layers, see: T56545 */
+            /* Only fallback to orco (below) when we have no UV layers, see: #56545 */
             if (layer == -1 && name[0] != '\0') {
               layer = CustomData_get_render_layer(cd_ldata, CD_PROP_FLOAT2);
             }
@@ -395,6 +395,7 @@ static DRW_MeshCDMask mesh_cd_calc_used_gpu_layers(const Object *object,
         case CD_PROP_BOOL:
         case CD_PROP_INT8:
         case CD_PROP_INT32:
+        case CD_PROP_INT32_2D:
         case CD_PROP_FLOAT:
         case CD_PROP_FLOAT2: {
           if (layer != -1 && domain.has_value()) {
@@ -518,7 +519,8 @@ static void drw_mesh_weight_state_extract(Object *ob,
         BKE_object_defgroup_check_lock_relative_multi(wstate->defgroup_len,
                                                       wstate->defgroup_locked,
                                                       wstate->defgroup_sel,
-                                                      wstate->defgroup_sel_count)) {
+                                                      wstate->defgroup_sel_count))
+    {
       wstate->flags |= DRW_MESH_WEIGHT_STATE_LOCK_RELATIVE;
 
       /* Compute the set of locked and unlocked deform vertex groups. */
@@ -575,15 +577,13 @@ static bool mesh_batch_cache_valid(Object *object, Mesh *me)
 
 static void mesh_batch_cache_init(Object *object, Mesh *me)
 {
-  MeshBatchCache *cache = static_cast<MeshBatchCache *>(me->runtime->batch_cache);
-
-  if (!cache) {
-    me->runtime->batch_cache = MEM_cnew<MeshBatchCache>(__func__);
-    cache = static_cast<MeshBatchCache *>(me->runtime->batch_cache);
+  if (!me->runtime->batch_cache) {
+    me->runtime->batch_cache = MEM_new<MeshBatchCache>(__func__);
   }
   else {
-    memset(cache, 0, sizeof(*cache));
+    *static_cast<MeshBatchCache *>(me->runtime->batch_cache) = {};
   }
+  MeshBatchCache *cache = static_cast<MeshBatchCache *>(me->runtime->batch_cache);
 
   cache->is_editmode = me->edit_mesh != nullptr;
 
@@ -750,7 +750,7 @@ void DRW_mesh_batch_cache_dirty_tag(Mesh *me, eMeshBatchDirtyMode mode)
       break;
     case BKE_MESH_BATCH_DIRTY_SELECT_PAINT:
       /* Paint mode selection flag is packed inside the nor attribute.
-       * Note that it can be slow if auto smooth is enabled. (see T63946) */
+       * Note that it can be slow if auto smooth is enabled. (see #63946) */
       FOREACH_MESH_BUFFER_CACHE (cache, mbc) {
         GPU_INDEXBUF_DISCARD_SAFE(mbc->buff.ibo.lines_paint_mask);
         GPU_VERTBUF_DISCARD_SAFE(mbc->buff.vbo.pos_nor);
@@ -798,14 +798,8 @@ static void mesh_buffer_cache_clear(MeshBufferCache *mbc)
 {
   mesh_buffer_list_clear(&mbc->buff);
 
-  MEM_SAFE_FREE(mbc->loose_geom.verts);
-  MEM_SAFE_FREE(mbc->loose_geom.edges);
-  mbc->loose_geom.edge_len = 0;
-  mbc->loose_geom.vert_len = 0;
-
-  MEM_SAFE_FREE(mbc->poly_sorted.tri_first_index);
-  MEM_SAFE_FREE(mbc->poly_sorted.mat_tri_len);
-  mbc->poly_sorted.visible_tri_len = 0;
+  mbc->loose_geom = {};
+  mbc->poly_sorted = {};
 }
 
 static void mesh_batch_cache_free_subdiv_cache(MeshBatchCache *cache)
@@ -846,10 +840,9 @@ static void mesh_batch_cache_clear(MeshBatchCache *cache)
 
 void DRW_mesh_batch_cache_free(void *batch_cache)
 {
-  if (batch_cache) {
-    mesh_batch_cache_clear(static_cast<MeshBatchCache *>(batch_cache));
-    MEM_freeN(batch_cache);
-  }
+  MeshBatchCache *cache = static_cast<MeshBatchCache *>(batch_cache);
+  mesh_batch_cache_clear(cache);
+  MEM_delete(cache);
 }
 
 /** \} */
@@ -1315,7 +1308,7 @@ static void drw_mesh_batch_cache_check_available(struct TaskGraph *task_graph, M
   MeshBatchCache *cache = mesh_batch_cache_get(me);
   /* Make sure all requested batches have been setup. */
   /* NOTE: The next line creates a different scheduling than during release builds what can lead to
-   * some issues (See T77867 where we needed to disable this function in order to debug what was
+   * some issues (See #77867 where we needed to disable this function in order to debug what was
    * happening in release builds). */
   BLI_task_graph_work_and_wait(task_graph);
   for (int i = 0; i < MBC_BATCH_LEN; i++) {
@@ -1412,7 +1405,8 @@ void DRW_mesh_batch_cache_create_requested(struct TaskGraph *task_graph,
 
   if (batch_requested &
       (MBC_SURFACE | MBC_WIRE_LOOPS_UVS | MBC_EDITUV_FACES_STRETCH_AREA |
-       MBC_EDITUV_FACES_STRETCH_ANGLE | MBC_EDITUV_FACES | MBC_EDITUV_EDGES | MBC_EDITUV_VERTS)) {
+       MBC_EDITUV_FACES_STRETCH_ANGLE | MBC_EDITUV_FACES | MBC_EDITUV_EDGES | MBC_EDITUV_VERTS))
+  {
     /* Modifiers will only generate an orco layer if the mesh is deformed. */
     if (cache->cd_needed.orco != 0) {
       /* Orco is always extracted from final mesh. */
@@ -1436,7 +1430,8 @@ void DRW_mesh_batch_cache_create_requested(struct TaskGraph *task_graph,
           cd_uv_update = true;
         }
         if ((cache->cd_used.tan & cache->cd_needed.tan) != cache->cd_needed.tan ||
-            cache->cd_used.tan_orco != cache->cd_needed.tan_orco) {
+            cache->cd_used.tan_orco != cache->cd_needed.tan_orco)
+        {
           GPU_VERTBUF_DISCARD_SAFE(mbc->buff.vbo.tan);
         }
         if (cache->cd_used.orco != cache->cd_needed.orco) {
@@ -1941,7 +1936,7 @@ void DRW_mesh_batch_cache_create_requested(struct TaskGraph *task_graph,
 
   /* Ensure that all requested batches have finished.
    * Ideally we want to remove this sync, but there are cases where this doesn't work.
-   * See T79038 for example.
+   * See #79038 for example.
    *
    * An idea to improve this is to separate the Object mode from the edit mode draw caches. And
    * based on the mode the correct one will be updated. Other option is to look into using

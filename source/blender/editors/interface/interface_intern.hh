@@ -50,16 +50,12 @@ struct wmTimer;
 
 #define UI_MENU_WIDTH_MIN (UI_UNIT_Y * 9)
 /** Some extra padding added to menus containing sub-menu icons. */
-#define UI_MENU_SUBMENU_PADDING (6 * UI_DPI_FAC)
+#define UI_MENU_SUBMENU_PADDING (6 * UI_SCALE_FAC)
 
 /* menu scrolling */
-#define UI_MENU_SCROLL_ARROW (12 * UI_DPI_FAC)
-#define UI_MENU_SCROLL_MOUSE (UI_MENU_SCROLL_ARROW + 2 * UI_DPI_FAC)
-#define UI_MENU_SCROLL_PAD (4 * UI_DPI_FAC)
-
-/* panel limits */
-#define UI_PANEL_MINX 100
-#define UI_PANEL_MINY 70
+#define UI_MENU_SCROLL_ARROW (12 * UI_SCALE_FAC)
+#define UI_MENU_SCROLL_MOUSE (UI_MENU_SCROLL_ARROW + 2 * UI_SCALE_FAC)
+#define UI_MENU_SCROLL_PAD (4 * UI_SCALE_FAC)
 
 /** Popover width (multiplied by #U.widget_unit) */
 #define UI_POPOVER_WIDTH_UNITS 10
@@ -84,11 +80,6 @@ enum {
   UI_BUT_ACTIVE_OVERRIDE = (1 << 7),
 
   /* WARNING: rest of #uiBut.flag in UI_interface.h */
-};
-
-/** #uiBut.dragflag */
-enum {
-  UI_BUT_DRAGPOIN_FREE = (1 << 0),
 };
 
 /** #uiBut.pie_dir */
@@ -152,24 +143,25 @@ enum {
 #define PIE_MAX_ITEMS 8
 
 struct uiBut {
-  uiBut *next, *prev;
+  uiBut *next = nullptr, *prev = nullptr;
 
   /** Pointer back to the layout item holding this button. */
-  uiLayout *layout;
-  int flag, drawflag;
-  eButType type;
-  eButPointerType pointype;
-  short bit, bitnr, retval, strwidth, alignnr;
-  short ofs, pos, selsta, selend;
+  uiLayout *layout = nullptr;
+  int flag = 0;
+  int drawflag = 0;
+  eButType type = eButType(0);
+  eButPointerType pointype = UI_BUT_POIN_NONE;
+  short bit = 0, bitnr = 0, retval = 0, strwidth = 0, alignnr = 0;
+  short ofs = 0, pos = 0, selsta = 0, selend = 0;
 
-  char *str;
-  char strdata[UI_MAX_NAME_STR];
-  char drawstr[UI_MAX_DRAW_STR];
+  char *str = nullptr;
+  char strdata[UI_MAX_NAME_STR] = "";
+  char drawstr[UI_MAX_DRAW_STR] = "";
 
-  rctf rect; /* block relative coords */
+  rctf rect = {}; /* block relative coords */
 
-  char *poin;
-  float hardmin, hardmax, softmin, softmax;
+  char *poin = nullptr;
+  float hardmin = 0, hardmax = 0, softmin = 0, softmax = 0;
 
   /* both these values use depends on the button type
    * (polymorphic struct or union would be nicer for this stuff) */
@@ -180,7 +172,7 @@ struct uiBut {
    * - UI_BTYPE_SCROLL:       Use as scroll size.
    * - UI_BTYPE_SEARCH_MENU:  Use as number or rows.
    */
-  float a1;
+  float a1 = 0;
 
   /**
    * For #uiBut.type:
@@ -188,210 +180,195 @@ struct uiBut {
    * - UI_BTYPE_LABEL:        If `(a1 == 1.0f)` use a2 as a blending factor.
    * - UI_BTYPE_SEARCH_MENU:  Use as number or columns.
    */
-  float a2;
+  float a2 = 0;
 
-  uchar col[4];
+  uchar col[4] = {0};
 
   /** See \ref UI_but_func_identity_compare_set(). */
-  uiButIdentityCompareFunc identity_cmp_func;
+  uiButIdentityCompareFunc identity_cmp_func = nullptr;
 
-  uiButHandleFunc func;
-  void *func_arg1;
-  void *func_arg2;
+  uiButHandleFunc func = nullptr;
+  void *func_arg1 = nullptr;
+  void *func_arg2 = nullptr;
 
-  uiButHandleNFunc funcN;
-  void *func_argN;
+  uiButHandleNFunc funcN = nullptr;
+  void *func_argN = nullptr;
 
-  bContextStore *context;
+  bContextStore *context = nullptr;
 
-  uiButCompleteFunc autocomplete_func;
-  void *autofunc_arg;
+  uiButCompleteFunc autocomplete_func = nullptr;
+  void *autofunc_arg = nullptr;
 
-  uiButHandleRenameFunc rename_func;
-  void *rename_arg1;
-  void *rename_orig;
+  uiButHandleRenameFunc rename_func = nullptr;
+  void *rename_arg1 = nullptr;
+  void *rename_orig = nullptr;
 
   /** Run an action when holding the button down. */
-  uiButHandleHoldFunc hold_func;
-  void *hold_argN;
+  uiButHandleHoldFunc hold_func = nullptr;
+  void *hold_argN = nullptr;
 
-  const char *tip;
-  uiButToolTipFunc tip_func;
-  void *tip_arg;
-  uiFreeArgFunc tip_arg_free;
+  const char *tip = nullptr;
+  uiButToolTipFunc tip_func = nullptr;
+  void *tip_arg = nullptr;
+  uiFreeArgFunc tip_arg_free = nullptr;
 
   /** info on why button is disabled, displayed in tooltip */
-  const char *disabled_info;
+  const char *disabled_info = nullptr;
 
-  BIFIconID icon;
+  BIFIconID icon = ICON_NONE;
   /** Copied from the #uiBlock.emboss */
-  eUIEmbossType emboss;
+  eUIEmbossType emboss = UI_EMBOSS;
   /** direction in a pie menu, used for collision detection. */
-  RadialDirection pie_dir;
+  RadialDirection pie_dir = UI_RADIAL_NONE;
   /** could be made into a single flag */
-  bool changed;
+  bool changed = false;
   /** so buttons can support unit systems which are not RNA */
-  uchar unit_type;
-  short iconadd;
+  uchar unit_type = 0;
+  short iconadd = 0;
 
   /** #UI_BTYPE_BLOCK data */
-  uiBlockCreateFunc block_create_func;
+  uiBlockCreateFunc block_create_func = nullptr;
 
   /** #UI_BTYPE_PULLDOWN / #UI_BTYPE_MENU data */
-  uiMenuCreateFunc menu_create_func;
+  uiMenuCreateFunc menu_create_func = nullptr;
 
-  uiMenuStepFunc menu_step_func;
+  uiMenuStepFunc menu_step_func = nullptr;
 
   /* RNA data */
-  PointerRNA rnapoin;
-  PropertyRNA *rnaprop;
-  int rnaindex;
+  PointerRNA rnapoin = {};
+  PropertyRNA *rnaprop = nullptr;
+  int rnaindex = 0;
 
   /* Operator data */
-  wmOperatorType *optype;
-  PointerRNA *opptr;
-  wmOperatorCallContext opcontext;
+  wmOperatorType *optype = nullptr;
+  PointerRNA *opptr = nullptr;
+  wmOperatorCallContext opcontext = WM_OP_INVOKE_DEFAULT;
 
   /** When non-zero, this is the key used to activate a menu items (`a-z` always lower case). */
-  uchar menu_key;
+  uchar menu_key = 0;
 
-  ListBase extra_op_icons; /** #uiButExtraOpIcon */
+  ListBase extra_op_icons = {nullptr, nullptr}; /** #uiButExtraOpIcon */
 
   /* Drag-able data, type is WM_DRAG_... */
-  char dragtype;
-  short dragflag;
-  void *dragpoin;
-  ImBuf *imb;
-  float imb_scale;
+  char dragtype = WM_DRAG_ID;
+  short dragflag = 0;
+  void *dragpoin = nullptr;
+  ImBuf *imb = nullptr;
+  float imb_scale = 0;
 
   /** Active button data (set when the user is hovering or interacting with a button). */
-  uiHandleButtonData *active;
+  uiHandleButtonData *active = nullptr;
 
   /** Custom button data (borrowed, not owned). */
-  void *custom_data;
+  void *custom_data = nullptr;
 
-  char *editstr;
-  double *editval;
-  float *editvec;
+  char *editstr = nullptr;
+  double *editval = nullptr;
+  float *editvec = nullptr;
 
-  uiButPushedStateFunc pushed_state_func;
-  const void *pushed_state_arg;
+  uiButPushedStateFunc pushed_state_func = nullptr;
+  const void *pushed_state_arg = nullptr;
 
   /** Little indicator (e.g., counter) displayed on top of some icons. */
-  IconTextOverlay icon_overlay_text;
+  IconTextOverlay icon_overlay_text = {};
 
   /* pointer back */
-  uiBlock *block;
+  uiBlock *block = nullptr;
+
+  uiBut() = default;
+  /** Performs a mostly shallow copy for now. Only contained C++ types are deep copied. */
+  uiBut(const uiBut &other) = default;
+  /** Mostly shallow copy, just like copy constructor above. */
+  uiBut &operator=(const uiBut &other) = default;
 };
 
 /** Derived struct for #UI_BTYPE_NUM */
-struct uiButNumber {
-  uiBut but;
-
-  float step_size;
-  float precision;
+struct uiButNumber : public uiBut {
+  float step_size = 0;
+  float precision = 0;
 };
 
 /** Derived struct for #UI_BTYPE_COLOR */
-struct uiButColor {
-  uiBut but;
-
-  bool is_pallete_color;
-  int palette_color_index;
+struct uiButColor : public uiBut {
+  bool is_pallete_color = false;
+  int palette_color_index = -1;
 };
 
 /** Derived struct for #UI_BTYPE_TAB */
-struct uiButTab {
-  uiBut but;
-  struct MenuType *menu;
+struct uiButTab : public uiBut {
+  struct MenuType *menu = nullptr;
 };
 
 /** Derived struct for #UI_BTYPE_SEARCH_MENU */
-struct uiButSearch {
-  uiBut but;
+struct uiButSearch : public uiBut {
+  uiButSearchCreateFn popup_create_fn = nullptr;
+  uiButSearchUpdateFn items_update_fn = nullptr;
+  uiButSearchListenFn listen_fn = nullptr;
 
-  uiButSearchCreateFn popup_create_fn;
-  uiButSearchUpdateFn items_update_fn;
-  uiButSearchListenFn listen_fn;
+  void *item_active = nullptr;
 
-  void *item_active;
+  void *arg = nullptr;
+  uiFreeArgFunc arg_free_fn = nullptr;
 
-  void *arg;
-  uiFreeArgFunc arg_free_fn;
+  uiButSearchContextMenuFn item_context_menu_fn = nullptr;
+  uiButSearchTooltipFn item_tooltip_fn = nullptr;
 
-  uiButSearchContextMenuFn item_context_menu_fn;
-  uiButSearchTooltipFn item_tooltip_fn;
+  const char *item_sep_string = nullptr;
 
-  const char *item_sep_string;
-
-  PointerRNA rnasearchpoin;
-  PropertyRNA *rnasearchprop;
+  PointerRNA rnasearchpoin = {};
+  PropertyRNA *rnasearchprop = nullptr;
 
   /**
    * The search box only provides suggestions, it does not force
    * the string to match one of the search items when applying.
    */
-  bool results_are_suggestions;
+  bool results_are_suggestions = false;
 };
 
-/** Derived struct for #UI_BTYPE_DECORATOR */
-struct uiButDecorator {
-  uiBut but;
-
-  struct PointerRNA rnapoin;
-  struct PropertyRNA *rnaprop;
-  int rnaindex;
+/** Derived struct for #UI_BTYPE_DECORATOR
+ * Decorators have own RNA data, using the normal #uiBut RNA members has many side-effects.
+ */
+struct uiButDecorator : public uiBut {
+  struct PointerRNA decorated_rnapoin = {};
+  struct PropertyRNA *decorated_rnaprop = nullptr;
+  int decorated_rnaindex = -1;
 };
 
 /** Derived struct for #UI_BTYPE_PROGRESS_BAR. */
-struct uiButProgressbar {
-  uiBut but;
-
+struct uiButProgressbar : public uiBut {
   /* 0..1 range */
-  float progress;
+  float progress = 0;
 };
 
-struct uiButViewItem {
-  uiBut but;
-
+struct uiButViewItem : public uiBut {
   /* C-Handle to the view item this button was created for. */
-  uiViewItemHandle *view_item;
+  uiViewItemHandle *view_item = nullptr;
 };
 
 /** Derived struct for #UI_BTYPE_HSVCUBE. */
-struct uiButHSVCube {
-  uiBut but;
-
-  eButGradientType gradient_type;
+struct uiButHSVCube : public uiBut {
+  eButGradientType gradient_type = UI_GRAD_SV;
 };
 
 /** Derived struct for #UI_BTYPE_COLORBAND. */
-struct uiButColorBand {
-  uiBut but;
-
-  ColorBand *edit_coba;
+struct uiButColorBand : public uiBut {
+  ColorBand *edit_coba = nullptr;
 };
 
 /** Derived struct for #UI_BTYPE_CURVEPROFILE. */
-struct uiButCurveProfile {
-  uiBut but;
-
-  struct CurveProfile *edit_profile;
+struct uiButCurveProfile : public uiBut {
+  struct CurveProfile *edit_profile = nullptr;
 };
 
 /** Derived struct for #UI_BTYPE_CURVE. */
-struct uiButCurveMapping {
-  uiBut but;
-
-  struct CurveMapping *edit_cumap;
-  eButGradientType gradient_type;
+struct uiButCurveMapping : public uiBut {
+  struct CurveMapping *edit_cumap = nullptr;
+  eButGradientType gradient_type = UI_GRAD_SV;
 };
 
 /** Derived struct for #UI_BTYPE_HOTKEY_EVENT. */
-struct uiButHotkeyEvent {
-  uiBut but;
-
-  short modifier_key;
+struct uiButHotkeyEvent : public uiBut {
+  short modifier_key = 0;
 };
 
 /**
@@ -689,11 +666,11 @@ void ui_hsvcube_pos_from_vals(
  */
 void ui_but_string_get_ex(uiBut *but,
                           char *str,
-                          size_t maxlen,
+                          size_t str_maxncpy,
                           int float_precision,
                           bool use_exp_float,
                           bool *r_use_exp_float) ATTR_NONNULL(1, 2);
-void ui_but_string_get(uiBut *but, char *str, size_t maxlen) ATTR_NONNULL();
+void ui_but_string_get(uiBut *but, char *str, size_t str_maxncpy) ATTR_NONNULL();
 /**
  * A version of #ui_but_string_get_ex for dynamic buffer sizes
  * (where #ui_but_string_get_max_length returns 0).
@@ -704,7 +681,7 @@ char *ui_but_string_get_dynamic(uiBut *but, int *r_str_size);
 /**
  * \param str: will be overwritten.
  */
-void ui_but_convert_to_unit_alt_name(uiBut *but, char *str, size_t maxlen) ATTR_NONNULL();
+void ui_but_convert_to_unit_alt_name(uiBut *but, char *str, size_t str_maxncpy) ATTR_NONNULL();
 bool ui_but_string_set(bContext *C, uiBut *but, const char *str) ATTR_NONNULL();
 bool ui_but_string_eval_number(bContext *C, const uiBut *but, const char *str, double *value)
     ATTR_NONNULL();
@@ -1204,12 +1181,12 @@ void ui_draw_preview_item_stateless(const uiFontStyle *fstyle,
                                     eFontStyle_Align text_align);
 
 #define UI_TEXT_MARGIN_X 0.4f
-#define UI_POPUP_MARGIN (UI_DPI_FAC * 12)
+#define UI_POPUP_MARGIN (UI_SCALE_FAC * 12)
 /**
  * Margin at top of screen for popups.
  * Note this value must be sufficient to draw a popover arrow to avoid cropping it.
  */
-#define UI_POPUP_MENU_TOP (int)(10 * UI_DPI_FAC)
+#define UI_POPUP_MENU_TOP (int)(10 * UI_SCALE_FAC)
 
 #define UI_PIXEL_AA_JITTER 8
 extern const float ui_pixel_jitter[UI_PIXEL_AA_JITTER][2];
@@ -1303,7 +1280,7 @@ void ui_but_anim_paste_driver(bContext *C);
  * \a str can be NULL to only perform check if \a but has an expression at all.
  * \return if button has an expression.
  */
-bool ui_but_anim_expression_get(uiBut *but, char *str, size_t maxlen);
+bool ui_but_anim_expression_get(uiBut *but, char *str, size_t str_maxncpy);
 bool ui_but_anim_expression_set(uiBut *but, const char *str);
 /**
  * Create new expression for button (i.e. a "scripted driver"), if it can be created.
@@ -1371,7 +1348,7 @@ uiBut *ui_list_find_mouse_over_ex(const ARegion *region, const int xy[2])
 
 bool ui_but_contains_password(const uiBut *but) ATTR_WARN_UNUSED_RESULT;
 
-size_t ui_but_drawstr_without_sep_char(const uiBut *but, char *str, size_t str_maxlen)
+size_t ui_but_drawstr_without_sep_char(const uiBut *but, char *str, size_t str_maxncpy)
     ATTR_NONNULL(1, 2);
 size_t ui_but_drawstr_len_without_sep_char(const uiBut *but);
 size_t ui_but_tip_len_only_first_line(const uiBut *but);
@@ -1475,6 +1452,7 @@ void ui_interface_tag_script_reload_queries();
 /* interface_view.cc */
 
 void ui_block_free_views(uiBlock *block);
+void ui_block_views_bounds_calc(const uiBlock *block);
 void ui_block_views_listen(const uiBlock *block, const wmRegionListenerParams *listener_params);
 uiViewHandle *ui_block_view_find_matching_in_old_block(const uiBlock *new_block,
                                                        const uiViewHandle *new_view);

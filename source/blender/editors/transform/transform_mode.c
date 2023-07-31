@@ -10,7 +10,7 @@
 #include "DNA_anim_types.h"
 #include "DNA_armature_types.h"
 #include "DNA_constraint_types.h"
-#include "DNA_gpencil_types.h"
+#include "DNA_gpencil_legacy_types.h"
 #include "DNA_windowmanager_types.h"
 
 #include "BLI_listbase.h"
@@ -29,6 +29,7 @@
 
 #include "transform.h"
 #include "transform_convert.h"
+#include "transform_gizmo.h"
 #include "transform_orientations.h"
 #include "transform_snap.h"
 
@@ -54,12 +55,13 @@ eTfmMode transform_mode_really_used(bContext *C, eTfmMode mode)
 
 bool transdata_check_local_center(const TransInfo *t, short around)
 {
-  return ((around == V3D_AROUND_LOCAL_ORIGINS) &&
-          ((t->options & (CTX_OBJECT | CTX_POSE_BONE)) ||
-           /* implicit: (t->flag & T_EDIT) */
-           ELEM(t->obedit_type, OB_MESH, OB_CURVES_LEGACY, OB_MBALL, OB_ARMATURE, OB_GPENCIL) ||
-           (t->spacetype == SPACE_GRAPH) ||
-           (t->options & (CTX_MOVIECLIP | CTX_MASK | CTX_PAINT_CURVE | CTX_SEQUENCER_IMAGE))));
+  return (
+      (around == V3D_AROUND_LOCAL_ORIGINS) &&
+      ((t->options & (CTX_OBJECT | CTX_POSE_BONE)) ||
+       /* implicit: (t->flag & T_EDIT) */
+       ELEM(t->obedit_type, OB_MESH, OB_CURVES_LEGACY, OB_MBALL, OB_ARMATURE, OB_GPENCIL_LEGACY) ||
+       (t->spacetype == SPACE_GRAPH) ||
+       (t->options & (CTX_MOVIECLIP | CTX_MASK | CTX_PAINT_CURVE | CTX_SEQUENCER_IMAGE))));
 }
 
 bool transform_mode_is_changeable(const int mode)
@@ -70,7 +72,8 @@ bool transform_mode_is_changeable(const int mode)
               TFM_TRACKBALL,
               TFM_TRANSLATION,
               TFM_EDGE_SLIDE,
-              TFM_VERT_SLIDE);
+              TFM_VERT_SLIDE,
+              TFM_NORMAL_ROTATION);
 }
 
 /* -------------------------------------------------------------------- */
@@ -884,7 +887,7 @@ void headerResize(TransInfo *t, const float vec[3], char *str, const int str_siz
 /**
  * \a smat is reference matrix only.
  *
- * \note this is a tricky area, before making changes see: T29633, T42444
+ * \note this is a tricky area, before making changes see: #29633, #42444
  */
 static void TransMat3ToSize(const float mat[3][3], const float smat[3][3], float size[3])
 {
@@ -948,7 +951,8 @@ void ElementResize(const TransInfo *t,
              &TransConvertType_Sculpt,
              &TransConvertType_Object,
              &TransConvertType_ObjectTexSpace,
-             &TransConvertType_Pose)) {
+             &TransConvertType_Pose))
+    {
       float obsizemat[3][3];
       /* Reorient the size mat to fit the oriented object. */
       mul_m3_m3m3(obsizemat, tmat, td->axismtx);
@@ -1041,7 +1045,7 @@ void ElementResize(const TransInfo *t,
   if (t->options & (CTX_OBJECT | CTX_POSE_BONE)) {
     if (t->options & CTX_POSE_BONE) {
       /* Without this, the resulting location of scaled bones aren't correct,
-       * especially noticeable scaling root or disconnected bones around the cursor, see T92515. */
+       * especially noticeable scaling root or disconnected bones around the cursor, see #92515. */
       mul_mat3_m4_v3(tc->poseobj->object_to_world, vec);
     }
     mul_m3_v3(td->smtx, vec);
@@ -1215,6 +1219,8 @@ void transform_mode_init(TransInfo *t, wmOperator *op, const int mode)
     transform_convert_mesh_customdatacorrect_init(t);
   }
 
+  transform_gizmo_3d_model_from_constraint_and_mode_set(t);
+
   /* TODO(@germano): Some of these operations change the `t->mode`.
    * This can be bad for Redo. */
   // BLI_assert(t->mode == mode);
@@ -1240,7 +1246,8 @@ void transform_mode_default_modal_orientation_set(TransInfo *t, int type)
   View3D *v3d = NULL;
   RegionView3D *rv3d = NULL;
   if ((type == V3D_ORIENT_VIEW) && (t->spacetype == SPACE_VIEW3D) && t->region &&
-      (t->region->regiontype == RGN_TYPE_WINDOW)) {
+      (t->region->regiontype == RGN_TYPE_WINDOW))
+  {
     v3d = t->view;
     rv3d = t->region->regiondata;
   }

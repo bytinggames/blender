@@ -8,7 +8,7 @@
 #include "DRW_render.h"
 
 #include "BKE_lib_id.h"
-#include "BKE_node.h"
+#include "BKE_node.hh"
 
 #include "BLI_dynstr.h"
 #include "BLI_string_utils.h"
@@ -107,12 +107,15 @@ static struct {
   struct GPUShader *ggx_refraction_lut_sh;
 
   /* Render Passes */
+  struct GPUShader *rpass_accumulate_sh;
   struct GPUShader *postprocess_sh;
   struct GPUShader *cryptomatte_sh[2];
 
   /* Screen Space Reflection */
   struct GPUShader *reflection_trace;
   struct GPUShader *reflection_resolve;
+  struct GPUShader *reflection_resolve_probe;
+  struct GPUShader *reflection_resolve_raytrace;
 
   /* Shadows */
   struct GPUShader *shadow_sh;
@@ -603,6 +606,15 @@ GPUShader *EEVEE_shaders_effect_ambient_occlusion_debug_sh_get(void)
 /** \name Render Passes
  * \{ */
 
+GPUShader *EEVEE_shaders_renderpasses_accumulate_sh_get(void)
+{
+  if (e_data.rpass_accumulate_sh == nullptr) {
+    e_data.rpass_accumulate_sh = DRW_shader_create_from_info_name(
+        "eevee_legacy_renderpass_accumulate");
+  }
+  return e_data.rpass_accumulate_sh;
+}
+
 GPUShader *EEVEE_shaders_renderpasses_post_process_sh_get(void)
 {
   if (e_data.postprocess_sh == nullptr) {
@@ -656,6 +668,24 @@ struct GPUShader *EEVEE_shaders_effect_reflection_resolve_sh_get(void)
         "eevee_legacy_effect_reflection_resolve");
   }
   return e_data.reflection_resolve;
+}
+
+struct GPUShader *EEVEE_shaders_effect_reflection_resolve_probe_sh_get(void)
+{
+  if (e_data.reflection_resolve_probe == nullptr) {
+    e_data.reflection_resolve_probe = DRW_shader_create_from_info_name(
+        "eevee_legacy_effect_reflection_resolve_probe");
+  }
+  return e_data.reflection_resolve_probe;
+}
+
+struct GPUShader *EEVEE_shaders_effect_reflection_resolve_refl_sh_get(void)
+{
+  if (e_data.reflection_resolve_raytrace == nullptr) {
+    e_data.reflection_resolve_raytrace = DRW_shader_create_from_info_name(
+        "eevee_legacy_effect_reflection_resolve_ssr");
+  }
+  return e_data.reflection_resolve_raytrace;
 }
 
 /** \} */
@@ -1009,7 +1039,7 @@ Material *EEVEE_material_default_diffuse_get(void)
   if (!e_data.diffuse_mat) {
     Material *ma = static_cast<Material *>(BKE_id_new_nomain(ID_MA, "EEVEEE default diffuse"));
 
-    bNodeTree *ntree = ntreeAddTreeEmbedded(
+    bNodeTree *ntree = blender::bke::ntreeAddTreeEmbedded(
         nullptr, &ma->id, "Shader Nodetree", ntreeType_Shader->idname);
     ma->use_nodes = true;
 
@@ -1036,7 +1066,7 @@ Material *EEVEE_material_default_glossy_get(void)
   if (!e_data.glossy_mat) {
     Material *ma = static_cast<Material *>(BKE_id_new_nomain(ID_MA, "EEVEEE default metal"));
 
-    bNodeTree *ntree = ntreeAddTreeEmbedded(
+    bNodeTree *ntree = blender::bke::ntreeAddTreeEmbedded(
         nullptr, &ma->id, "Shader Nodetree", ntreeType_Shader->idname);
     ma->use_nodes = true;
 
@@ -1065,7 +1095,7 @@ Material *EEVEE_material_default_error_get(void)
   if (!e_data.error_mat) {
     Material *ma = static_cast<Material *>(BKE_id_new_nomain(ID_MA, "EEVEEE default error"));
 
-    bNodeTree *ntree = ntreeAddTreeEmbedded(
+    bNodeTree *ntree = blender::bke::ntreeAddTreeEmbedded(
         nullptr, &ma->id, "Shader Nodetree", ntreeType_Shader->idname);
     ma->use_nodes = true;
 
@@ -1281,8 +1311,8 @@ static char *eevee_get_defines(int options)
   /* Global EEVEE defines included for CreateInfo shaders via `engine_eevee_shared_defines.h` in
    * eevee_legacy_common_lib CreateInfo. */
 
-  /* Defines which affect bindings are instead injected via CreateInfo permutations. To specify new
-   * permutations, references to GPUShaderCreateInfo variants should be fetched in:
+  /* Defines which affect bindings are instead injected via CreateInfo permutations. To specify
+   * new permutations, references to GPUShaderCreateInfo variants should be fetched in:
    * `eevee_get_vert/geom/frag_info(..)`
    *
    * CreateInfo's for EEVEE materials are declared in:
@@ -1390,12 +1420,21 @@ struct GPUMaterial *EEVEE_material_get(
     return nullptr;
   }
   switch (status) {
-    case GPU_MAT_SUCCESS:
-      break;
-    case GPU_MAT_QUEUED:
+    case GPU_MAT_SUCCESS: {
+      /* Determine optimization status for remaining compilations counter. */
+      int optimization_status = GPU_material_optimization_status(mat);
+      if (optimization_status == GPU_MAT_OPTIMIZATION_QUEUED) {
+        vedata->stl->g_data->queued_optimise_shaders_count++;
+      }
+    } break;
+    case GPU_MAT_QUEUED: {
       vedata->stl->g_data->queued_shaders_count++;
-      mat = EEVEE_material_default_get(scene, ma, options);
-      break;
+      GPUMaterial *default_mat = EEVEE_material_default_get(scene, ma, options);
+      /* Mark pending material with its default material for future cache warming. */
+      GPU_material_set_default(mat, default_mat);
+      /* Return default material. */
+      mat = default_mat;
+    } break;
     case GPU_MAT_FAILED:
     default:
       ma = EEVEE_material_default_error_get();
@@ -1438,6 +1477,7 @@ void EEVEE_shaders_free(void)
   DRW_SHADER_FREE_SAFE(e_data.gtao_layer_sh);
   DRW_SHADER_FREE_SAFE(e_data.gtao_debug_sh);
   DRW_SHADER_FREE_SAFE(e_data.velocity_resolve_sh);
+  DRW_SHADER_FREE_SAFE(e_data.rpass_accumulate_sh);
   DRW_SHADER_FREE_SAFE(e_data.postprocess_sh);
   DRW_SHADER_FREE_SAFE(e_data.shadow_sh);
   DRW_SHADER_FREE_SAFE(e_data.shadow_accum_sh);
@@ -1495,6 +1535,8 @@ void EEVEE_shaders_free(void)
   }
   DRW_SHADER_FREE_SAFE(e_data.reflection_trace);
   DRW_SHADER_FREE_SAFE(e_data.reflection_resolve);
+  DRW_SHADER_FREE_SAFE(e_data.reflection_resolve_probe);
+  DRW_SHADER_FREE_SAFE(e_data.reflection_resolve_raytrace);
   DRW_SHADER_LIB_FREE_SAFE(e_data.lib);
 
   if (e_data.default_world) {

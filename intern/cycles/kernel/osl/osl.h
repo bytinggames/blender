@@ -161,7 +161,14 @@ ccl_device_inline void osl_eval_nodes(KernelGlobals kg,
                         /* shadeindex = */ 0);
 #  endif
 
-  if (globals.Ci) {
+#  if __cplusplus < 201703L
+  if (type == SHADER_TYPE_DISPLACEMENT) {
+#  else
+  if constexpr (type == SHADER_TYPE_DISPLACEMENT) {
+#  endif
+    sd->P = globals.P;
+  }
+  else if (globals.Ci) {
     flatten_closure_tree(kg, sd, path_flag, globals.Ci);
   }
 }

@@ -108,8 +108,8 @@ GeometryInfoLog::GeometryInfoLog(const GeometrySet &geometry_set)
       case GEO_COMPONENT_TYPE_EDIT: {
         const GeometryComponentEditData &edit_component = *(
             const GeometryComponentEditData *)component;
-        if (const bke::CurvesEditHints *curve_edit_hints =
-                edit_component.curves_edit_hints_.get()) {
+        if (const bke::CurvesEditHints *curve_edit_hints = edit_component.curves_edit_hints_.get())
+        {
           EditDataInfo &info = this->edit_data_info.emplace();
           info.has_deform_matrices = curve_edit_hints->deform_mats.has_value();
           info.has_deformed_positions = curve_edit_hints->positions.has_value();
@@ -330,7 +330,7 @@ void GeoTreeLog::ensure_used_named_attributes()
     GeoTreeLog &child_log = modifier_log_->get_tree_log(child_hash);
     child_log.ensure_used_named_attributes();
     if (const std::optional<int32_t> &group_node_id = child_log.tree_loggers_[0]->group_node_id) {
-      for (const auto &item : child_log.used_named_attributes.items()) {
+      for (const auto item : child_log.used_named_attributes.items()) {
         add_attribute(*group_node_id, item.key, item.value);
       }
     }
@@ -446,7 +446,8 @@ GeoTreeLogger &GeoModifierLog::get_local_tree_logger(const ComputeContext &compu
     parent_logger.children_hashes.append(compute_context.hash());
   }
   if (const bke::NodeGroupComputeContext *node_group_compute_context =
-          dynamic_cast<const bke::NodeGroupComputeContext *>(&compute_context)) {
+          dynamic_cast<const bke::NodeGroupComputeContext *>(&compute_context))
+  {
     tree_logger.group_node_id.emplace(node_group_compute_context->node_id());
   }
   return tree_logger;
@@ -526,6 +527,11 @@ std::optional<ComputeContextHash> GeoModifierLog::get_compute_context_hash_for_n
   for (const int i : tree_path.index_range().drop_back(1)) {
     /* The tree path contains the name of the node but not its ID. */
     const bNode *node = nodeFindNodebyName(tree_path[i]->nodetree, tree_path[i + 1]->node_name);
+    if (node == nullptr) {
+      /* The current tree path is invalid, probably because some parent group node has been
+       * deleted. */
+      return std::nullopt;
+    }
     compute_context_builder.push<bke::NodeGroupComputeContext>(*node);
   }
   return compute_context_builder.hash();
@@ -544,7 +550,8 @@ GeoTreeLog *GeoModifierLog::get_tree_log_for_node_editor(const SpaceNode &snode)
   }
   if (const std::optional<ComputeContextHash> hash =
           GeoModifierLog::get_compute_context_hash_for_node_editor(
-              snode, object_and_modifier->nmd->modifier.name)) {
+              snode, object_and_modifier->nmd->modifier.name))
+  {
     return &modifier_log->get_tree_log(*hash);
   }
   return nullptr;

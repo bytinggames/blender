@@ -36,9 +36,7 @@ static CLG_LogRef LOG = {"seq.strip_transform"};
 
 bool SEQ_transform_single_image_check(Sequence *seq)
 {
-  return ((seq->len == 1) &&
-          (seq->type == SEQ_TYPE_IMAGE ||
-           ((seq->type & SEQ_TYPE_EFFECT) && SEQ_effect_get_num_inputs(seq->type) == 0)));
+  return (seq->flag & SEQ_SINGLE_FRAME_CONTENT) != 0;
 }
 
 bool SEQ_transform_seqbase_isolated_sel_check(ListBase *seqbase)
@@ -67,13 +65,15 @@ bool SEQ_transform_seqbase_isolated_sel_check(ListBase *seqbase)
     if (seq->flag & SELECT) {
       if ((seq->seq1 && (seq->seq1->flag & SELECT) == 0) ||
           (seq->seq2 && (seq->seq2->flag & SELECT) == 0) ||
-          (seq->seq3 && (seq->seq3->flag & SELECT) == 0)) {
+          (seq->seq3 && (seq->seq3->flag & SELECT) == 0))
+      {
         return false;
       }
     }
     else {
       if ((seq->seq1 && (seq->seq1->flag & SELECT)) || (seq->seq2 && (seq->seq2->flag & SELECT)) ||
-          (seq->seq3 && (seq->seq3->flag & SELECT))) {
+          (seq->seq3 && (seq->seq3->flag & SELECT)))
+      {
         return false;
       }
     }
@@ -407,25 +407,29 @@ static eOvelapDescrition overlap_description_get(const Scene *scene,
   if (SEQ_time_left_handle_frame_get(scene, transformed) <=
           SEQ_time_left_handle_frame_get(scene, target) &&
       SEQ_time_right_handle_frame_get(scene, transformed) >=
-          SEQ_time_right_handle_frame_get(scene, target)) {
+          SEQ_time_right_handle_frame_get(scene, target))
+  {
     return STRIP_OVERLAP_IS_FULL;
   }
   if (SEQ_time_left_handle_frame_get(scene, transformed) >
           SEQ_time_left_handle_frame_get(scene, target) &&
       SEQ_time_right_handle_frame_get(scene, transformed) <
-          SEQ_time_right_handle_frame_get(scene, target)) {
+          SEQ_time_right_handle_frame_get(scene, target))
+  {
     return STRIP_OVERLAP_IS_INSIDE;
   }
   if (SEQ_time_left_handle_frame_get(scene, transformed) <=
           SEQ_time_left_handle_frame_get(scene, target) &&
       SEQ_time_left_handle_frame_get(scene, target) <=
-          SEQ_time_right_handle_frame_get(scene, transformed)) {
+          SEQ_time_right_handle_frame_get(scene, transformed))
+  {
     return STRIP_OVERLAP_LEFT_SIDE;
   }
   if (SEQ_time_left_handle_frame_get(scene, transformed) <=
           SEQ_time_right_handle_frame_get(scene, target) &&
       SEQ_time_right_handle_frame_get(scene, target) <=
-          SEQ_time_right_handle_frame_get(scene, transformed)) {
+          SEQ_time_right_handle_frame_get(scene, transformed))
+  {
     return STRIP_OVERLAP_RIGHT_SIDE;
   }
   return STRIP_OVERLAP_NONE;
@@ -526,7 +530,7 @@ static void seq_transform_handle_overwrite(Scene *scene,
   SEQ_collection_free(targets);
 
   /* Remove covered strips. This must be done in separate loop, because `SEQ_edit_strip_split()`
-   * also uses `SEQ_edit_remove_flagged_sequences()`. See T91096. */
+   * also uses `SEQ_edit_remove_flagged_sequences()`. See #91096. */
   if (SEQ_collection_len(strips_to_delete) > 0) {
     Sequence *seq;
     SEQ_ITERATOR_FOREACH (seq, strips_to_delete) {
@@ -575,7 +579,7 @@ void SEQ_transform_handle_overlap(Scene *scene,
   }
 
   /* If any effects still overlap, we need to move them up.
-   * In some cases other strips can be overlapping still, see T90646. */
+   * In some cases other strips can be overlapping still, see #90646. */
   Sequence *seq;
   SEQ_ITERATOR_FOREACH (seq, transformed_strips) {
     if (SEQ_transform_test_overlap(scene, seqbasep, seq)) {

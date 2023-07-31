@@ -574,7 +574,7 @@ static int rna_validate_identifier(const char *identifier, char *error, bool pro
 
   for (a = 0; kwlist[a]; a++) {
     if (STREQ(identifier, kwlist[a])) {
-      strcpy(error, "this keyword is reserved by python");
+      strcpy(error, "this keyword is reserved by Python");
       return 0;
     }
   }
@@ -591,7 +591,7 @@ static int rna_validate_identifier(const char *identifier, char *error, bool pro
 
     for (a = 0; kwlist_prop[a]; a++) {
       if (STREQ(identifier, kwlist_prop[a])) {
-        strcpy(error, "this keyword is reserved by python");
+        strcpy(error, "this keyword is reserved by Python");
         return 0;
       }
     }
@@ -784,7 +784,7 @@ void RNA_struct_free(BlenderRNA *brna, StructRNA *srna)
 #  if 0
   if (srna->flag & STRUCT_RUNTIME) {
     if (RNA_struct_py_type_get(srna)) {
-      fprintf(stderr, "%s '%s' freed while holding a python reference.", srna->identifier);
+      fprintf(stderr, "%s '%s' freed while holding a Python reference.", srna->identifier);
     }
   }
 #  endif
@@ -2814,7 +2814,8 @@ void RNA_def_property_collection_sdna(PropertyRNA *prop,
 
     int dnaoffset = 0;
     if (lengthpropname[0] == 0 ||
-        rna_find_sdna_member(DefRNA.sdna, structname, lengthpropname, &smember, &dnaoffset)) {
+        rna_find_sdna_member(DefRNA.sdna, structname, lengthpropname, &smember, &dnaoffset))
+    {
       if (lengthpropname[0] == 0) {
         dp->dnalengthfixed = prop->totarraylength;
         prop->arraydimension = 0;
@@ -4439,7 +4440,7 @@ void RNA_enum_item_add(EnumPropertyItem **items, int *totitem, const EnumPropert
 
   if (tot == 0) {
     *items = MEM_callocN(sizeof(EnumPropertyItem[8]), __func__);
-    /* Ensure we get crashes on missing calls to 'RNA_enum_item_end', see T74227. */
+    /* Ensure we get crashes on missing calls to 'RNA_enum_item_end', see #74227. */
 #ifdef DEBUG
     memset(*items, 0xff, sizeof(EnumPropertyItem[8]));
 #endif

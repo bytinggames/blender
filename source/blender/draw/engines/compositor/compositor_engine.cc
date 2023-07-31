@@ -8,6 +8,7 @@
 
 #include "BLT_translation.h"
 
+#include "DNA_ID.h"
 #include "DNA_ID_enums.h"
 #include "DNA_camera_types.h"
 #include "DNA_object_types.h"
@@ -143,6 +144,15 @@ class Context : public realtime_compositor::Context {
   {
     message.copy(info_message_, GPU_INFO_SIZE);
   }
+
+  IDRecalcFlag query_id_recalc_flag(ID *id) const override
+  {
+    DrawEngineType *owner = &draw_engine_compositor_type;
+    DrawData *draw_data = DRW_drawdata_ensure(id, owner, sizeof(DrawData), nullptr, nullptr);
+    IDRecalcFlag recalc_flag = IDRecalcFlag(draw_data->recalc);
+    draw_data->recalc = IDRecalcFlag(0);
+    return recalc_flag;
+  }
 };
 
 class Engine {
@@ -230,7 +240,7 @@ static void compositor_engine_draw(void *data)
   if (GPU_backend_get_type() == GPU_BACKEND_METAL) {
     /* NOTE(Metal): Isolate Compositor compute work in individual command buffer to improve
      * workload scheduling. When expensive compositor nodes are in the graph, these can stall out
-     * the GPU for extended periods of time and suboptimally schedule work for execution. */
+     * the GPU for extended periods of time and sub-optimally schedule work for execution. */
     GPU_flush();
   }
   else {
@@ -241,11 +251,11 @@ static void compositor_engine_draw(void *data)
   }
 #endif
 
-  /* Exceute Compositor render commands. */
+  /* Execute Compositor render commands. */
   compositor_data->instance_data->draw();
 
 #if defined(__APPLE__)
-  /* NOTE(Metal): Following previous flush to break commmand stream, with compositor command
+  /* NOTE(Metal): Following previous flush to break command stream, with compositor command
    * buffers potentially being heavy, we avoid issuing subsequent commands until compositor work
    * has completed. If subsequent work is prematurely queued up, the subsequent command buffers
    * will be blocked behind compositor work and may trigger a command buffer time-out error. As a

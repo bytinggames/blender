@@ -55,6 +55,19 @@ void device_metal_info(vector<DeviceInfo> &devices)
     info.denoisers = DENOISER_NONE;
     info.id = id;
 
+    MetalGPUVendor vendor = MetalInfo::get_device_vendor(device);
+
+    info.has_nanovdb = vendor == METAL_GPU_APPLE;
+    info.has_light_tree = vendor != METAL_GPU_AMD;
+    info.has_mnee = vendor != METAL_GPU_AMD;
+
+    info.use_hardware_raytracing = vendor != METAL_GPU_INTEL;
+    if (info.use_hardware_raytracing) {
+      if (@available(macos 11.0, *)) {
+        info.use_hardware_raytracing = device.supportsRaytracing;
+      }
+    }
+
     devices.push_back(info);
     device_index++;
   }
@@ -90,9 +103,7 @@ bool device_metal_init()
   return false;
 }
 
-void device_metal_info(vector<DeviceInfo> &devices)
-{
-}
+void device_metal_info(vector<DeviceInfo> &devices) {}
 
 string device_metal_capabilities()
 {

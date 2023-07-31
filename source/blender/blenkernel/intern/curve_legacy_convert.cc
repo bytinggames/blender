@@ -80,9 +80,12 @@ static KnotsMode knots_mode_from_legacy(const short flag)
 Curves *curve_legacy_to_curves(const Curve &curve_legacy, const ListBase &nurbs_list)
 {
   const Vector<const Nurb *> src_curves(nurbs_list);
+  if (src_curves.is_empty()) {
+    return nullptr;
+  }
 
   Curves *curves_id = curves_new_nomain(0, src_curves.size());
-  CurvesGeometry &curves = CurvesGeometry::wrap(curves_id->geometry);
+  CurvesGeometry &curves = curves_id->geometry.wrap();
   MutableAttributeAccessor curves_attributes = curves.attributes_for_write();
 
   MutableSpan<int8_t> types = curves.curve_types_for_write();
@@ -103,10 +106,6 @@ Curves *curve_legacy_to_curves(const Curve &curve_legacy, const ListBase &nurbs_
   curves.resize(curves.offsets().last(), curves.curves_num());
 
   curves.update_curve_types();
-
-  if (curves.curves_num() == 0) {
-    return curves_id;
-  }
 
   const OffsetIndices points_by_curve = curves.points_by_curve();
   MutableSpan<float3> positions = curves.positions_for_write();

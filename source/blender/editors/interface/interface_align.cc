@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2015 Blender Foundation. All rights reserved. */
+ * Copyright 2015 Blender Foundation */
 
 /** \file
  * \ingroup edinterface
@@ -270,7 +270,8 @@ static void block_align_stitch_neighbors(ButAlign *butal,
    * it may have both of its stitching flags
    * set, but would not be the case of its immediate neighbor! */
   while ((butal->flags[side] & stitch_s1) && (butal = butal->neighbors[side_s1]) &&
-         (butal->flags[side] & stitch_s2)) {
+         (butal->flags[side] & stitch_s2))
+  {
     butal_neighbor = butal->neighbors[side];
 
     /* If we actually do have a neighbor, we directly set its values accordingly,
@@ -396,7 +397,7 @@ void ui_block_align_calc(uiBlock *block, const ARegion *region)
 
   /* Note that this is typically less than ~20, and almost always under ~100.
    * Even so, we can't ensure this value won't exceed available stack memory.
-   * Fallback to allocation instead of using #alloca, see: T78636. */
+   * Fallback to allocation instead of using #alloca, see: #78636. */
   ButAlign butal_array_buf[256];
   if (num_buttons <= ARRAY_SIZE(butal_array_buf)) {
     butal_array = butal_array_buf;
@@ -537,7 +538,7 @@ static bool buts_are_horiz(uiBut *but1, uiBut *but2)
   float dx, dy;
 
   /* simple case which can fail if buttons shift apart
-   * with proportional layouts, see: T38602. */
+   * with proportional layouts, see: #38602. */
   if ((but1->rect.ymin == but2->rect.ymin) && (but1->rect.xmin != but2->rect.xmin)) {
     return true;
   }

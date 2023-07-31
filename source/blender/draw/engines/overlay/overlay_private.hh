@@ -120,6 +120,7 @@ typedef struct OVERLAY_PassList {
   DRWPass *pointcloud_ps;
   DRWPass *sculpt_mask_ps;
   DRWPass *sculpt_curves_selection_ps;
+  DRWPass *sculpt_curves_cage_ps;
   DRWPass *volume_ps;
   DRWPass *wireframe_ps;
   DRWPass *wireframe_xray_ps;
@@ -177,6 +178,9 @@ typedef struct OVERLAY_ExtraCallBuffers {
 
   DRWCallBuffer *groundline;
 
+  DRWCallBuffer *light_icon_inner;
+  DRWCallBuffer *light_icon_outer;
+  DRWCallBuffer *light_icon_sun_rays;
   DRWCallBuffer *light_point;
   DRWCallBuffer *light_sun;
   DRWCallBuffer *light_spot;
@@ -287,6 +291,7 @@ typedef struct OVERLAY_PrivateData {
   DRWShadingGroup *pointcloud_dots_grp;
   DRWShadingGroup *sculpt_mask_grp;
   DRWShadingGroup *sculpt_curves_selection_grp;
+  DRWShadingGroup *sculpt_curves_cage_lines_grp;
   DRWShadingGroup *viewer_attribute_curve_grp;
   DRWShadingGroup *viewer_attribute_curves_grp;
   DRWShadingGroup *viewer_attribute_mesh_grp;
@@ -362,6 +367,7 @@ typedef struct OVERLAY_PrivateData {
     int flag; /** Copy of #v3d->overlay.edit_flag. */
   } edit_mesh;
   struct {
+    bool do_points;
     bool do_zbufclip;
   } edit_curves;
   struct {
@@ -686,6 +692,7 @@ void OVERLAY_sculpt_draw(OVERLAY_Data *vedata);
 void OVERLAY_sculpt_curves_cache_init(OVERLAY_Data *vedata);
 void OVERLAY_sculpt_curves_cache_populate(OVERLAY_Data *vedata, Object *ob);
 void OVERLAY_sculpt_curves_draw(OVERLAY_Data *vedata);
+void OVERLAY_sculpt_curves_draw_wires(OVERLAY_Data *vedata);
 
 void OVERLAY_viewer_attribute_cache_init(OVERLAY_Data *vedata);
 void OVERLAY_viewer_attribute_cache_populate(OVERLAY_Data *vedata, Object *object);
@@ -726,6 +733,7 @@ GPUShader *OVERLAY_shader_edit_gpencil_wire(void);
 GPUShader *OVERLAY_shader_edit_lattice_point(void);
 GPUShader *OVERLAY_shader_edit_lattice_wire(void);
 GPUShader *OVERLAY_shader_edit_mesh_analysis(void);
+GPUShader *OVERLAY_shader_edit_mesh_depth(void);
 GPUShader *OVERLAY_shader_edit_mesh_edge(bool use_flat_interp);
 GPUShader *OVERLAY_shader_edit_mesh_face(void);
 GPUShader *OVERLAY_shader_edit_mesh_facedot(void);
@@ -775,6 +783,7 @@ GPUShader *OVERLAY_shader_particle_dot(void);
 GPUShader *OVERLAY_shader_particle_shape(void);
 GPUShader *OVERLAY_shader_sculpt_mask(void);
 GPUShader *OVERLAY_shader_sculpt_curves_selection(void);
+GPUShader *OVERLAY_shader_sculpt_curves_cage(void);
 GPUShader *OVERLAY_shader_viewer_attribute_curve(void);
 GPUShader *OVERLAY_shader_viewer_attribute_curves(void);
 GPUShader *OVERLAY_shader_viewer_attribute_mesh(void);

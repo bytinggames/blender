@@ -23,7 +23,7 @@
 #include "BKE_curve.h"
 #include "BKE_displist.h"
 #include "BKE_editmesh.h"
-#include "BKE_mesh.h"
+#include "BKE_mesh.hh"
 #include "BKE_mesh_iterators.h"
 #include "BKE_mesh_runtime.h"
 #include "BKE_mesh_wrapper.h"
@@ -96,7 +96,7 @@ static int content_planes_from_clip_flag(const ARegion *region,
  * Edge projection is more involved since part of the edge may be behind the view
  * or extend beyond the far limits. In the case of single points, these can be ignored.
  * However it just may still be visible on screen, so constrained the edge to planes
- * defined by the port to ensure both ends of the edge can be projected, see T32214.
+ * defined by the port to ensure both ends of the edge can be projected, see #32214.
  *
  * \note This is unrelated to #V3D_PROJ_TEST_CLIP_BB which must be checked separately.
  */
@@ -144,15 +144,16 @@ static bool view3d_project_segment_to_screen_with_content_clip_planes(
 
     /* Simple cases have been ruled out, clip by viewport planes, then re-project. */
     float v_a_clip[3], v_b_clip[3];
-    if (!clip_segment_v3_plane_n(
-            v_a, v_b, content_planes, content_planes_len, v_a_clip, v_b_clip)) {
+    if (!clip_segment_v3_plane_n(v_a, v_b, content_planes, content_planes_len, v_a_clip, v_b_clip))
+    {
       return false;
     }
 
     if ((ED_view3d_project_float_object(region, v_a_clip, r_screen_co_a, clip_flag_nowin) !=
          V3D_PROJ_RET_OK) ||
         (ED_view3d_project_float_object(region, v_b_clip, r_screen_co_b, clip_flag_nowin) !=
-         V3D_PROJ_RET_OK)) {
+         V3D_PROJ_RET_OK))
+    {
       return false;
     }
 
@@ -272,7 +273,8 @@ static void meshobject_foreachScreenVert__mapFunc(void *userData,
   float screen_co[2];
 
   if (ED_view3d_project_float_object(data->vc.region, co, screen_co, data->clip_flag) !=
-      V3D_PROJ_RET_OK) {
+      V3D_PROJ_RET_OK)
+  {
     return;
   }
 
@@ -324,7 +326,8 @@ static void mesh_foreachScreenVert__mapFunc(void *userData,
 
   float screen_co[2];
   if (ED_view3d_project_float_object(data->vc.region, co, screen_co, data->clip_flag) !=
-      V3D_PROJ_RET_OK) {
+      V3D_PROJ_RET_OK)
+  {
     return;
   }
 
@@ -385,7 +388,8 @@ static void mesh_foreachScreenEdge__mapFunc(void *userData,
                                                                  data->content_planes,
                                                                  data->content_planes_len,
                                                                  screen_co_a,
-                                                                 screen_co_b)) {
+                                                                 screen_co_b))
+  {
     return;
   }
 
@@ -474,7 +478,8 @@ static void mesh_foreachScreenEdge_clip_bb_segment__mapFunc(void *userData,
                                                                  data->content_planes,
                                                                  data->content_planes_len,
                                                                  screen_co_a,
-                                                                 screen_co_b)) {
+                                                                 screen_co_b))
+  {
     return;
   }
 
@@ -549,7 +554,8 @@ static void mesh_foreachScreenFace__mapFunc(void *userData,
 
   float screen_co[2];
   if (ED_view3d_project_float_object(data->vc.region, cent, screen_co, data->clip_flag) !=
-      V3D_PROJ_RET_OK) {
+      V3D_PROJ_RET_OK)
+  {
     return;
   }
 
@@ -577,7 +583,8 @@ void mesh_foreachScreenFace(
 
   BM_mesh_elem_table_ensure(vc->em->bm, BM_FACE);
 
-  if (me->runtime->subsurf_face_dot_tags != nullptr) {
+  const int face_dot_tags_num = me->runtime->subsurf_face_dot_tags.size();
+  if (face_dot_tags_num && (face_dot_tags_num != me->totvert)) {
     BKE_mesh_foreach_mapped_subdiv_face_center(
         me, mesh_foreachScreenFace__mapFunc, &data, MESH_FOREACH_NOP);
   }
@@ -632,8 +639,8 @@ void nurbs_foreachScreenVert(ViewContext *vc,
                     vc->region,
                     bezt->vec[1],
                     screen_co,
-                    eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) ==
-                V3D_PROJ_RET_OK) {
+                    eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) == V3D_PROJ_RET_OK)
+            {
               func(userData, nu, nullptr, bezt, 1, false, screen_co);
             }
           }
@@ -642,24 +649,24 @@ void nurbs_foreachScreenVert(ViewContext *vc,
                     vc->region,
                     bezt->vec[0],
                     screen_co,
-                    eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) ==
-                V3D_PROJ_RET_OK) {
+                    eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) == V3D_PROJ_RET_OK)
+            {
               func(userData, nu, nullptr, bezt, 0, true, screen_co);
             }
             if (ED_view3d_project_float_object(
                     vc->region,
                     bezt->vec[1],
                     screen_co,
-                    eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) ==
-                V3D_PROJ_RET_OK) {
+                    eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) == V3D_PROJ_RET_OK)
+            {
               func(userData, nu, nullptr, bezt, 1, true, screen_co);
             }
             if (ED_view3d_project_float_object(
                     vc->region,
                     bezt->vec[2],
                     screen_co,
-                    eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) ==
-                V3D_PROJ_RET_OK) {
+                    eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) == V3D_PROJ_RET_OK)
+            {
               func(userData, nu, nullptr, bezt, 2, true, screen_co);
             }
           }
@@ -676,7 +683,8 @@ void nurbs_foreachScreenVert(ViewContext *vc,
                   vc->region,
                   bp->vec,
                   screen_co,
-                  eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) == V3D_PROJ_RET_OK) {
+                  eV3DProjTest(V3D_PROJ_RET_CLIP_BB | V3D_PROJ_RET_CLIP_WIN)) == V3D_PROJ_RET_OK)
+          {
             func(userData, nu, bp, nullptr, -1, false, screen_co);
           }
         }
@@ -741,7 +749,8 @@ void lattice_foreachScreenVert(ViewContext *vc,
     if (bp->hide == 0) {
       float screen_co[2];
       if (ED_view3d_project_float_object(vc->region, dl ? co : bp->vec, screen_co, clip_flag) ==
-          V3D_PROJ_RET_OK) {
+          V3D_PROJ_RET_OK)
+      {
         func(userData, bp, screen_co);
       }
     }
@@ -799,13 +808,15 @@ void armature_foreachScreenBone(ViewContext *vc,
                                                                      content_planes,
                                                                      content_planes_len,
                                                                      screen_co_a,
-                                                                     screen_co_b)) {
+                                                                     screen_co_b))
+      {
         continue;
       }
     }
     else {
       if (!view3d_project_segment_to_screen_with_clip_tag(
-              vc->region, v_a, v_b, clip_flag, screen_co_a, screen_co_b)) {
+              vc->region, v_a, v_b, clip_flag, screen_co_a, screen_co_b))
+      {
         continue;
       }
     }
@@ -870,13 +881,15 @@ void pose_foreachScreenBone(ViewContext *vc,
                                                                      content_planes,
                                                                      content_planes_len,
                                                                      screen_co_a,
-                                                                     screen_co_b)) {
+                                                                     screen_co_b))
+      {
         continue;
       }
     }
     else {
       if (!view3d_project_segment_to_screen_with_clip_tag(
-              vc->region, v_a, v_b, clip_flag, screen_co_a, screen_co_b)) {
+              vc->region, v_a, v_b, clip_flag, screen_co_a, screen_co_b))
+      {
         continue;
       }
     }

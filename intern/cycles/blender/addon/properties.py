@@ -12,6 +12,7 @@ from bpy.props import (
     PointerProperty,
     StringProperty,
 )
+from bpy.app.translations import pgettext_iface as iface_
 
 from math import pi
 
@@ -402,7 +403,7 @@ class CyclesRenderSettings(bpy.types.PropertyGroup):
 
     time_limit: FloatProperty(
         name="Time Limit",
-        description="Limit the render time (excluding synchronization time)."
+        description="Limit the render time (excluding synchronization time). "
         "Zero disables the limit",
         min=0.0,
         default=0.0,
@@ -1506,7 +1507,7 @@ class CyclesPreferences(bpy.types.AddonPreferences):
 
     def get_device_types(self, context):
         import _cycles
-        has_cuda, has_optix, has_hip, has_metal, has_oneapi = _cycles.get_device_types()
+        has_cuda, has_optix, has_hip, has_metal, has_oneapi, has_hiprt = _cycles.get_device_types()
 
         list = [('NONE', "None", "Don't use compute device", 0)]
         if has_cuda:
@@ -1541,6 +1542,19 @@ class CyclesPreferences(bpy.types.AddonPreferences):
         description="MetalRT for ray tracing uses less memory for scenes which use curves extensively, and can give better "
                     "performance in specific cases. However this support is experimental and some scenes may render incorrectly",
         default=False,
+    )
+
+    use_hiprt: BoolProperty(
+        name="HIP RT (Experimental)",
+        description="HIP RT enables AMD hardware ray tracing on RDNA2 and above, with shader fallback on older cards. "
+                    "This feature is experimental and some scenes may render incorrectly",
+        default=False,
+    )
+
+    use_oneapirt: BoolProperty(
+        name="Embree on GPU",
+        description="Embree on GPU enables the use of hardware ray tracing on Intel GPUs, providing better overall performance",
+        default=True,
     )
 
     kernel_optimization_level: EnumProperty(
@@ -1664,30 +1678,48 @@ class CyclesPreferences(bpy.types.AddonPreferences):
             col.label(text="No compatible GPUs found for Cycles", icon='INFO')
 
             if device_type == 'CUDA':
-                col.label(text="Requires NVIDIA GPU with compute capability 3.0", icon='BLANK1')
+                compute_capability = "3.0"
+                col.label(text=iface_("Requires NVIDIA GPU with compute capability %s") % compute_capability,
+                          icon='BLANK1', translate=False)
             elif device_type == 'OPTIX':
-                col.label(text="Requires NVIDIA GPU with compute capability 5.0", icon='BLANK1')
-                col.label(text="and NVIDIA driver version 470 or newer", icon='BLANK1')
+                compute_capability = "5.0"
+                driver_version = "470"
+                col.label(text=iface_("Requires NVIDIA GPU with compute capability %s") % compute_capability,
+                          icon='BLANK1', translate=False)
+                col.label(text=iface_("and NVIDIA driver version %s or newer") % driver_version,
+                          icon='BLANK1', translate=False)
             elif device_type == 'HIP':
                 import sys
                 if sys.platform[:3] == "win":
-                    col.label(text="Requires AMD GPU with RDNA architecture", icon='BLANK1')
-                    col.label(text="and AMD Radeon Pro 21.Q4 driver or newer", icon='BLANK1')
+                    driver_version = "21.Q4"
+                    col.label(text="Requires AMD GPU with Vega or RDNA architecture", icon='BLANK1')
+                    col.label(text=iface_("and AMD Radeon Pro %s driver or newer") % driver_version,
+                              icon='BLANK1', translate=False)
                 elif sys.platform.startswith("linux"):
-                    col.label(text="Requires AMD GPU with RDNA architecture", icon='BLANK1')
-                    col.label(text="and AMD driver version 22.10 or newer", icon='BLANK1')
+                    driver_version = "22.10"
+                    col.label(text="Requires AMD GPU with Vega or RDNA architecture", icon='BLANK1')
+                    col.label(text=iface_("and AMD driver version %s or newer") % driver_version, icon='BLANK1',
+                              translate=False)
             elif device_type == 'ONEAPI':
                 import sys
                 if sys.platform.startswith("win"):
+                    driver_version = "101.4314"
                     col.label(text="Requires Intel GPU with Xe-HPG architecture", icon='BLANK1')
-                    col.label(text="and Windows driver version 101.4032 or newer", icon='BLANK1')
+                    col.label(text=iface_("and Windows driver version %s or newer") % driver_version,
+                              icon='BLANK1', translate=False)
                 elif sys.platform.startswith("linux"):
+                    driver_version = "1.3.25812"
                     col.label(text="Requires Intel GPU with Xe-HPG architecture and", icon='BLANK1')
-                    col.label(text="  - intel-level-zero-gpu version 1.3.24931 or newer", icon='BLANK1')
+                    col.label(text=iface_("  - intel-level-zero-gpu version %s or newer") % driver_version,
+                              icon='BLANK1', translate=False)
                     col.label(text="  - oneAPI Level-Zero Loader", icon='BLANK1')
             elif device_type == 'METAL':
-                col.label(text="Requires Apple Silicon with macOS 12.2 or newer", icon='BLANK1')
-                col.label(text="or AMD with macOS 12.3 or newer", icon='BLANK1')
+                silicon_mac_version = "12.2"
+                amd_mac_version = "12.3"
+                col.label(text=iface_("Requires Apple Silicon with macOS %s or newer") % silicon_mac_version,
+                          icon='BLANK1', translate=False)
+                col.label(text=iface_("or AMD with macOS %s or newer") % amd_mac_version, icon='BLANK1',
+                          translate=False)
             return
 
         for device in devices:
@@ -1697,7 +1729,8 @@ class CyclesPreferences(bpy.types.AddonPreferences):
                 .replace('(TM)', unicodedata.lookup('TRADE MARK SIGN'))
                 .replace('(tm)', unicodedata.lookup('TRADE MARK SIGN'))
                 .replace('(R)', unicodedata.lookup('REGISTERED SIGN'))
-                .replace('(C)', unicodedata.lookup('COPYRIGHT SIGN'))
+                .replace('(C)', unicodedata.lookup('COPYRIGHT SIGN')),
+                translate=False
             )
 
     def draw_impl(self, layout, context):
@@ -1723,13 +1756,32 @@ class CyclesPreferences(bpy.types.AddonPreferences):
 
         if compute_device_type == 'METAL':
             import platform
-            # MetalRT only works on Apple Silicon at present, pending argument encoding fixes on AMD
-            # Kernel specialization is only viable on Apple Silicon at present due to relative compilation speed
-            if platform.machine() == 'arm64':
+            import re
+            is_navi_2 = False
+            for device in devices:
+                if re.search(r"((RX)|(Pro)|(PRO))\s+W?6\d00X", device.name):
+                    is_navi_2 = True
+                    break
+
+            # MetalRT only works on Apple Silicon and Navi2.
+            is_arm64 = platform.machine() == 'arm64'
+            if is_arm64 or is_navi_2:
                 col = layout.column()
                 col.use_property_split = True
-                col.prop(self, "kernel_optimization_level")
+                # Kernel specialization is only supported on Apple Silicon
+                if is_arm64:
+                    col.prop(self, "kernel_optimization_level")
                 col.prop(self, "use_metalrt")
+
+        if compute_device_type == 'HIP':
+            has_cuda, has_optix, has_hip, has_metal, has_oneapi, has_hiprt = _cycles.get_device_types()
+            row = layout.row()
+            row.enabled = has_hiprt
+            row.prop(self, "use_hiprt")
+
+        elif compute_device_type == 'ONEAPI' and _cycles.with_embree_gpu:
+            row = layout.row()
+            row.prop(self, "use_oneapirt")
 
     def draw(self, context):
         self.draw_impl(self.layout, context)

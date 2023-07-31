@@ -131,7 +131,8 @@ static float3 output_estimate_emission(ShaderOutput *output, bool &is_constant)
     return zero_float3();
   }
   else if (node->type == EmissionNode::get_node_type() ||
-           node->type == BackgroundNode::get_node_type()) {
+           node->type == BackgroundNode::get_node_type())
+  {
     /* Emission and Background node. */
     ShaderInput *color_in = node->input("Color");
     ShaderInput *strength_in = node->input("Strength");
@@ -153,10 +154,21 @@ static float3 output_estimate_emission(ShaderOutput *output, bool &is_constant)
       estimate *= node->get_float(strength_in->socket_type);
     }
 
+    /* Lower importance of emission nodes from automatic value/color to shader
+     * conversion, as these are likely used for previewing and can be slow to
+     * build a light tree for on dense meshes. */
+    if (node->type == EmissionNode::get_node_type()) {
+      EmissionNode *emission_node = static_cast<EmissionNode *>(node);
+      if (emission_node->from_auto_conversion) {
+        estimate *= 0.1f;
+      }
+    }
+
     return estimate;
   }
   else if (node->type == LightFalloffNode::get_node_type() ||
-           node->type == IESLightNode::get_node_type()) {
+           node->type == IESLightNode::get_node_type())
+  {
     /* Get strength from Light Falloff and IES texture node. */
     ShaderInput *strength_in = node->input("Strength");
     is_constant = false;
@@ -387,9 +399,7 @@ ShaderManager::ShaderManager()
   init_xyz_transforms();
 }
 
-ShaderManager::~ShaderManager()
-{
-}
+ShaderManager::~ShaderManager() {}
 
 ShaderManager *ShaderManager::create(int shadingsystem, Device *device)
 {
@@ -573,7 +583,7 @@ void ShaderManager::device_update_common(Device * /*device*/,
   kfilm->is_rec709 = is_rec709;
 }
 
-void ShaderManager::device_free_common(Device *, DeviceScene *dscene, Scene *scene)
+void ShaderManager::device_free_common(Device * /*device*/, DeviceScene *dscene, Scene * /*scene*/)
 {
   dscene->shaders.free();
 }

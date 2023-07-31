@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2008 Blender Foundation. All rights reserved. */
+ * Copyright 2008 Blender Foundation */
 
 /** \file
  * \ingroup spfile
@@ -22,6 +22,8 @@
 #  include <sys/times.h>
 #  include <unistd.h>
 #endif
+
+#include "AS_asset_representation.hh"
 
 #include "DNA_screen_types.h"
 #include "DNA_space_types.h"
@@ -58,6 +60,9 @@
 #include "UI_interface_icons.h"
 #include "UI_view2d.h"
 
+#include "AS_asset_representation.h"
+#include "AS_essentials_library.hh"
+
 #include "file_intern.h"
 #include "filelist.h"
 
@@ -72,12 +77,12 @@ static void fileselect_initialize_params_common(SpaceFile *sfile, FileSelectPara
 
   if (!params->dir[0]) {
     if (blendfile_path[0] != '\0') {
-      BLI_split_dir_part(blendfile_path, params->dir, sizeof(params->dir));
+      BLI_path_split_dir_part(blendfile_path, params->dir, sizeof(params->dir));
     }
     else {
       const char *doc_path = BKE_appdir_folder_default();
       if (doc_path) {
-        BLI_strncpy(params->dir, doc_path, sizeof(params->dir));
+        STRNCPY(params->dir, doc_path);
       }
     }
   }
@@ -85,7 +90,7 @@ static void fileselect_initialize_params_common(SpaceFile *sfile, FileSelectPara
   folder_history_list_ensure_for_active_browse_mode(sfile);
   folderlist_pushdir(sfile->folders_prev, params->dir);
 
-  /* Switching thumbnails needs to recalc layout T28809. */
+  /* Switching thumbnails needs to recalc layout #28809. */
   if (sfile->layout) {
     sfile->layout->dirty = true;
   }
@@ -102,9 +107,9 @@ static void fileselect_ensure_updated_asset_params(SpaceFile *sfile)
     asset_params = sfile->asset_params = static_cast<FileAssetSelectParams *>(
         MEM_callocN(sizeof(*asset_params), "FileAssetSelectParams"));
     asset_params->base_params.details_flags = U_default.file_space_data.details_flags;
-    asset_params->asset_library_ref.type = ASSET_LIBRARY_LOCAL;
+    asset_params->asset_library_ref.type = ASSET_LIBRARY_ALL;
     asset_params->asset_library_ref.custom_library_index = -1;
-    asset_params->import_type = FILE_ASSET_IMPORT_APPEND_REUSE;
+    asset_params->import_type = FILE_ASSET_IMPORT_FOLLOW_PREFS;
   }
 
   FileSelectParams *base_params = &asset_params->base_params;
@@ -142,11 +147,11 @@ static FileSelectParams *fileselect_ensure_updated_file_params(SpaceFile *sfile)
     sfile->params = static_cast<FileSelectParams *>(
         MEM_callocN(sizeof(FileSelectParams), "fileselparams"));
     /* set path to most recently opened .blend */
-    BLI_split_dirfile(blendfile_path,
-                      sfile->params->dir,
-                      sfile->params->file,
-                      sizeof(sfile->params->dir),
-                      sizeof(sfile->params->file));
+    BLI_path_split_dir_file(blendfile_path,
+                            sfile->params->dir,
+                            sizeof(sfile->params->dir),
+                            sfile->params->file,
+                            sizeof(sfile->params->file));
     sfile->params->filter_glob[0] = '\0';
     sfile->params->thumbnail_size = U_default.file_space_data.thumbnail_size;
     sfile->params->details_flags = U_default.file_space_data.details_flags;
@@ -175,15 +180,15 @@ static FileSelectParams *fileselect_ensure_updated_file_params(SpaceFile *sfile)
     }
 
     if (is_filepath && RNA_struct_property_is_set_ex(op->ptr, "filepath", false)) {
-      char name[FILE_MAX];
-      RNA_string_get(op->ptr, "filepath", name);
+      char filepath[FILE_MAX];
+      RNA_string_get(op->ptr, "filepath", filepath);
       if (params->type == FILE_LOADLIB) {
-        BLI_strncpy(params->dir, name, sizeof(params->dir));
+        STRNCPY(params->dir, filepath);
         params->file[0] = '\0';
       }
       else {
-        BLI_split_dirfile(
-            name, params->dir, params->file, sizeof(params->dir), sizeof(params->file));
+        BLI_path_split_dir_file(
+            filepath, params->dir, sizeof(params->dir), params->file, sizeof(params->file));
       }
     }
     else {
@@ -198,13 +203,13 @@ static FileSelectParams *fileselect_ensure_updated_file_params(SpaceFile *sfile)
     }
 
     if (params->dir[0]) {
-      BLI_path_normalize_dir(blendfile_path, params->dir, sizeof(params->dir));
       BLI_path_abs(params->dir, blendfile_path);
+      BLI_path_normalize_dir(params->dir, sizeof(params->dir));
     }
 
     params->flag = 0;
-    if (is_directory == true && is_filename == false && is_filepath == false &&
-        is_files == false) {
+    if (is_directory == true && is_filename == false && is_filepath == false && is_files == false)
+    {
       params->flag |= FILE_DIRSEL_ONLY;
     }
     if ((prop = RNA_struct_find_property(op->ptr, "check_existing"))) {
@@ -272,7 +277,7 @@ static FileSelectParams *fileselect_ensure_updated_file_params(SpaceFile *sfile)
       char *tmp = RNA_property_string_get_alloc(
           op->ptr, prop, params->filter_glob, sizeof(params->filter_glob), nullptr);
       if (tmp != params->filter_glob) {
-        BLI_strncpy(params->filter_glob, tmp, sizeof(params->filter_glob));
+        STRNCPY(params->filter_glob, tmp);
         MEM_freeN(tmp);
 
         /* Fix stupid things that truncating might have generated,
@@ -420,11 +425,15 @@ static void fileselect_refresh_asset_params(FileAssetSelectParams *asset_params)
     user_library = BKE_preferences_asset_library_find_from_index(&U,
                                                                  library->custom_library_index);
     if (!user_library) {
-      library->type = ASSET_LIBRARY_LOCAL;
+      library->type = ASSET_LIBRARY_ALL;
     }
   }
 
-  switch (library->type) {
+  switch (eAssetLibraryType(library->type)) {
+    case ASSET_LIBRARY_ESSENTIALS:
+      STRNCPY(base_params->dir, blender::asset_system::essentials_directory_path().c_str());
+      base_params->type = FILE_ASSET_LIBRARY;
+      break;
     case ASSET_LIBRARY_ALL:
       base_params->dir[0] = '\0';
       base_params->type = FILE_ASSET_LIBRARY_ALL;
@@ -435,7 +444,7 @@ static void fileselect_refresh_asset_params(FileAssetSelectParams *asset_params)
       break;
     case ASSET_LIBRARY_CUSTOM:
       BLI_assert(user_library);
-      BLI_strncpy(base_params->dir, user_library->path, sizeof(base_params->dir));
+      STRNCPY(base_params->dir, user_library->path);
       base_params->type = FILE_ASSET_LIBRARY;
       break;
   }
@@ -493,6 +502,43 @@ void ED_fileselect_activate_asset_catalog(const SpaceFile *sfile, const bUUID ca
   params->asset_catalog_visibility = FILE_SHOW_ASSETS_FROM_CATALOG;
   params->catalog_id = catalog_id;
   WM_main_add_notifier(NC_SPACE | ND_SPACE_ASSET_PARAMS, nullptr);
+}
+
+int ED_fileselect_asset_import_method_get(const SpaceFile *sfile, const FileDirEntry *file)
+{
+  if (!ED_fileselect_is_asset_browser(sfile) || !file->asset) {
+    return -1;
+  }
+
+  /* First handle the case where the asset system dictates a certain import method. */
+  if (AS_asset_representation_may_override_import_method(file->asset) == false) {
+    BLI_assert(AS_asset_representation_import_method_get(file->asset).has_value());
+
+    return *AS_asset_representation_import_method_get(file->asset);
+  }
+
+  const FileAssetSelectParams *params = ED_fileselect_get_asset_params(sfile);
+
+  if (params->import_type == FILE_ASSET_IMPORT_FOLLOW_PREFS) {
+    std::optional import_method = AS_asset_representation_import_method_get(file->asset);
+    return import_method ? *import_method : -1;
+  }
+
+  switch (eFileAssetImportType(params->import_type)) {
+    case FILE_ASSET_IMPORT_LINK:
+      return ASSET_IMPORT_LINK;
+    case FILE_ASSET_IMPORT_APPEND:
+      return ASSET_IMPORT_APPEND;
+    case FILE_ASSET_IMPORT_APPEND_REUSE:
+      return ASSET_IMPORT_APPEND_REUSE;
+
+      /* Should be handled above already. Break and fail below. */
+    case FILE_ASSET_IMPORT_FOLLOW_PREFS:
+      break;
+  }
+
+  BLI_assert_unreachable();
+  return -1;
 }
 
 static void on_reload_activate_by_id(SpaceFile *sfile, onReloadFnData custom_data)
@@ -582,8 +628,8 @@ void ED_fileselect_window_params_get(const wmWindow *win, int win_size[2], bool 
   /* Get DPI/pixel-size independent size to be stored in preferences. */
   WM_window_set_dpi(win); /* Ensure the DPI is taken from the right window. */
 
-  win_size[0] = WM_window_pixels_x(win) / UI_DPI_FAC;
-  win_size[1] = WM_window_pixels_y(win) / UI_DPI_FAC;
+  win_size[0] = WM_window_pixels_x(win) / UI_SCALE_FAC;
+  win_size[1] = WM_window_pixels_y(win) / UI_SCALE_FAC;
 
   *is_maximized = WM_window_is_maximized(win);
 }
@@ -676,7 +722,7 @@ void fileselect_file_set(struct bContext *C, SpaceFile *sfile, const int index)
   const struct FileDirEntry *file = filelist_file(sfile->files, index);
   if (file && file->relpath && file->relpath[0] && !(file->typeflag & FILE_TYPE_DIR)) {
     FileSelectParams *params = ED_fileselect_get_active_params(sfile);
-    BLI_strncpy(params->file, file->relpath, FILE_MAXFILE);
+    STRNCPY(params->file, file->relpath);
     if (sfile->op) {
       /* Update the filepath properties of the operator. */
       Main *bmain = CTX_data_main(C);
@@ -735,7 +781,8 @@ FileSelection ED_fileselect_layout_offset_rect(FileLayout *layout, const rcti *r
   rowmax = (rect->ymax - layout->offset_top) / (layout->tile_h + 2 * layout->tile_border_y);
 
   if (is_inside(colmin, rowmin, layout->flow_columns, layout->rows) ||
-      is_inside(colmax, rowmax, layout->flow_columns, layout->rows)) {
+      is_inside(colmax, rowmax, layout->flow_columns, layout->rows))
+  {
     CLAMP(colmin, 0, layout->flow_columns - 1);
     CLAMP(rowmin, 0, layout->rows - 1);
     CLAMP(colmax, 0, layout->flow_columns - 1);
@@ -883,7 +930,8 @@ FileAttributeColumnType file_attribute_column_type_find_isect(const View2D *v2d,
 
     for (FileAttributeColumnType column = FileAttributeColumnType(0);
          column < ATTRIBUTE_COLUMN_MAX;
-         column = FileAttributeColumnType(int(column) + 1)) {
+         column = FileAttributeColumnType(int(column) + 1))
+    {
       if (!file_attribute_column_type_enabled(params, column)) {
         continue;
       }
@@ -919,7 +967,7 @@ float file_font_pointsize(void)
 #else
   const uiStyle *style = UI_style_get();
   UI_fontstyle_set(&style->widget);
-  return style->widget.points * UI_DPI_FAC;
+  return style->widget.points * UI_SCALE_FAC;
 #endif
 }
 
@@ -947,9 +995,10 @@ static void file_attribute_columns_widths(const FileSelectParams *params, FileLa
     for (FileAttributeColumnType column_type =
              FileAttributeColumnType(int(ATTRIBUTE_COLUMN_MAX) - 1);
          column_type >= 0;
-         column_type = FileAttributeColumnType(int(column_type) - 1)) {
-      if ((column_type == COLUMN_NAME) ||
-          !file_attribute_column_type_enabled(params, column_type)) {
+         column_type = FileAttributeColumnType(int(column_type) - 1))
+    {
+      if ((column_type == COLUMN_NAME) || !file_attribute_column_type_enabled(params, column_type))
+      {
         continue;
       }
       remwidth -= columns[column_type].width;
@@ -1103,7 +1152,7 @@ void ED_file_change_dir_ex(bContext *C, ScrArea *area)
     params->active_file = -1;
 
     if (!filelist_is_dir(sfile->files, params->dir)) {
-      BLI_strncpy(params->dir, filelist_dir(sfile->files), sizeof(params->dir));
+      STRNCPY(params->dir, filelist_dir(sfile->files));
       /* could return but just refresh the current dir */
     }
     filelist_setdir(sfile->files, params->dir);
@@ -1124,7 +1173,7 @@ void ED_file_change_dir(bContext *C)
   ED_file_change_dir_ex(C, area);
 }
 
-void file_select_deselect_all(SpaceFile *sfile, uint flag)
+void file_select_deselect_all(SpaceFile *sfile, const eDirEntry_SelectFlag flag)
 {
   FileSelection sel;
   sel.first = 0;
@@ -1143,13 +1192,13 @@ int file_select_match(struct SpaceFile *sfile, const char *pattern, char *matche
    * if the user selects a single file by entering the filename
    */
   for (int i = 0; i < n; i++) {
-    FileDirEntry *file = filelist_file(sfile->files, i);
-    /* Do not check whether file is a file or dir here! Causes: T44243
+    const char *relpath = filelist_entry_get_relpath(sfile->files, i);
+    /* Do not check whether file is a file or dir here! Causes: #44243
      * (we do accept directories at this stage). */
-    if (fnmatch(pattern, file->relpath, 0) == 0) {
-      filelist_entry_select_set(sfile->files, file, FILE_SEL_ADD, FILE_SEL_SELECTED, CHECK_ALL);
+    if (fnmatch(pattern, relpath, 0) == 0) {
+      filelist_entry_select_index_set(sfile->files, i, FILE_SEL_ADD, FILE_SEL_SELECTED, CHECK_ALL);
       if (!match) {
-        BLI_strncpy(matched_file, file->relpath, FILE_MAX);
+        BLI_strncpy(matched_file, relpath, FILE_MAX);
       }
       match++;
     }
@@ -1170,7 +1219,7 @@ int autocomplete_directory(struct bContext *C, char *str, void * /*arg_v*/)
     DIR *dir;
     struct dirent *de;
 
-    BLI_split_dir_part(str, dirname, sizeof(dirname));
+    BLI_path_split_dir_part(str, dirname, sizeof(dirname));
 
     dir = opendir(dirname);
 
@@ -1217,8 +1266,8 @@ int autocomplete_file(struct bContext *C, char *str, void * /*arg_v*/)
     int nentries = filelist_files_ensure(sfile->files);
 
     for (int i = 0; i < nentries; i++) {
-      FileDirEntry *file = filelist_file(sfile->files, i);
-      UI_autocomplete_update_name(autocpl, file->relpath);
+      const char *relpath = filelist_entry_get_relpath(sfile->files, i);
+      UI_autocomplete_update_name(autocpl, relpath);
     }
     match = UI_autocomplete_end(autocpl, str);
   }
@@ -1228,7 +1277,7 @@ int autocomplete_file(struct bContext *C, char *str, void * /*arg_v*/)
 
 void ED_fileselect_clear(wmWindowManager *wm, SpaceFile *sfile)
 {
-  /* Only null in rare cases, see: T29734. */
+  /* Only null in rare cases, see: #29734. */
   if (sfile->files) {
     filelist_readjob_stop(sfile->files, wm);
     filelist_freelib(sfile->files);
@@ -1329,7 +1378,8 @@ void file_params_renamefile_activate(SpaceFile *sfile, FileSelectParams *params)
   BLI_assert(params->rename_flag != 0);
 
   if ((params->rename_flag & (FILE_PARAMS_RENAME_ACTIVE | FILE_PARAMS_RENAME_POSTSCROLL_ACTIVE)) !=
-      0) {
+      0)
+  {
     return;
   }
 
@@ -1412,10 +1462,10 @@ void ED_fileselect_ensure_default_filepath(struct bContext *C,
     const char *blendfile_path = BKE_main_blendfile_path(bmain);
 
     if (blendfile_path[0] == '\0') {
-      BLI_strncpy(filepath, DATA_("untitled"), sizeof(filepath));
+      STRNCPY(filepath, DATA_("untitled"));
     }
     else {
-      BLI_strncpy(filepath, blendfile_path, sizeof(filepath));
+      STRNCPY(filepath, blendfile_path);
     }
 
     BLI_path_extension_replace(filepath, sizeof(filepath), extension);

@@ -18,6 +18,7 @@ bool MeshPass::is_empty() const
 
 void MeshPass::init_pass(SceneResources &resources, DRWState state, int clip_planes)
 {
+  use_custom_ids = true;
   is_empty_ = true;
   PassMain::init();
   state_set(state, clip_planes);
@@ -57,8 +58,9 @@ void MeshPass::init_subpasses(ePipelineType pipeline,
 void MeshPass::draw(ObjectRef &ref,
                     GPUBatch *batch,
                     ResourceHandle handle,
+                    uint material_index,
                     ::Image *image /* = nullptr */,
-                    eGPUSamplerState sampler_state /* = GPU_SAMPLER_DEFAULT */,
+                    GPUSamplerState sampler_state /* = GPUSamplerState::default_sampler() */,
                     ImageUser *iuser /* = nullptr */)
 {
   is_empty_ = false;
@@ -76,8 +78,7 @@ void MeshPass::draw(ObjectRef &ref,
     }
     if (texture) {
       auto add_cb = [&] {
-        PassMain::Sub *sub_pass =
-            passes_[static_cast<int>(geometry_type)][static_cast<int>(eShaderType::TEXTURE)];
+        PassMain::Sub *sub_pass = passes_[int(geometry_type)][int(eShaderType::TEXTURE)];
         sub_pass = &sub_pass->sub(image->id.name);
         if (tilemap) {
           sub_pass->bind_texture(WB_TILE_ARRAY_SLOT, texture, sampler_state);
@@ -96,12 +97,11 @@ void MeshPass::draw(ObjectRef &ref,
       };
 
       texture_subpass_map_.lookup_or_add_cb(TextureSubPassKey(texture, geometry_type), add_cb)
-          ->draw(batch, handle);
+          ->draw(batch, handle, material_index);
       return;
     }
   }
-  passes_[static_cast<int>(geometry_type)][static_cast<int>(eShaderType::MATERIAL)]->draw(batch,
-                                                                                          handle);
+  passes_[int(geometry_type)][int(eShaderType::MATERIAL)]->draw(batch, handle, material_index);
 }
 
 /** \} */

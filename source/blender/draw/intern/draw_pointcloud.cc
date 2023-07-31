@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2017 Blender Foundation. All rights reserved. */
+ * Copyright 2017 Blender Foundation */
 
 /** \file
  * \ingroup draw
@@ -21,7 +21,7 @@
 #include "DRW_gpu_wrapper.hh"
 #include "DRW_render.h"
 
-#include "draw_attributes.h"
+#include "draw_attributes.hh"
 #include "draw_cache_impl.h"
 #include "draw_common.h"
 #include "draw_manager.h"

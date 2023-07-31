@@ -17,7 +17,7 @@
 #include "BLI_index_range.hh"
 #include "BLI_listbase.h"
 #include "BLI_math_base.h"
-#include "BLI_math_vector.hh"
+#include "BLI_math_matrix.hh"
 #include "BLI_rand.hh"
 #include "BLI_span.hh"
 #include "BLI_string.h"
@@ -62,38 +62,17 @@ static void curves_init_data(ID *id)
   new (&curves->geometry) blender::bke::CurvesGeometry();
 }
 
-static void curves_copy_data(Main * /*bmain*/, ID *id_dst, const ID *id_src, const int flag)
+static void curves_copy_data(Main * /*bmain*/, ID *id_dst, const ID *id_src, const int /*flag*/)
 {
-  using namespace blender;
-
   Curves *curves_dst = (Curves *)id_dst;
   const Curves *curves_src = (const Curves *)id_src;
   curves_dst->mat = static_cast<Material **>(MEM_dupallocN(curves_src->mat));
 
-  const bke::CurvesGeometry &src = bke::CurvesGeometry::wrap(curves_src->geometry);
-  bke::CurvesGeometry &dst = bke::CurvesGeometry::wrap(curves_dst->geometry);
-
-  /* We need special handling here because the generic ID management code has already done a
-   * shallow copy from the source to the destination, and because the copy-on-write functionality
-   * isn't supported more generically yet. */
-
-  dst.point_num = src.point_num;
-  dst.curve_num = src.curve_num;
-
-  const eCDAllocType alloc_type = (flag & LIB_ID_COPY_CD_REFERENCE) ? CD_REFERENCE : CD_DUPLICATE;
-  CustomData_copy(&src.point_data, &dst.point_data, CD_MASK_ALL, alloc_type, dst.point_num);
-  CustomData_copy(&src.curve_data, &dst.curve_data, CD_MASK_ALL, alloc_type, dst.curve_num);
-
-  dst.curve_offsets = static_cast<int *>(MEM_dupallocN(src.curve_offsets));
+  new (&curves_dst->geometry) blender::bke::CurvesGeometry(curves_src->geometry.wrap());
 
   if (curves_src->surface_uv_map != nullptr) {
     curves_dst->surface_uv_map = BLI_strdup(curves_src->surface_uv_map);
   }
-
-  dst.runtime = MEM_new<bke::CurvesGeometryRuntime>(__func__);
-
-  dst.runtime->type_counts = src.runtime->type_counts;
-  dst.runtime->bounds_cache = src.runtime->bounds_cache;
 
   curves_dst->batch_cache = nullptr;
 }
@@ -103,7 +82,7 @@ static void curves_free_data(ID *id)
   Curves *curves = (Curves *)id;
   BKE_animdata_free(&curves->id, false);
 
-  blender::bke::CurvesGeometry::wrap(curves->geometry).~CurvesGeometry();
+  curves->geometry.wrap().~CurvesGeometry();
 
   BKE_curves_batch_cache_free(curves);
 
@@ -124,30 +103,12 @@ static void curves_blend_write(BlendWriter *writer, ID *id, const void *id_addre
 {
   Curves *curves = (Curves *)id;
 
-  Vector<CustomDataLayer, 16> point_layers;
-  Vector<CustomDataLayer, 16> curve_layers;
-  CustomData_blend_write_prepare(curves->geometry.point_data, point_layers);
-  CustomData_blend_write_prepare(curves->geometry.curve_data, curve_layers);
-
   /* Write LibData */
   BLO_write_id_struct(writer, Curves, id_address, &curves->id);
   BKE_id_blend_write(writer, &curves->id);
 
   /* Direct data */
-  CustomData_blend_write(writer,
-                         &curves->geometry.point_data,
-                         point_layers,
-                         curves->geometry.point_num,
-                         CD_MASK_ALL,
-                         &curves->id);
-  CustomData_blend_write(writer,
-                         &curves->geometry.curve_data,
-                         curve_layers,
-                         curves->geometry.curve_num,
-                         CD_MASK_ALL,
-                         &curves->id);
-
-  BLO_write_int32_array(writer, curves->geometry.curve_num + 1, curves->geometry.curve_offsets);
+  curves->geometry.wrap().blend_write(*writer, curves->id);
 
   BLO_write_string(writer, curves->surface_uv_map);
 
@@ -164,17 +125,9 @@ static void curves_blend_read_data(BlendDataReader *reader, ID *id)
   BKE_animdata_blend_read_data(reader, curves->adt);
 
   /* Geometry */
-  CustomData_blend_read(reader, &curves->geometry.point_data, curves->geometry.point_num);
-  CustomData_blend_read(reader, &curves->geometry.curve_data, curves->geometry.curve_num);
-
-  BLO_read_int32_array(reader, curves->geometry.curve_num + 1, &curves->geometry.curve_offsets);
+  curves->geometry.wrap().blend_read(*reader);
 
   BLO_read_data_address(reader, &curves->surface_uv_map);
-
-  curves->geometry.runtime = MEM_new<blender::bke::CurvesGeometryRuntime>(__func__);
-
-  /* Recalculate curve type count cache that isn't saved in files. */
-  blender::bke::CurvesGeometry::wrap(curves->geometry).update_curve_types();
 
   /* Materials */
   BLO_read_pointer_array(reader, (void **)&curves->mat);
@@ -247,8 +200,7 @@ BoundBox *BKE_curves_boundbox_get(Object *ob)
   if (ob->runtime.bb == nullptr) {
     ob->runtime.bb = MEM_cnew<BoundBox>(__func__);
 
-    const blender::bke::CurvesGeometry &curves = blender::bke::CurvesGeometry::wrap(
-        curves_id->geometry);
+    const blender::bke::CurvesGeometry &curves = curves_id->geometry.wrap();
 
     float3 min(FLT_MAX);
     float3 max(-FLT_MAX);
@@ -268,16 +220,10 @@ bool BKE_curves_attribute_required(const Curves * /*curves*/, const char *name)
   return STREQ(name, ATTR_POSITION);
 }
 
-Curves *BKE_curves_copy_for_eval(Curves *curves_src, bool reference)
+Curves *BKE_curves_copy_for_eval(Curves *curves_src)
 {
-  int flags = LIB_ID_COPY_LOCALIZE;
-
-  if (reference) {
-    flags |= LIB_ID_COPY_CD_REFERENCE;
-  }
-
-  Curves *result = (Curves *)BKE_id_copy_ex(nullptr, &curves_src->id, nullptr, flags);
-  return result;
+  return reinterpret_cast<Curves *>(
+      BKE_id_copy_ex(nullptr, &curves_src->id, nullptr, LIB_ID_COPY_LOCALIZE));
 }
 
 static void curves_evaluate_modifiers(struct Depsgraph *depsgraph,
@@ -308,6 +254,8 @@ static void curves_evaluate_modifiers(struct Depsgraph *depsgraph,
     if (!BKE_modifier_is_enabled(scene, md, required_mode)) {
       continue;
     }
+
+    blender::bke::ScopedModifierTimer modifier_timer{*md};
 
     if (mti->modifyGeometrySet != nullptr) {
       mti->modifyGeometrySet(md, &mectx, &geometry_set);
@@ -372,7 +320,7 @@ Curves *curves_new_nomain(const int points_num, const int curves_num)
   BLI_assert(points_num >= 0);
   BLI_assert(curves_num >= 0);
   Curves *curves_id = static_cast<Curves *>(BKE_id_new_nomain(ID_CV, nullptr));
-  CurvesGeometry &curves = CurvesGeometry::wrap(curves_id->geometry);
+  CurvesGeometry &curves = curves_id->geometry.wrap();
   curves.resize(points_num, curves_num);
   return curves_id;
 }
@@ -380,7 +328,7 @@ Curves *curves_new_nomain(const int points_num, const int curves_num)
 Curves *curves_new_nomain_single(const int points_num, const CurveType type)
 {
   Curves *curves_id = curves_new_nomain(points_num, 1);
-  CurvesGeometry &curves = CurvesGeometry::wrap(curves_id->geometry);
+  CurvesGeometry &curves = curves_id->geometry.wrap();
   curves.offsets_for_write().last() = points_num;
   curves.fill_curve_types(type);
   return curves_id;
@@ -389,7 +337,7 @@ Curves *curves_new_nomain_single(const int points_num, const CurveType type)
 Curves *curves_new_nomain(CurvesGeometry curves)
 {
   Curves *curves_id = static_cast<Curves *>(BKE_id_new_nomain(ID_CV, nullptr));
-  bke::CurvesGeometry::wrap(curves_id->geometry) = std::move(curves);
+  curves_id->geometry.wrap() = std::move(curves);
   return curves_id;
 }
 
@@ -412,15 +360,15 @@ void curves_copy_parameters(const Curves &src, Curves &dst)
 
 CurvesSurfaceTransforms::CurvesSurfaceTransforms(const Object &curves_ob, const Object *surface_ob)
 {
-  this->curves_to_world = curves_ob.object_to_world;
-  this->world_to_curves = this->curves_to_world.inverted();
+  this->curves_to_world = float4x4_view(curves_ob.object_to_world);
+  this->world_to_curves = math::invert(this->curves_to_world);
 
   if (surface_ob != nullptr) {
-    this->surface_to_world = surface_ob->object_to_world;
-    this->world_to_surface = this->surface_to_world.inverted();
+    this->surface_to_world = float4x4_view(surface_ob->object_to_world);
+    this->world_to_surface = math::invert(this->surface_to_world);
     this->surface_to_curves = this->world_to_curves * this->surface_to_world;
     this->curves_to_surface = this->world_to_surface * this->curves_to_world;
-    this->surface_to_curves_normal = this->surface_to_curves.inverted().transposed();
+    this->surface_to_curves_normal = math::transpose(math::invert(this->surface_to_curves));
   }
 }
 

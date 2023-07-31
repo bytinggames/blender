@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2019 Blender Foundation. All rights reserved. */
+ * Copyright 2019 Blender Foundation */
 
 #pragma once
 
@@ -8,7 +8,7 @@
  */
 
 #include "BLI_array.hh"
-#include "BLI_float4x4.hh"
+#include "BLI_math_matrix_types.hh"
 #include "BLI_mesh_boolean.hh"
 #include "BLI_span.hh"
 

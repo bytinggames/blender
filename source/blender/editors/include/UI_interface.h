@@ -239,6 +239,17 @@ enum {
   UI_BUT_OVERRIDDEN = 1u << 31u,
 };
 
+/** #uiBut.dragflag */
+enum {
+  /** By default only the left part of a button triggers dragging. A questionable design to make
+   * the icon but not other parts of the button draggable. Set this flag so the entire button can
+   * be dragged. */
+  UI_BUT_DRAG_FULL_BUT = (1 << 0),
+
+  /* --- Internal flags. --- */
+  UI_BUT_DRAGPOIN_FREE = (1 << 1),
+};
+
 /* Default font size for normal text. */
 #define UI_DEFAULT_TEXT_POINTS 11.0f
 
@@ -250,6 +261,13 @@ enum {
 #define UI_SIDEBAR_PANEL_WIDTH 220
 #define UI_NAVIGATION_REGION_WIDTH UI_COMPACT_PANEL_WIDTH
 #define UI_NARROW_NAVIGATION_REGION_WIDTH 100
+
+/* The width of one icon column of the Toolbar. */
+#define UI_TOOLBAR_COLUMN (1.25f * ICON_DEFAULT_HEIGHT_TOOLBAR)
+/* The space between the Toolbar and the area's edge. */
+#define UI_TOOLBAR_MARGIN (0.5f * ICON_DEFAULT_HEIGHT_TOOLBAR)
+/* Total width of Toolbar showing one icon column. */
+#define UI_TOOLBAR_WIDTH UI_TOOLBAR_MARGIN + UI_TOOLBAR_COLUMN
 
 #define UI_PANEL_CATEGORY_MARGIN_WIDTH (U.widget_unit * 1.0f)
 
@@ -308,12 +326,6 @@ enum {
   UI_BUT_CHECKBOX_INVERT = 1 << 25,
 };
 
-/* scale fixed button widths by this to account for DPI */
-
-#define UI_DPI_FAC (U.dpi_fac)
-/* 16 to copy ICON_DEFAULT_HEIGHT */
-#define UI_DPI_ICON_SIZE ((float)16 * UI_DPI_FAC)
-
 /**
  * Button types, bits stored in 1 value... and a short even!
  * - bits 0-4:  #uiBut.bitnr (0-31)
@@ -322,6 +334,8 @@ enum {
  * - bit  9-15: button type (now 6 bits, 64 types)
  */
 typedef enum {
+  UI_BUT_POIN_NONE = 0,
+
   UI_BUT_POIN_CHAR = 32,
   UI_BUT_POIN_SHORT = 64,
   UI_BUT_POIN_INT = 96,
@@ -639,6 +653,8 @@ typedef struct uiPopupMenu uiPopupMenu;
 
 uiPopupMenu *UI_popup_menu_begin(struct bContext *C, const char *title, int icon) ATTR_NONNULL();
 /**
+ * Directly create a popup menu that is not refreshed on redraw.
+ *
  * Only return handler, and set optional title.
  * \param block_name: Assigned to uiBlock.name (useful info for debugging).
  */
@@ -879,6 +895,9 @@ bool UI_but_flag_is_set(uiBut *but, int flag);
 void UI_but_drawflag_enable(uiBut *but, int flag);
 void UI_but_drawflag_disable(uiBut *but, int flag);
 
+void UI_but_dragflag_enable(uiBut *but, int flag);
+void UI_but_dragflag_disable(uiBut *but, int flag);
+
 void UI_but_disable(uiBut *but, const char *disabled_hint);
 
 void UI_but_type_set_menu_from_pulldown(uiBut *but);
@@ -901,7 +920,7 @@ bool UI_but_active_only(const struct bContext *C,
                         uiBut *but);
 /**
  * \warning This must run after other handlers have been added,
- * otherwise the handler won't be removed, see: T71112.
+ * otherwise the handler won't be removed, see: #71112.
  */
 bool UI_block_active_only_flagged_buttons(const struct bContext *C,
                                           struct ARegion *region,
@@ -1787,27 +1806,38 @@ void UI_but_drag_set_id(uiBut *but, struct ID *id);
 /**
  * Set an image to display while dragging. This works for any drag type (`WM_DRAG_XXX`).
  * Not to be confused with #UI_but_drag_set_image(), which sets up dragging of an image.
+ *
+ * Sets #UI_BUT_DRAG_FULL_BUT so the full button can be dragged.
  */
 void UI_but_drag_attach_image(uiBut *but, struct ImBuf *imb, float scale);
 /**
+ * Sets #UI_BUT_DRAG_FULL_BUT so the full button can be dragged.
  * \param asset: May be passed from a temporary variable, drag data only stores a copy of this.
  */
 void UI_but_drag_set_asset(uiBut *but,
                            const struct AssetHandle *asset,
                            const char *path,
-                           int import_type, /* eFileAssetImportType */
+                           int import_type, /* eAssetImportType */
                            int icon,
                            struct ImBuf *imb,
                            float scale);
 void UI_but_drag_set_rna(uiBut *but, struct PointerRNA *ptr);
-void UI_but_drag_set_path(uiBut *but, const char *path, bool use_free);
+/**
+ * Enable dragging a path from this button.
+ * \param path: The path to drag. The passed string may be destructed, button keeps a copy.
+ */
+void UI_but_drag_set_path(uiBut *but, const char *path);
 void UI_but_drag_set_name(uiBut *but, const char *name);
 /**
  * Value from button itself.
  */
 void UI_but_drag_set_value(uiBut *but);
-void UI_but_drag_set_image(
-    uiBut *but, const char *path, int icon, struct ImBuf *imb, float scale, bool use_free);
+
+/**
+ * Sets #UI_BUT_DRAG_FULL_BUT so the full button can be dragged.
+ * \param path: The path to drag. The passed string may be destructed, button keeps a copy.
+ */
+void UI_but_drag_set_image(uiBut *but, const char *path, int icon, struct ImBuf *imb, float scale);
 
 /* Panels
  *
@@ -2387,7 +2417,10 @@ void uiTemplateImage(uiLayout *layout,
                      struct PointerRNA *userptr,
                      bool compact,
                      bool multiview);
-void uiTemplateImageSettings(uiLayout *layout, struct PointerRNA *imfptr, bool color_management);
+void uiTemplateImageSettings(uiLayout *layout,
+                             struct PointerRNA *imfptr,
+                             bool color_management,
+                             bool show_z_buffer);
 void uiTemplateImageStereo3d(uiLayout *layout, struct PointerRNA *stereo3d_format_ptr);
 void uiTemplateImageViews(uiLayout *layout, struct PointerRNA *imaptr);
 void uiTemplateImageFormatViews(uiLayout *layout,
@@ -2868,21 +2901,21 @@ void uiItemMenuF(uiLayout *layout, const char *name, int icon, uiMenuCreateFunc 
  */
 void uiItemMenuFN(uiLayout *layout, const char *name, int icon, uiMenuCreateFunc func, void *argN);
 void uiItemMenuEnumFullO_ptr(uiLayout *layout,
-                             struct bContext *C,
+                             const struct bContext *C,
                              struct wmOperatorType *ot,
                              const char *propname,
                              const char *name,
                              int icon,
                              struct PointerRNA *r_opptr);
 void uiItemMenuEnumFullO(uiLayout *layout,
-                         struct bContext *C,
+                         const struct bContext *C,
                          const char *opname,
                          const char *propname,
                          const char *name,
                          int icon,
                          struct PointerRNA *r_opptr);
 void uiItemMenuEnumO(uiLayout *layout,
-                     struct bContext *C,
+                     const struct bContext *C,
                      const char *opname,
                      const char *propname,
                      const char *name,
@@ -2963,6 +2996,17 @@ uiBut *UI_context_active_but_prop_get(const struct bContext *C,
                                       struct PointerRNA *r_ptr,
                                       struct PropertyRNA **r_prop,
                                       int *r_index);
+
+/**
+ * As above, but for a specified region.
+ *
+ * \return active button, NULL if none found or if it doesn't contain valid RNA data.
+ */
+uiBut *UI_region_active_but_prop_get(const struct ARegion *region,
+                                     struct PointerRNA *r_ptr,
+                                     struct PropertyRNA **r_prop,
+                                     int *r_index);
+
 void UI_context_active_but_prop_handle(struct bContext *C, bool handle_undo);
 void UI_context_active_but_clear(struct bContext *C, struct wmWindow *win, struct ARegion *region);
 
@@ -2978,6 +3022,8 @@ void UI_context_active_but_prop_get_filebrowser(const struct bContext *C,
                                                 bool *r_is_userdef);
 /**
  * For new/open operators.
+ *
+ * This is for browsing and editing the ID-blocks used.
  */
 void UI_context_active_but_prop_get_templateID(struct bContext *C,
                                                struct PointerRNA *r_ptr,
@@ -3059,7 +3105,7 @@ int UI_fontstyle_string_width(const struct uiFontStyle *fs,
  * only applying scale when drawing. This causes problems for fonts since kerning at
  * smaller sizes often makes them wider than a scaled down version of the larger text.
  * Resolve this by calculating the text at the on-screen size,
- * returning the result scaled back to 1:1. See T92361.
+ * returning the result scaled back to 1:1. See #92361.
  */
 int UI_fontstyle_string_width_with_block_aspect(const struct uiFontStyle *fs,
                                                 const char *str,
@@ -3139,7 +3185,7 @@ const char *UI_key_event_operator_string(const struct bContext *C,
                                          IDProperty *properties,
                                          const bool is_strict,
                                          char *result,
-                                         const int result_len);
+                                         const int result_maxncpy);
 
 /* ui_interface_region_tooltip.c */
 
@@ -3222,6 +3268,7 @@ void UI_interface_tag_script_reload(void);
 /* Support click-drag motion which presses the button and closes a popover (like a menu). */
 #define USE_UI_POPOVER_ONCE
 
+bool UI_view_item_is_interactive(const uiViewItemHandle *item_handle);
 bool UI_view_item_is_active(const uiViewItemHandle *item_handle);
 bool UI_view_item_matches(const uiViewItemHandle *a_handle, const uiViewItemHandle *b_handle);
 /**
@@ -3242,18 +3289,12 @@ void UI_view_item_context_menu_build(struct bContext *C,
  * \return True if dragging started successfully, otherwise false.
  */
 bool UI_view_item_drag_start(struct bContext *C, const uiViewItemHandle *item_);
-bool UI_view_item_can_drop(const uiViewItemHandle *item_,
-                           const struct wmDrag *drag,
-                           const char **r_disabled_hint);
-char *UI_view_item_drop_tooltip(const uiViewItemHandle *item, const struct wmDrag *drag);
-/**
- * Let a view item handle a drop event.
- * \return True if the drop was handled by the view item.
- */
-bool UI_view_item_drop_handle(struct bContext *C,
-                              const uiViewItemHandle *item_,
-                              const struct ListBase *drags);
 
+/**
+ * \param xy: Coordinate to find a view item at, in window space.
+ * \param pad: Extra padding added to the bounding box of the view.
+ */
+uiViewHandle *UI_region_view_find_at(const struct ARegion *region, const int xy[2], int pad);
 /**
  * \param xy: Coordinate to find a view item at, in window space.
  */

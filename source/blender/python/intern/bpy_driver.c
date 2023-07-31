@@ -184,7 +184,8 @@ static void bpy_pydriver_namespace_update_frame(const float evaltime)
 static void bpy_pydriver_namespace_update_self(struct PathResolvedRNA *anim_rna)
 {
   if ((g_pydriver_state_prev.self == NULL) ||
-      (pyrna_driver_is_equal_anim_rna(anim_rna, g_pydriver_state_prev.self) == false)) {
+      (pyrna_driver_is_equal_anim_rna(anim_rna, g_pydriver_state_prev.self) == false))
+  {
     PyObject *item = pyrna_driver_self_from_anim_rna(anim_rna);
     PyDict_SetItem(bpy_pydriver_Dict, bpy_intern_str_self, item);
     Py_DECREF(item);
@@ -211,7 +212,7 @@ static PyObject *bpy_pydriver_depsgraph_as_pyobject(struct Depsgraph *depsgraph)
 
 /**
  * Adds a variable `depsgraph` to the name-space. This can then be used to obtain evaluated
- * data-blocks, and the current view layer and scene. See T75553.
+ * data-blocks, and the current view layer and scene. See #75553.
  */
 static void bpy_pydriver_namespace_update_depsgraph(struct Depsgraph *depsgraph)
 {
@@ -225,7 +226,8 @@ static void bpy_pydriver_namespace_update_depsgraph(struct Depsgraph *depsgraph)
   }
 
   if ((g_pydriver_state_prev.depsgraph == NULL) ||
-      (depsgraph != g_pydriver_state_prev.depsgraph->ptr.data)) {
+      (depsgraph != g_pydriver_state_prev.depsgraph->ptr.data))
+  {
     PyObject *item = bpy_pydriver_depsgraph_as_pyobject(depsgraph);
     PyDict_SetItem(bpy_pydriver_Dict, bpy_intern_str_depsgraph, item);
     Py_DECREF(item);
@@ -346,7 +348,7 @@ static const bool secure_opcodes[255] = {
     OK_OP(RESUME),
     OK_OP(LIST_EXTEND),
     OK_OP(SET_UPDATE),
-/* NOTE(@campbellbarton): Don't enable dict manipulation, unless we can prove there is not way it
+/* NOTE(@ideasman42): Don't enable dict manipulation, unless we can prove there is not way it
  * can be used to manipulate the name-space (potentially allowing malicious code). */
 #    if 0
     OK_OP(DICT_MERGE),
@@ -430,7 +432,7 @@ static const bool secure_opcodes[255] = {
     OK_OP(STORE_DEREF),
     OK_OP(LIST_EXTEND),
     OK_OP(SET_UPDATE),
-/* NOTE(@campbellbarton): Don't enable dict manipulation, unless we can prove there is not way it
+/* NOTE(@ideasman42): Don't enable dict manipulation, unless we can prove there is not way it
  * can be used to manipulate the name-space (potentially allowing malicious code). */
 #    if 0
     OK_OP(DICT_MERGE),
@@ -560,9 +562,9 @@ float BPY_driver_exec(struct PathResolvedRNA *anim_rna,
   /* (old) NOTE: PyGILState_Ensure() isn't always called because python can call
    * the bake operator which intern starts a thread which calls scene update
    * which does a driver update. to avoid a deadlock check #PyC_IsInterpreterActive()
-   * if #PyGILState_Ensure() is needed, see T27683.
+   * if #PyGILState_Ensure() is needed, see #27683.
    *
-   * (new) NOTE: checking if python is running is not thread-safe T28114
+   * (new) NOTE: checking if python is running is not thread-safe #28114
    * now release the GIL on python operator execution instead, using
    * #PyEval_SaveThread() / #PyEval_RestoreThread() so we don't lock up blender.
    *
@@ -596,7 +598,7 @@ float BPY_driver_exec(struct PathResolvedRNA *anim_rna,
   if (!(G.f & G_FLAG_SCRIPT_AUTOEXEC)) {
     if (!(G.f & G_FLAG_SCRIPT_AUTOEXEC_FAIL_QUIET)) {
       G.f |= G_FLAG_SCRIPT_AUTOEXEC_FAIL;
-      BLI_snprintf(G.autoexec_fail, sizeof(G.autoexec_fail), "Driver '%s'", expr);
+      SNPRINTF(G.autoexec_fail, "Driver '%s'", expr);
 
       printf("skipping driver '%s', automatic scripts are disabled\n", expr);
     }
@@ -612,7 +614,7 @@ float BPY_driver_exec(struct PathResolvedRNA *anim_rna,
     gilstate = PyGILState_Ensure();
   }
 
-  /* Needed since drivers are updated directly after undo where `main` is re-allocated T28807. */
+  /* Needed since drivers are updated directly after undo where `main` is re-allocated #28807. */
   BPY_update_rna_module();
 
   /* Initialize global dictionary for Python driver evaluation settings. */
@@ -688,7 +690,8 @@ float BPY_driver_exec(struct PathResolvedRNA *anim_rna,
     /* Support for any RNA data. */
 #ifdef USE_RNA_AS_PYOBJECT
     if (dvar->type == DVAR_TYPE_SINGLE_PROP) {
-      driver_arg = pyrna_driver_get_variable_value(driver, &dvar->targets[0]);
+      driver_arg = pyrna_driver_get_variable_value(
+          anim_eval_context, driver, dvar, &dvar->targets[0]);
 
       if (driver_arg == NULL) {
         driver_arg = PyFloat_FromDouble(0.0);
@@ -714,7 +717,7 @@ float BPY_driver_exec(struct PathResolvedRNA *anim_rna,
 #endif
     {
       /* Try to get variable value. */
-      const float tval = driver_get_variable_value(driver, dvar);
+      const float tval = driver_get_variable_value(anim_eval_context, driver, dvar);
       driver_arg = PyFloat_FromDouble((double)tval);
     }
 
@@ -752,10 +755,11 @@ float BPY_driver_exec(struct PathResolvedRNA *anim_rna,
               },
               /* Always be verbose since this can give hints to why evaluation fails. */
               true,
-              __func__)) {
+              __func__))
+      {
         if (!(G.f & G_FLAG_SCRIPT_AUTOEXEC_FAIL_QUIET)) {
           G.f |= G_FLAG_SCRIPT_AUTOEXEC_FAIL;
-          BLI_snprintf(G.autoexec_fail, sizeof(G.autoexec_fail), "Driver '%s'", expr);
+          SNPRINTF(G.autoexec_fail, "Driver '%s'", expr);
         }
 
         Py_DECREF(expr_code);

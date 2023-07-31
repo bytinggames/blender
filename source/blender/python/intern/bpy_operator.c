@@ -7,7 +7,7 @@
  * the ability to inspect and call operators (defined by C or Python).
  *
  * \note
- * This C module is private, it should only be used by `release/scripts/modules/bpy/ops.py` which
+ * This C module is private, it should only be used by `scripts/modules/bpy/ops.py` which
  * exposes operators as dynamically defined modules & callable objects to access all operators.
  */
 
@@ -64,13 +64,14 @@ static void op_context_override_deprecated_warning(const char *action, const cha
 {
   if (PyErr_WarnFormat(
           PyExc_DeprecationWarning,
-          /* Use stack level 2 as this call is wrapped by `release/scripts/modules/bpy/ops.py`,
+          /* Use stack level 2 as this call is wrapped by `scripts/modules/bpy/ops.py`,
            * An extra stack level is needed to show the warning in the authors script. */
           2,
           "Passing in context overrides is deprecated in favor of "
           "Context.temp_override(..), %s \"%s\"",
           action,
-          opname) < 0) {
+          opname) < 0)
+  {
     /* The function has no return value, the exception cannot
      * be reported to the caller, so just log it. */
     PyErr_WriteUnraisable(NULL);
@@ -196,7 +197,8 @@ static PyObject *pyop_call(PyObject *UNUSED(self), PyObject *args)
                         &PyDict_Type,
                         &kw,
                         &context_str,
-                        &is_undo)) {
+                        &is_undo))
+  {
     return NULL;
   }
 
@@ -397,7 +399,8 @@ static PyObject *pyop_as_string(PyObject *UNUSED(self), PyObject *args)
                         PyC_ParseBool,
                         &all_args,
                         PyC_ParseBool,
-                        &macro_args)) {
+                        &macro_args))
+  {
     return NULL;
   }
 

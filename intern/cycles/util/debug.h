@@ -97,6 +97,15 @@ class DebugFlags {
 
     /* Whether adaptive feature based runtime compile is enabled or not. */
     bool adaptive_compile = false;
+
+    /* Whether local atomic sorting is enabled or not. */
+    bool use_local_atomic_sort = true;
+
+    /* Whether nanovdb is enabled or not. */
+    bool use_nanovdb = true;
+
+    /* Whether async PSO creation is enabled or not. */
+    bool use_async_pso_creation = true;
   };
 
   /* Get instance of debug flags registry. */

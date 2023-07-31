@@ -4,7 +4,9 @@
 #  include <openvdb/openvdb.h>
 #endif
 
-#include "BLI_float4x4.hh"
+#include "BLI_math_matrix.hh"
+#include "BLI_math_matrix_types.hh"
+#include "BLI_task.hh"
 
 #include "DNA_mesh_types.h"
 #include "DNA_pointcloud_types.h"
@@ -12,7 +14,7 @@
 
 #include "BKE_curves.hh"
 #include "BKE_instances.hh"
-#include "BKE_mesh.h"
+#include "BKE_mesh.hh"
 #include "BKE_pointcloud.h"
 #include "BKE_volume.h"
 
@@ -28,7 +30,8 @@ static bool use_translate(const float3 rotation, const float3 scale)
     return false;
   }
   if (compare_ff(scale.x, 1.0f, 1e-9f) != 1 || compare_ff(scale.y, 1.0f, 1e-9f) != 1 ||
-      compare_ff(scale.z, 1.0f, 1e-9f) != 1) {
+      compare_ff(scale.z, 1.0f, 1e-9f) != 1)
+  {
     return false;
   }
   return true;
@@ -47,32 +50,39 @@ static void transform_positions(MutableSpan<float3> positions, const float4x4 &m
 {
   threading::parallel_for(positions.index_range(), 1024, [&](const IndexRange range) {
     for (float3 &position : positions.slice(range)) {
-      position = matrix * position;
+      position = math::transform_point(matrix, position);
     }
   });
-}
-
-static void translate_mesh(Mesh &mesh, const float3 translation)
-{
-  if (!math::is_zero(translation)) {
-    translate_positions(mesh.vert_positions_for_write(), translation);
-    BKE_mesh_tag_coords_changed_uniformly(&mesh);
-  }
 }
 
 static void transform_mesh(Mesh &mesh, const float4x4 &transform)
 {
   transform_positions(mesh.vert_positions_for_write(), transform);
-  BKE_mesh_tag_coords_changed(&mesh);
+  BKE_mesh_tag_positions_changed(&mesh);
 }
 
 static void translate_pointcloud(PointCloud &pointcloud, const float3 translation)
 {
+  if (math::is_zero(translation)) {
+    return;
+  }
+
+  std::optional<Bounds<float3>> bounds;
+  if (pointcloud.runtime->bounds_cache.is_cached()) {
+    bounds = pointcloud.runtime->bounds_cache.data();
+  }
+
   MutableAttributeAccessor attributes = pointcloud.attributes_for_write();
   SpanAttributeWriter position = attributes.lookup_or_add_for_write_span<float3>(
       "position", ATTR_DOMAIN_POINT);
   translate_positions(position.span, translation);
   position.finish();
+
+  if (bounds) {
+    bounds->min += translation;
+    bounds->max += translation;
+    pointcloud.runtime->bounds_cache.ensure([&](Bounds<float3> &r_data) { r_data = *bounds; });
+  }
 }
 
 static void transform_pointcloud(PointCloud &pointcloud, const float4x4 &transform)
@@ -122,27 +132,27 @@ static void transform_volume(GeoNodeExecParams &params,
   for (const int i : IndexRange(grids_num)) {
     VolumeGrid *volume_grid = BKE_volume_grid_get_for_write(&volume, i);
     float4x4 grid_matrix;
-    BKE_volume_grid_transform_matrix(volume_grid, grid_matrix.values);
-    mul_m4_m4_pre(grid_matrix.values, transform.values);
-    const float determinant = determinant_m4(grid_matrix.values);
+    BKE_volume_grid_transform_matrix(volume_grid, grid_matrix.ptr());
+    grid_matrix = transform * grid_matrix;
+    const float determinant = math::determinant(grid_matrix);
     if (!BKE_volume_grid_determinant_valid(determinant)) {
       found_too_small_scale = true;
       /* Clear the tree because it is too small. */
       BKE_volume_grid_clear_tree(volume, *volume_grid);
       if (determinant == 0) {
         /* Reset rotation and scale. */
-        copy_v3_fl3(grid_matrix.values[0], 1, 0, 0);
-        copy_v3_fl3(grid_matrix.values[1], 0, 1, 0);
-        copy_v3_fl3(grid_matrix.values[2], 0, 0, 1);
+        grid_matrix.x_axis() = float3(1, 0, 0);
+        grid_matrix.y_axis() = float3(0, 1, 0);
+        grid_matrix.z_axis() = float3(0, 0, 1);
       }
       else {
         /* Keep rotation but reset scale. */
-        normalize_v3(grid_matrix.values[0]);
-        normalize_v3(grid_matrix.values[1]);
-        normalize_v3(grid_matrix.values[2]);
+        grid_matrix.x_axis() = math::normalize(grid_matrix.x_axis());
+        grid_matrix.y_axis() = math::normalize(grid_matrix.y_axis());
+        grid_matrix.z_axis() = math::normalize(grid_matrix.z_axis());
       }
     }
-    BKE_volume_grid_transform_matrix_set(&volume, volume_grid, grid_matrix.values);
+    BKE_volume_grid_transform_matrix_set(&volume, volume_grid, grid_matrix.ptr());
   }
   if (found_too_small_scale) {
     params.error_message_add(NodeWarningType::Warning,
@@ -158,7 +168,7 @@ static void translate_volume(GeoNodeExecParams &params,
                              const float3 translation,
                              const Depsgraph &depsgraph)
 {
-  transform_volume(params, volume, float4x4::from_location(translation), depsgraph);
+  transform_volume(params, volume, math::from_location<float4x4>(translation), depsgraph);
 }
 
 static void transform_curve_edit_hints(bke::CurvesEditHints &edit_hints, const float4x4 &transform)
@@ -167,7 +177,7 @@ static void transform_curve_edit_hints(bke::CurvesEditHints &edit_hints, const f
     transform_positions(*edit_hints.positions, transform);
   }
   float3x3 deform_mat;
-  copy_m3_m4(deform_mat.values, transform.values);
+  copy_m3_m4(deform_mat.ptr(), transform.ptr());
   if (edit_hints.deform_mats.has_value()) {
     MutableSpan<float3x3> deform_mats = *edit_hints.deform_mats;
     threading::parallel_for(deform_mats.index_range(), 1024, [&](const IndexRange range) {
@@ -194,10 +204,10 @@ static void translate_geometry_set(GeoNodeExecParams &params,
                                    const Depsgraph &depsgraph)
 {
   if (Curves *curves = geometry.get_curves_for_write()) {
-    bke::CurvesGeometry::wrap(curves->geometry).translate(translation);
+    curves->geometry.wrap().translate(translation);
   }
   if (Mesh *mesh = geometry.get_mesh_for_write()) {
-    translate_mesh(*mesh, translation);
+    BKE_mesh_translate(mesh, translation, false);
   }
   if (PointCloud *pointcloud = geometry.get_pointcloud_for_write()) {
     translate_pointcloud(*pointcloud, translation);
@@ -219,7 +229,7 @@ void transform_geometry_set(GeoNodeExecParams &params,
                             const Depsgraph &depsgraph)
 {
   if (Curves *curves = geometry.get_curves_for_write()) {
-    bke::CurvesGeometry::wrap(curves->geometry).transform(transform);
+    curves->geometry.wrap().transform(transform);
   }
   if (Mesh *mesh = geometry.get_mesh_for_write()) {
     transform_mesh(*mesh, transform);
@@ -243,7 +253,7 @@ void transform_mesh(Mesh &mesh,
                     const float3 rotation,
                     const float3 scale)
 {
-  const float4x4 matrix = float4x4::from_loc_eul_scale(translation, rotation, scale);
+  const float4x4 matrix = math::from_loc_rot_scale<float4x4>(translation, rotation, scale);
   transform_mesh(mesh, matrix);
 }
 
@@ -253,11 +263,11 @@ namespace blender::nodes::node_geo_transform_geometry_cc {
 
 static void node_declare(NodeDeclarationBuilder &b)
 {
-  b.add_input<decl::Geometry>(N_("Geometry"));
-  b.add_input<decl::Vector>(N_("Translation")).subtype(PROP_TRANSLATION);
-  b.add_input<decl::Vector>(N_("Rotation")).subtype(PROP_EULER);
-  b.add_input<decl::Vector>(N_("Scale")).default_value({1, 1, 1}).subtype(PROP_XYZ);
-  b.add_output<decl::Geometry>(N_("Geometry")).propagate_all();
+  b.add_input<decl::Geometry>("Geometry");
+  b.add_input<decl::Vector>("Translation").subtype(PROP_TRANSLATION);
+  b.add_input<decl::Vector>("Rotation").subtype(PROP_EULER);
+  b.add_input<decl::Vector>("Scale").default_value({1, 1, 1}).subtype(PROP_XYZ);
+  b.add_output<decl::Geometry>("Geometry").propagate_all();
 }
 
 static void node_geo_exec(GeoNodeExecParams params)
@@ -274,7 +284,7 @@ static void node_geo_exec(GeoNodeExecParams params)
   else {
     transform_geometry_set(params,
                            geometry_set,
-                           float4x4::from_loc_eul_scale(translation, rotation, scale),
+                           math::from_loc_rot_scale<float4x4>(translation, rotation, scale),
                            *params.depsgraph());
   }
 

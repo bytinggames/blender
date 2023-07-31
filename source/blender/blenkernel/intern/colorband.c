@@ -144,7 +144,7 @@ static float color_sample_remove_cost(const struct ColorResampleElem *c)
   return area;
 }
 
-/* TODO(@campbellbarton): create `BLI_math_filter` ? */
+/* TODO(@ideasman42): create `BLI_math_filter` ? */
 static float filter_gauss(float x)
 {
   const float gaussfac = 1.6f;
@@ -189,7 +189,8 @@ static void colorband_init_from_table_rgba_resample(ColorBand *coba,
   }
 
   while ((carr_len > 1 && !BLI_heap_is_empty(heap)) &&
-         ((carr_len >= MAXCOLORBAND) || (BLI_heap_top_value(heap) <= eps_2x))) {
+         ((carr_len >= MAXCOLORBAND) || (BLI_heap_top_value(heap) <= eps_2x)))
+  {
     c = BLI_heap_pop_min(heap);
     struct ColorResampleElem *c_next = c->next, *c_prev = c->prev;
     c_prev->next = c_next;
@@ -416,7 +417,8 @@ bool BKE_colorband_evaluate(const ColorBand *coba, float in, float out[4])
     out[3] = cbd1->a;
   }
   else if ((in <= cbd1->pos) &&
-           ELEM(ipotype, COLBAND_INTERP_LINEAR, COLBAND_INTERP_EASE, COLBAND_INTERP_CONSTANT)) {
+           ELEM(ipotype, COLBAND_INTERP_LINEAR, COLBAND_INTERP_EASE, COLBAND_INTERP_CONSTANT))
+  {
     /* We are before first color stop. */
     out[0] = cbd1->r;
     out[1] = cbd1->g;
@@ -449,7 +451,8 @@ bool BKE_colorband_evaluate(const ColorBand *coba, float in, float out[4])
     }
 
     if ((a == coba->tot) &&
-        ELEM(ipotype, COLBAND_INTERP_LINEAR, COLBAND_INTERP_EASE, COLBAND_INTERP_CONSTANT)) {
+        ELEM(ipotype, COLBAND_INTERP_LINEAR, COLBAND_INTERP_EASE, COLBAND_INTERP_CONSTANT))
+    {
       /* We are after last color stop. */
       out[0] = cbd2->r;
       out[1] = cbd2->g;
@@ -469,7 +472,7 @@ bool BKE_colorband_evaluate(const ColorBand *coba, float in, float out[4])
       }
       else {
         /* was setting to 0.0 in 2.56 & previous, but this
-         * is incorrect for the last element, see T26732. */
+         * is incorrect for the last element, see #26732. */
         fac = (a != coba->tot) ? 0.0f : 1.0f;
       }
 

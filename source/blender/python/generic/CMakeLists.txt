@@ -7,8 +7,8 @@ set(INC
   ../../gpu
   ../../makesdna
   ../../makesrna
-  ../../../../intern/guardedalloc
   ../../../../intern/clog
+  ../../../../intern/guardedalloc
 )
 
 set(INC_SYS
@@ -45,5 +45,9 @@ set(LIB
   ${PYTHON_LINKFLAGS}
   ${PYTHON_LIBRARIES}
 )
+
+if(WITH_PYTHON_MODULE)
+  add_definitions(-DWITH_PYTHON_MODULE)
+endif()
 
 blender_add_lib(bf_python_ext "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")

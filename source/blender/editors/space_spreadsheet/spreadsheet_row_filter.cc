@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "BLI_listbase.h"
+#include "BLI_math_matrix.hh"
 
 #include "DNA_screen_types.h"
 #include "DNA_space_types.h"
@@ -139,6 +140,36 @@ static void apply_row_filter(const SpreadsheetRowFilter &row_filter,
       }
     }
   }
+  else if (column_data.type().is<int2>()) {
+    const int2 value = row_filter.value_int2;
+    switch (row_filter.operation) {
+      case SPREADSHEET_ROW_FILTER_EQUAL: {
+        const float threshold_sq = pow2f(row_filter.threshold);
+        apply_filter_operation(
+            column_data.typed<int2>(),
+            [&](const int2 cell) { return math::distance_squared(cell, value) <= threshold_sq; },
+            prev_mask,
+            new_indices);
+        break;
+      }
+      case SPREADSHEET_ROW_FILTER_GREATER: {
+        apply_filter_operation(
+            column_data.typed<int2>(),
+            [&](const int2 cell) { return cell.x > value.x && cell.y > value.y; },
+            prev_mask,
+            new_indices);
+        break;
+      }
+      case SPREADSHEET_ROW_FILTER_LESS: {
+        apply_filter_operation(
+            column_data.typed<int2>(),
+            [&](const int2 cell) { return cell.x < value.x && cell.y < value.y; },
+            prev_mask,
+            new_indices);
+        break;
+      }
+    }
+  }
   else if (column_data.type().is<float2>()) {
     const float2 value = row_filter.value_float2;
     switch (row_filter.operation) {
@@ -211,7 +242,7 @@ static void apply_row_filter(const SpreadsheetRowFilter &row_filter,
         apply_filter_operation(
             column_data.typed<ColorGeometry4f>(),
             [&](const ColorGeometry4f cell) {
-              return len_squared_v4v4(cell, value) <= threshold_sq;
+              return math::distance_squared(float4(cell), float4(value)) <= threshold_sq;
             },
             prev_mask,
             new_indices);
@@ -252,7 +283,7 @@ static void apply_row_filter(const SpreadsheetRowFilter &row_filter,
               const ColorGeometry4f cell = cell_bytes.decode();
               const float4 cell_floats = {
                   float(cell.r), float(cell.g), float(cell.b), float(cell.a)};
-              return len_squared_v4v4(value_floats, cell_floats) <= threshold_sq;
+              return math::distance_squared(value_floats, cell_floats) <= threshold_sq;
             },
             prev_mask,
             new_indices);

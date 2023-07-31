@@ -382,7 +382,7 @@ static int view3d_ndof_cameraview_pan_zoom(bContext *C, const wmEvent *event)
    * #ED_view3d_camera_view_pan already takes the zoom level into account. */
   mul_v2_fl(pan_vec, pan_speed);
 
-  /* NOTE(@campbellbarton): In principle rotating could pass through to regular
+  /* NOTE(@ideasman42): In principle rotating could pass through to regular
    * non-camera NDOF behavior (exiting the camera-view and rotating).
    * Disabled this block since in practice it's difficult to control NDOF devices
    * to perform some rotation with absolutely no translation. Causing rotation to
@@ -435,8 +435,7 @@ static int ndof_orbit_invoke(bContext *C, wmOperator *op, const wmEvent *event)
 
   const wmNDOFMotionData *ndof = event->customdata;
 
-  vod = op->customdata = viewops_data_create(
-      C, event, (viewops_flag_from_prefs() & ~VIEWOPS_FLAG_DEPTH_NAVIGATE));
+  vod = op->customdata = viewops_data_create(C, event, V3D_OP_MODE_NDOF_ORBIT, false);
 
   ED_view3d_smooth_view_force_finish(C, vod->v3d, vod->region);
 
@@ -522,8 +521,7 @@ static int ndof_orbit_zoom_invoke(bContext *C, wmOperator *op, const wmEvent *ev
 
   const wmNDOFMotionData *ndof = event->customdata;
 
-  vod = op->customdata = viewops_data_create(
-      C, event, (viewops_flag_from_prefs() & ~VIEWOPS_FLAG_DEPTH_NAVIGATE));
+  vod = op->customdata = viewops_data_create(C, event, V3D_OP_MODE_NDOF_ORBIT_ZOOM, false);
 
   ED_view3d_smooth_view_force_finish(C, vod->v3d, vod->region);
 
@@ -549,7 +547,7 @@ static int ndof_orbit_zoom_invoke(bContext *C, wmOperator *op, const wmEvent *ev
     }
   }
   else {
-    /* NOTE: based on feedback from T67579, users want to have pan and orbit enabled at once.
+    /* NOTE: based on feedback from #67579, users want to have pan and orbit enabled at once.
      * It's arguable that orbit shouldn't pan (since we have a pan only operator),
      * so if there are users who like to separate orbit/pan operations - it can be a preference. */
     const bool is_orbit_around_pivot = (U.ndof_flag & NDOF_MODE_ORBIT) ||

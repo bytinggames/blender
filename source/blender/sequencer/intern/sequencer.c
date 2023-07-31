@@ -562,10 +562,10 @@ static Sequence *seq_dupli(const Scene *scene_src,
 
   /* When using SEQ_DUPE_UNIQUE_NAME, it is mandatory to add new sequences in relevant container
    * (scene or meta's one), *before* checking for unique names. Otherwise the meta's list is empty
-   * and hence we miss all seqs in that meta that have already been duplicated (see T55668).
+   * and hence we miss all seqs in that meta that have already been duplicated (see #55668).
    * Note that unique name check itself could be done at a later step in calling code, once all
    * seqs have bee duplicated (that was first, simpler solution), but then handling of animation
-   * data will be broken (see T60194). */
+   * data will be broken (see #60194). */
   if (new_seq_list != NULL) {
     BLI_addtail(new_seq_list, seqn);
   }
@@ -955,7 +955,8 @@ static bool seq_update_seq_cb(Sequence *seq, void *user_data)
     if (seq->type == SEQ_TYPE_SCENE && seq->scene != NULL) {
       BKE_sound_set_scene_volume(seq->scene, seq->scene->audio.volume);
       if ((seq->flag & SEQ_SCENE_STRIPS) == 0 && seq->scene->sound_scene != NULL &&
-          seq->scene->ed != NULL) {
+          seq->scene->ed != NULL)
+      {
         SEQ_for_each_callback(&seq->scene->ed->seqbase, seq_disable_sound_strips_cb, seq->scene);
       }
     }

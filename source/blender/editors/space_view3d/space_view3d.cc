@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2008 Blender Foundation. All rights reserved. */
+ * Copyright 2008 Blender Foundation */
 
 /** \file
  * \ingroup spview3d
@@ -13,7 +13,7 @@
 
 #include "DNA_collection_types.h"
 #include "DNA_defaults.h"
-#include "DNA_gpencil_types.h"
+#include "DNA_gpencil_legacy_types.h"
 #include "DNA_lightprobe_types.h"
 #include "DNA_material_types.h"
 #include "DNA_object_types.h"
@@ -32,15 +32,16 @@
 #include "BKE_context.h"
 #include "BKE_curve.h"
 #include "BKE_global.h"
-#include "BKE_gpencil.h"
+#include "BKE_gpencil_legacy.h"
 #include "BKE_icons.h"
 #include "BKE_idprop.h"
 #include "BKE_lattice.h"
 #include "BKE_layer.h"
+#include "BKE_lib_id.h"
 #include "BKE_lib_remap.h"
 #include "BKE_main.h"
 #include "BKE_mball.h"
-#include "BKE_mesh.h"
+#include "BKE_mesh.hh"
 #include "BKE_object.h"
 #include "BKE_scene.h"
 #include "BKE_screen.h"
@@ -118,7 +119,8 @@ bool ED_view3d_context_user_region(bContext *C, View3D **r_v3d, ARegion **r_regi
       RegionView3D *rv3d;
       if ((region->regiontype == RGN_TYPE_WINDOW) &&
           (rv3d = static_cast<RegionView3D *>(region->regiondata)) &&
-          (rv3d->viewlock & RV3D_LOCK_ROTATION) == 0) {
+          (rv3d->viewlock & RV3D_LOCK_ROTATION) == 0)
+      {
         *r_v3d = v3d;
         *r_region = region;
         return true;
@@ -329,9 +331,7 @@ static void view3d_free(SpaceLink *sl)
 }
 
 /* spacetype; init callback */
-static void view3d_init(wmWindowManager * /*wm*/, ScrArea * /*area*/)
-{
-}
+static void view3d_init(wmWindowManager * /*wm*/, ScrArea * /*area*/) {}
 
 static void view3d_exit(wmWindowManager * /*wm*/, ScrArea *area)
 {
@@ -519,7 +519,7 @@ static void view3d_ob_drop_draw_activate(struct wmDropBox *drop, wmDrag *drag)
     return;
   }
 
-  state = static_cast<V3DSnapCursorState *>(ED_view3d_cursor_snap_active());
+  state = static_cast<V3DSnapCursorState *>(ED_view3d_cursor_snap_state_create());
   drop->draw_data = state;
   state->draw_plane = true;
 
@@ -547,7 +547,7 @@ static void view3d_ob_drop_draw_deactivate(struct wmDropBox *drop, wmDrag * /*dr
 {
   V3DSnapCursorState *state = static_cast<V3DSnapCursorState *>(drop->draw_data);
   if (state) {
-    ED_view3d_cursor_snap_deactive(state);
+    ED_view3d_cursor_snap_state_free(state);
     drop->draw_data = nullptr;
   }
 }
@@ -646,8 +646,8 @@ static bool view3d_ima_drop_poll(bContext *C, wmDrag *drag, const wmEvent *event
     return false;
   }
   if (drag->type == WM_DRAG_PATH) {
-    /* rule might not work? */
-    return ELEM(drag->icon, 0, ICON_FILE_IMAGE, ICON_FILE_MOVIE);
+    const eFileSel_File_Types file_type = eFileSel_File_Types(WM_drag_get_path_file_type(drag));
+    return ELEM(file_type, 0, FILE_TYPE_IMAGE, FILE_TYPE_MOVIE);
   }
 
   return WM_drag_is_ID_type(drag, ID_IM);
@@ -699,7 +699,54 @@ static bool view3d_ima_empty_drop_poll(bContext *C, wmDrag *drag, const wmEvent 
 
 static bool view3d_volume_drop_poll(bContext * /*C*/, wmDrag *drag, const wmEvent * /*event*/)
 {
-  return (drag->type == WM_DRAG_PATH) && (drag->icon == ICON_FILE_VOLUME);
+  const eFileSel_File_Types file_type = eFileSel_File_Types(WM_drag_get_path_file_type(drag));
+  return (drag->type == WM_DRAG_PATH) && (file_type == FILE_TYPE_VOLUME);
+}
+
+static bool view3d_geometry_nodes_drop_poll(bContext *C, wmDrag *drag, const wmEvent *event)
+{
+  if (!view3d_drop_id_in_main_region_poll(C, drag, event, ID_NT)) {
+    return false;
+  }
+
+  if (drag->type == WM_DRAG_ID) {
+    const bNodeTree *node_tree = reinterpret_cast<const bNodeTree *>(
+        WM_drag_get_local_ID(drag, ID_NT));
+    if (!node_tree) {
+      return false;
+    }
+    return node_tree->type == NTREE_GEOMETRY;
+  }
+
+  if (drag->type == WM_DRAG_ASSET) {
+    const wmDragAsset *asset_data = WM_drag_get_asset_data(drag, ID_NT);
+    if (!asset_data) {
+      return false;
+    }
+    const IDProperty *tree_type = BKE_asset_metadata_idprop_find(asset_data->metadata, "type");
+    if (!tree_type || IDP_Int(tree_type) != NTREE_GEOMETRY) {
+      return false;
+    }
+    if (wmDropBox *drop_box = drag->drop_state.active_dropbox) {
+      const uint32_t uuid = RNA_int_get(drop_box->ptr, "session_uuid");
+      const bNodeTree *node_tree = reinterpret_cast<const bNodeTree *>(
+          BKE_libblock_find_session_uuid(CTX_data_main(C), ID_NT, uuid));
+      if (node_tree) {
+        return node_tree->type == NTREE_GEOMETRY;
+      }
+    }
+  }
+  return true;
+}
+
+static char *view3d_geometry_nodes_drop_tooltip(bContext *C,
+                                                wmDrag * /*drag*/,
+                                                const int xy[2],
+                                                struct wmDropBox *drop)
+{
+  ARegion *region = CTX_wm_region(C);
+  int mval[2] = {xy[0] - region->winrct.xmin, xy[1] - region->winrct.ymin};
+  return ED_object_ot_drop_geometry_nodes_tooltip(C, drop->ptr, mval);
 }
 
 static void view3d_ob_drop_matrix_from_snap(V3DSnapCursorState *snap_state,
@@ -734,7 +781,7 @@ static void view3d_ob_drop_copy_local_id(bContext * /*C*/, wmDrag *drag, wmDropB
   /* Don't duplicate ID's which were just imported. Only do that for existing, local IDs. */
   BLI_assert(drag->type != WM_DRAG_ASSET);
 
-  V3DSnapCursorState *snap_state = ED_view3d_cursor_snap_state_get();
+  V3DSnapCursorState *snap_state = ED_view3d_cursor_snap_state_active_get();
   float obmat_final[4][4];
 
   view3d_ob_drop_matrix_from_snap(snap_state, (Object *)id, obmat_final);
@@ -746,7 +793,7 @@ static void view3d_ob_drop_copy_local_id(bContext * /*C*/, wmDrag *drag, wmDropB
  * make sharing code a bit difficult. */
 static void view3d_ob_drop_copy_external_asset(bContext * /*C*/, wmDrag *drag, wmDropBox *drop)
 {
-  /* NOTE(@campbellbarton): Selection is handled here, de-selecting objects before append,
+  /* NOTE(@ideasman42): Selection is handled here, de-selecting objects before append,
    * using auto-select to ensure the new objects are selected.
    * This is done so #OBJECT_OT_transform_to_mouse (which runs after this drop handler)
    * can use the context setup here to place the objects. */
@@ -855,9 +902,11 @@ static void view3d_id_path_drop_copy(bContext * /*C*/, wmDrag *drag, wmDropBox *
   if (id) {
     WM_operator_properties_id_lookup_set_from_id(drop->ptr, id);
     RNA_struct_property_unset(drop->ptr, "filepath");
+    return;
   }
-  else if (drag->path[0]) {
-    RNA_string_set(drop->ptr, "filepath", drag->path);
+  const char *path = WM_drag_get_path(drag);
+  if (path) {
+    RNA_string_set(drop->ptr, "filepath", path);
     RNA_struct_property_unset(drop->ptr, "image");
   }
 }
@@ -931,6 +980,12 @@ static void view3d_dropboxes()
                  WM_drag_free_imported_drag_ID,
                  view3d_mat_drop_tooltip);
   WM_dropbox_add(lb,
+                 "OBJECT_OT_drop_geometry_nodes",
+                 view3d_geometry_nodes_drop_poll,
+                 view3d_id_drop_copy,
+                 WM_drag_free_imported_drag_ID,
+                 view3d_geometry_nodes_drop_tooltip);
+  WM_dropbox_add(lb,
                  "VIEW3D_OT_background_image_add",
                  view3d_ima_bg_drop_poll,
                  view3d_id_path_drop_copy,
@@ -969,13 +1024,14 @@ static void view3d_widgets()
 
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_xform_gizmo_context);
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_light_spot);
+  WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_light_point);
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_light_area);
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_light_target);
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_force_field);
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_camera);
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_camera_view);
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_empty_image);
-  /* TODO(@campbellbarton): Not working well enough, disable for now. */
+  /* TODO(@ideasman42): Not working well enough, disable for now. */
 #if 0
   WM_gizmogrouptype_append_and_link(gzmap_type, VIEW3D_GGT_armature_spline);
 #endif
@@ -1915,7 +1971,7 @@ static int view3d_context(const bContext *C, const char *member, bContextDataRes
      * it's simplest if all these methods behave consistently - respecting the object-mode
      * without showing the object.
      *
-     * See T85532 for alternatives that were considered. */
+     * See #85532 for alternatives that were considered. */
     const Scene *scene = CTX_data_scene(C);
     ViewLayer *view_layer = CTX_data_view_layer(C);
     BKE_view_layer_synced_ensure(scene, view_layer);
@@ -1949,7 +2005,8 @@ static int view3d_context(const bContext *C, const char *member, bContextDataRes
 static void view3d_id_remap_v3d_ob_centers(View3D *v3d, const struct IDRemapper *mappings)
 {
   if (BKE_id_remapper_apply(mappings, (ID **)&v3d->ob_center, ID_REMAP_APPLY_DEFAULT) ==
-      ID_REMAP_RESULT_SOURCE_UNASSIGNED) {
+      ID_REMAP_RESULT_SOURCE_UNASSIGNED)
+  {
     /* Otherwise, bone-name may remain valid...
      * We could be smart and check this, too? */
     v3d->ob_center_bone[0] = '\0';
@@ -1964,7 +2021,8 @@ static void view3d_id_remap_v3d(ScrArea *area,
 {
   ARegion *region;
   if (BKE_id_remapper_apply(mappings, (ID **)&v3d->camera, ID_REMAP_APPLY_DEFAULT) ==
-      ID_REMAP_RESULT_SOURCE_UNASSIGNED) {
+      ID_REMAP_RESULT_SOURCE_UNASSIGNED)
+  {
     /* 3D view might be inactive, in that case needs to use slink->regionbase */
     ListBase *regionbase = (slink == area->spacedata.first) ? &area->regionbase :
                                                               &slink->regionbase;
@@ -1983,8 +2041,9 @@ static void view3d_id_remap_v3d(ScrArea *area,
 static void view3d_id_remap(ScrArea *area, SpaceLink *slink, const struct IDRemapper *mappings)
 {
 
-  if (!BKE_id_remapper_has_mapping_for(
-          mappings, FILTER_ID_OB | FILTER_ID_MA | FILTER_ID_IM | FILTER_ID_MC)) {
+  if (!BKE_id_remapper_has_mapping_for(mappings,
+                                       FILTER_ID_OB | FILTER_ID_MA | FILTER_ID_IM | FILTER_ID_MC))
+  {
     return;
   }
 
@@ -1992,13 +2051,13 @@ static void view3d_id_remap(ScrArea *area, SpaceLink *slink, const struct IDRema
   view3d_id_remap_v3d(area, slink, view3d, mappings, false);
   view3d_id_remap_v3d_ob_centers(view3d, mappings);
   if (view3d->localvd != nullptr) {
-    /* Object centers in local-view aren't used, see: T52663 */
+    /* Object centers in local-view aren't used, see: #52663 */
     view3d_id_remap_v3d(area, slink, view3d->localvd, mappings, true);
   }
   BKE_viewer_path_id_remap(&view3d->viewer_path, mappings);
 }
 
-static void view3d_blend_read_data(BlendDataReader *reader, SpaceLink *sl)
+static void view3d_space_blend_read_data(BlendDataReader *reader, SpaceLink *sl)
 {
   View3D *v3d = (View3D *)sl;
 
@@ -2023,7 +2082,7 @@ static void view3d_blend_read_data(BlendDataReader *reader, SpaceLink *sl)
   BKE_viewer_path_blend_read_data(reader, &v3d->viewer_path);
 }
 
-static void view3d_blend_read_lib(BlendLibReader *reader, ID *parent_id, SpaceLink *sl)
+static void view3d_space_blend_read_lib(BlendLibReader *reader, ID *parent_id, SpaceLink *sl)
 {
   View3D *v3d = (View3D *)sl;
 
@@ -2037,7 +2096,7 @@ static void view3d_blend_read_lib(BlendLibReader *reader, ID *parent_id, SpaceLi
   BKE_viewer_path_blend_read_lib(reader, parent_id->lib, &v3d->viewer_path);
 }
 
-static void view3d_blend_write(BlendWriter *writer, SpaceLink *sl)
+static void view3d_space_blend_write(BlendWriter *writer, SpaceLink *sl)
 {
   View3D *v3d = (View3D *)sl;
   BLO_write_struct(writer, View3D, v3d);
@@ -2072,9 +2131,9 @@ void ED_spacetype_view3d()
   st->gizmos = view3d_widgets;
   st->context = view3d_context;
   st->id_remap = view3d_id_remap;
-  st->blend_read_data = view3d_blend_read_data;
-  st->blend_read_lib = view3d_blend_read_lib;
-  st->blend_write = view3d_blend_write;
+  st->blend_read_data = view3d_space_blend_read_data;
+  st->blend_read_lib = view3d_space_blend_read_lib;
+  st->blend_write = view3d_space_blend_write;
 
   /* regions: main window */
   art = MEM_cnew<ARegionType>("spacetype view3d main region");
@@ -2108,7 +2167,7 @@ void ED_spacetype_view3d()
   /* regions: tool(bar) */
   art = MEM_cnew<ARegionType>("spacetype view3d tools region");
   art->regionid = RGN_TYPE_TOOLS;
-  art->prefsizex = 58; /* XXX */
+  art->prefsizex = int(UI_TOOLBAR_WIDTH);
   art->prefsizey = 50; /* XXX */
   art->keymapflag = ED_KEYMAP_UI | ED_KEYMAP_FRAMES;
   art->listener = view3d_buttons_region_listener;

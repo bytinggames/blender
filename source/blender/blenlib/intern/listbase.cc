@@ -57,6 +57,35 @@ void BLI_movelisttolist_reverse(ListBase *dst, ListBase *src)
   src->first = src->last = nullptr;
 }
 
+void BLI_listbase_split_after(ListBase *original_listbase, ListBase *split_listbase, void *vlink)
+{
+  BLI_assert(BLI_listbase_is_empty(split_listbase));
+  BLI_assert(vlink == nullptr || BLI_findindex(original_listbase, vlink) >= 0);
+
+  if (vlink == original_listbase->last) {
+    /* Nothing to split, and `split_listbase` is assumed already empty (see assert above). */
+    return;
+  }
+
+  if (vlink == nullptr) {
+    /* Move everything into `split_listbase`. */
+    SWAP(ListBase, *original_listbase, *split_listbase);
+    return;
+  }
+
+  Link *link = static_cast<Link *>(vlink);
+  Link *next_link = link->next;
+  BLI_assert(next_link != nullptr);
+  Link *last_link = static_cast<Link *>(original_listbase->last);
+
+  original_listbase->last = link;
+  split_listbase->first = next_link;
+  split_listbase->last = last_link;
+
+  link->next = nullptr;
+  next_link->prev = nullptr;
+}
+
 void BLI_addhead(ListBase *listbase, void *vlink)
 {
   Link *link = static_cast<Link *>(vlink);
@@ -482,8 +511,8 @@ int BLI_listbase_count_at_most(const ListBase *listbase, const int count_max)
   Link *link;
   int count = 0;
 
-  for (link = static_cast<Link *>(listbase->first); link && count != count_max;
-       link = link->next) {
+  for (link = static_cast<Link *>(listbase->first); link && count != count_max; link = link->next)
+  {
     count++;
   }
 
@@ -725,7 +754,8 @@ void *BLI_listbase_string_or_index_find(const ListBase *listbase,
 
   int index_iter;
   for (link = static_cast<Link *>(listbase->first), index_iter = 0; link;
-       link = link->next, index_iter++) {
+       link = link->next, index_iter++)
+  {
     if (string != nullptr && string[0] != '\0') {
       const char *string_iter = ((const char *)link) + string_offset;
 
@@ -839,6 +869,47 @@ void BLI_listbase_rotate_last(ListBase *lb, void *vlink)
 
   ((Link *)lb->first)->prev = nullptr;
   ((Link *)lb->last)->next = nullptr;
+}
+
+bool BLI_listbase_validate(ListBase *lb)
+{
+  if (lb->first == nullptr && lb->last == nullptr) {
+    /* Empty list. */
+    return true;
+  }
+  if (ELEM(nullptr, lb->first, lb->last)) {
+    /* If one of the pointer is null, but not this other, this is a corrupted listbase. */
+    return false;
+  }
+
+  /* Walk the list in bot directions to ensure all next & prev pointers are valid and consistent.
+   */
+  for (Link *lb_link = static_cast<Link *>(lb->first); lb_link; lb_link = lb_link->next) {
+    if (lb_link == lb->first) {
+      if (lb_link->prev != nullptr) {
+        return false;
+      }
+    }
+    if (lb_link == lb->last) {
+      if (lb_link->next != nullptr) {
+        return false;
+      }
+    }
+  }
+  for (Link *lb_link = static_cast<Link *>(lb->last); lb_link; lb_link = lb_link->prev) {
+    if (lb_link == lb->last) {
+      if (lb_link->next != nullptr) {
+        return false;
+      }
+    }
+    if (lb_link == lb->first) {
+      if (lb_link->prev != nullptr) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 LinkData *BLI_genericNodeN(void *data)

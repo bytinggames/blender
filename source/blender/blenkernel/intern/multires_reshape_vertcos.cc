@@ -1,19 +1,19 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2020 Blender Foundation. All rights reserved. */
+ * Copyright 2020 Blender Foundation */
 
 /** \file
  * \ingroup bke
  */
 
-#include "multires_reshape.h"
+#include "multires_reshape.hh"
 
 #include "DNA_mesh_types.h"
 #include "DNA_meshdata_types.h"
 
 #include "BLI_math_vector.h"
 
-#include "BKE_subdiv_foreach.h"
-#include "BKE_subdiv_mesh.h"
+#include "BKE_subdiv_foreach.hh"
+#include "BKE_subdiv_mesh.hh"
 
 struct MultiresReshapeAssignVertcosContext {
   const MultiresReshapeContext *reshape_context;
@@ -54,8 +54,7 @@ static void multires_reshape_vertcos_foreach_vertex(const SubdivForeachContext *
   const int face_index = multires_reshape_grid_to_face_index(reshape_context,
                                                              grid_coord.grid_index);
 
-  const MPoly *base_poly = &reshape_context->base_polys[face_index];
-  const int num_corners = base_poly->totloop;
+  const int num_corners = reshape_context->base_polys[face_index].size();
   const int start_grid_index = reshape_context->face_start_grid_index[face_index];
   const int corner = grid_coord.grid_index - start_grid_index;
 

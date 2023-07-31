@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2007 Blender Foundation. All rights reserved. */
+ * Copyright 2007 Blender Foundation */
 
 /** \file
  * \ingroup spfile
@@ -113,6 +113,16 @@ void filelist_setdir(struct FileList *filelist, char *r_dir);
  */
 int filelist_files_ensure(struct FileList *filelist);
 int filelist_needs_reading(struct FileList *filelist);
+/**
+ * Request a file from the file browser cache, adding it to the cache if necessary.
+ *
+ * As a rule of thumb, this can be used for operations on individual files (e.g. selection, active,
+ * renaming, etc.). But avoid calling this on many files (like when iterating the entire list), to
+ * not create a bunch of cache entries for a single operation. While a bit against the point of
+ * "intern" entries, in this case it's probably better to have queries like
+ * #filelist_entry_get_id(), that take a file index and return data directly from the
+ * #FileListInternEntry.
+ */
 FileDirEntry *filelist_file(struct FileList *filelist, int index);
 FileDirEntry *filelist_file_ex(struct FileList *filelist, int index, bool use_request);
 
@@ -130,6 +140,15 @@ int filelist_file_find_id(const struct FileList *filelist, const struct ID *id);
  * Get the ID a file represents (if any). For #FILE_MAIN, #FILE_MAIN_ASSET.
  */
 struct ID *filelist_file_get_id(const struct FileDirEntry *file);
+/**
+ * Same as #filelist_file_get_id(), but gets the file by index (doesn't require the file to be
+ * cached, uses #FileListInternEntry only). */
+struct ID *filelist_entry_get_id(const struct FileList *filelist, int index);
+/**
+ * Get the #FileDirEntry.relpath value without requiring the #FileDirEntry to be available (doesn't
+ * require the file to be cached, uses #FileListInternEntry only).
+ */
+const char *filelist_entry_get_relpath(const struct FileList *filelist, int index);
 bool filelist_uid_is_set(const FileUID uid);
 void filelist_uid_unset(FileUID *r_uid);
 void filelist_file_cache_slidingwindow_set(struct FileList *filelist, size_t window_size);
@@ -148,31 +167,31 @@ bool filelist_is_ready(struct FileList *filelist);
 unsigned int filelist_entry_select_set(const struct FileList *filelist,
                                        const struct FileDirEntry *entry,
                                        FileSelType select,
-                                       unsigned int flag,
+                                       const eDirEntry_SelectFlag flag,
                                        FileCheckType check);
 void filelist_entry_select_index_set(struct FileList *filelist,
                                      int index,
                                      FileSelType select,
-                                     unsigned int flag,
+                                     eDirEntry_SelectFlag flag,
                                      FileCheckType check);
 void filelist_entries_select_index_range_set(struct FileList *filelist,
                                              FileSelection *sel,
                                              FileSelType select,
-                                             unsigned int flag,
+                                             eDirEntry_SelectFlag flag,
                                              FileCheckType check);
-unsigned int filelist_entry_select_get(struct FileList *filelist,
-                                       struct FileDirEntry *entry,
-                                       FileCheckType check);
-unsigned int filelist_entry_select_index_get(struct FileList *filelist,
-                                             int index,
-                                             FileCheckType check);
+eDirEntry_SelectFlag filelist_entry_select_get(struct FileList *filelist,
+                                               struct FileDirEntry *entry,
+                                               FileCheckType check);
+eDirEntry_SelectFlag filelist_entry_select_index_get(struct FileList *filelist,
+                                                     int index,
+                                                     FileCheckType check);
 bool filelist_entry_is_selected(struct FileList *filelist, int index);
 /**
  * Set selection of the '..' parent entry, but only if it's actually visible.
  */
 void filelist_entry_parent_select_set(struct FileList *filelist,
                                       FileSelType select,
-                                      unsigned int flag,
+                                      eDirEntry_SelectFlag flag,
                                       FileCheckType check);
 
 void filelist_setrecursion(struct FileList *filelist, int recursion_level);

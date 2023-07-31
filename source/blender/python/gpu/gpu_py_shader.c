@@ -126,7 +126,8 @@ static PyObject *pygpu_shader__tp_new(PyTypeObject *UNUSED(type), PyObject *args
                                         &params.geocode,
                                         &params.libcode,
                                         &params.defines,
-                                        &params.name)) {
+                                        &params.name))
+  {
     return NULL;
   }
 
@@ -219,7 +220,8 @@ static bool pygpu_shader_uniform_vector_impl(PyObject *args,
 
   *r_count = 1;
   if (!PyArg_ParseTuple(
-          args, "iOi|i:GPUShader.uniform_vector_*", r_location, &buffer, r_length, r_count)) {
+          args, "iOi|i:GPUShader.uniform_vector_*", r_location, &buffer, r_length, r_count))
+  {
     return false;
   }
 
@@ -269,7 +271,7 @@ static PyObject *pygpu_shader_uniform_vector_float(BPyGPUShader *self, PyObject 
   }
 
   GPU_shader_bind(self->shader);
-  GPU_shader_uniform_vector(self->shader, location, length, count, pybuffer.buf);
+  GPU_shader_uniform_float_ex(self->shader, location, length, count, pybuffer.buf);
 
   PyBuffer_Release(&pybuffer);
 
@@ -286,13 +288,13 @@ static PyObject *pygpu_shader_uniform_vector_int(BPyGPUShader *self, PyObject *a
 
   Py_buffer pybuffer;
 
-  if (!pygpu_shader_uniform_vector_impl(
-          args, sizeof(int), &location, &length, &count, &pybuffer)) {
+  if (!pygpu_shader_uniform_vector_impl(args, sizeof(int), &location, &length, &count, &pybuffer))
+  {
     return NULL;
   }
 
   GPU_shader_bind(self->shader);
-  GPU_shader_uniform_vector_int(self->shader, location, length, count, pybuffer.buf);
+  GPU_shader_uniform_int_ex(self->shader, location, length, count, pybuffer.buf);
 
   PyBuffer_Release(&pybuffer);
 
@@ -367,7 +369,7 @@ static PyObject *pygpu_shader_uniform_bool(BPyGPUShader *self, PyObject *args)
   }
 
   GPU_shader_bind(self->shader);
-  GPU_shader_uniform_vector_int(self->shader, location, length, 1, values);
+  GPU_shader_uniform_int_ex(self->shader, location, length, 1, values);
 
   Py_RETURN_NONE;
 }
@@ -437,7 +439,7 @@ static PyObject *pygpu_shader_uniform_float(BPyGPUShader *self, PyObject *args)
   }
 
   GPU_shader_bind(self->shader);
-  GPU_shader_uniform_vector(self->shader, location, length, 1, values);
+  GPU_shader_uniform_float_ex(self->shader, location, length, 1, values);
 
   Py_RETURN_NONE;
 }
@@ -509,7 +511,7 @@ static PyObject *pygpu_shader_uniform_int(BPyGPUShader *self, PyObject *args)
   }
 
   GPU_shader_bind(self->shader);
-  GPU_shader_uniform_vector_int(self->shader, location, length, 1, values);
+  GPU_shader_uniform_int_ex(self->shader, location, length, 1, values);
 
   Py_RETURN_NONE;
 }
@@ -528,12 +530,13 @@ static PyObject *pygpu_shader_uniform_sampler(BPyGPUShader *self, PyObject *args
   const char *name;
   BPyGPUTexture *py_texture;
   if (!PyArg_ParseTuple(
-          args, "sO!:GPUShader.uniform_sampler", &name, &BPyGPUTexture_Type, &py_texture)) {
+          args, "sO!:GPUShader.uniform_sampler", &name, &BPyGPUTexture_Type, &py_texture))
+  {
     return NULL;
   }
 
   GPU_shader_bind(self->shader);
-  int slot = GPU_shader_get_texture_binding(self->shader, name);
+  int slot = GPU_shader_get_sampler_binding(self->shader, name);
   GPU_texture_bind(py_texture->tex, slot);
   GPU_shader_uniform_1i(self->shader, name, slot);
 
@@ -559,7 +562,7 @@ static PyObject *pygpu_shader_uniform_block(BPyGPUShader *self, PyObject *args)
     return NULL;
   }
 
-  int binding = GPU_shader_get_uniform_block_binding(self->shader, name);
+  int binding = GPU_shader_get_ubo_binding(self->shader, name);
   if (binding == -1) {
     PyErr_SetString(
         PyExc_BufferError,
@@ -851,7 +854,8 @@ static PyObject *pygpu_shader_from_builtin(PyObject *UNUSED(self), PyObject *arg
                                         pyc_parse_buitinshader_w_backward_compatibility,
                                         &pygpu_bultinshader,
                                         PyC_ParseStringEnum,
-                                        &pygpu_config)) {
+                                        &pygpu_config))
+  {
     return NULL;
   }
 

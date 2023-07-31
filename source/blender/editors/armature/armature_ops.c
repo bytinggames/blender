@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright 2009 Blender Foundation. All rights reserved. */
+ * Copyright 2009 Blender Foundation */
 
 /** \file
  * \ingroup edarmature
@@ -151,7 +151,7 @@ void ED_operatormacros_armature(void)
 
   /* XXX would it be nicer to just be able to have standard extrude_move,
    * but set the forked property separate?
-   * that would require fixing a properties bug T19733. */
+   * that would require fixing a properties bug #19733. */
   ot = WM_operatortype_append_macro("ARMATURE_OT_extrude_forked",
                                     "Extrude Forked",
                                     "Create new bones from the selected joints and move them",
