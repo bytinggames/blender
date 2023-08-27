@@ -19,3 +19,24 @@ make full nobuild
 
 #for release:
 make
+
+
+troubleshoot:
+	when windows is locking stuff, you may have to run:
+	make svnfix
+	make update
+	again and again until everything worked
+
+
+regarding the CUDA OPTIX build:
+You first need to build blender normally (make)
+then follow the instructions on github: https://wiki.blender.org/wiki/Building_Blender/GPU_Binaries
+the configurations need to be set in build_windows_x64_vc17_Release/CMakeCache.txt (I think)
+then it didn't work first try. I think it's because I should have executed the build_windows_x64_vc17_Release/rebuild.cmd
+	(which I later did)
+instead I did the following:
+	add the following system variables:
+		OPTIX_INCLUDE_DIR=C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.3.0/include
+		OPTIX_ROOT_DIR=C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.3.0
+		add to system PATH (was required from blender to compile cuda kernel. Could this have been done in the blender build? maybe with rebuild.cmd?):
+			C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.37.32822\bin\Hostx64\x64\
