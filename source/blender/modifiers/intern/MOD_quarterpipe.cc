@@ -17,12 +17,12 @@ const float growTopVertPlank = 0.1f; // grows the top plank by 10% of the distan
 #include "DNA_screen_types.h"
 
 #include "BKE_context.h"
-#include "BKE_screen.h"
+#include "BKE_screen.hh"
 
-#include "UI_interface.h"
-#include "UI_resources.h"
+#include "UI_interface.hh"
+#include "UI_resources.hh"
 
-#include "RNA_access.h"
+#include "RNA_access.hh"
 #include "RNA_prototypes.h"
 
 #include "MOD_modifiertypes.hh"
@@ -38,7 +38,9 @@ const float growTopVertPlank = 0.1f; // grows the top plank by 10% of the distan
 #include <math.h>
 #include <stdlib.h>
 
-#include "BLI_math.h"
+//#include "BLI_math.h"
+#include "BLI_math_vector.h"
+#include "BLI_math_geom.h"
 #include "bmesh.h"
 
 #include "DNA_customdata_types.h"
@@ -649,7 +651,7 @@ static void panel_draw(const bContext * /*C*/, Panel *panel)
 
   uiLayoutSetPropSep(layout, true);
 
-  uiItemR(layout, ptr, "num_olives", 0, NULL, ICON_NONE);
+  uiItemR(layout, ptr, "num_olives", UI_ITEM_NONE, NULL, ICON_NONE);
 
   modifier_panel_end(layout, ptr);
 }
@@ -666,7 +668,8 @@ static void initData(ModifierData *md)
 }
 
 ModifierTypeInfo modifierType_QuarterPipe = {
-    /* name */ "QuarterPipe",
+    /*idname*/ "QuarterPipe",
+    /*name*/ "QuarterPipe",
     /* structName */ "QuarterPipeModifierData",
     /* structSize */ sizeof(QuarterPipeModifierData),
     /* srna */ &RNA_QuarterPipeModifier,
