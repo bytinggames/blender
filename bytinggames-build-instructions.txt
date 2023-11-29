@@ -40,3 +40,10 @@ instead I did the following:
 		OPTIX_ROOT_DIR=C:/ProgramData/NVIDIA Corporation/OptiX SDK 7.3.0
 		add to system PATH (was required from blender to compile cuda kernel. Could this have been done in the blender build? maybe with rebuild.cmd?):
 			C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.37.32822\bin\Hostx64\x64\
+	
+	after blender runs successfully, when you try to use optix it will freeze and install:
+		CUDA version 12.3 detected, build may succeed but only CUDA 10.1 to 11.4 are officially supported.
+		Compiling CUDA kernel ...
+		"nvcc" -arch=compute_89 --ptx "C:\Projects\blender-git\build_windows_x64_vc17_Release\bin\Release\4.0\scripts\addons\cycles\source\kernel\device\optix\kernel.cu" -o "C:\Users\Julian\AppData\Roaming\Blender Foundation\Blender\4.0\cache\kernels\cycles_kernel_compute_89_C76A44B1D52D35550A234F34D4C53D14.ptx" -m64 --ptxas-options="-v" --use_fast_math -DNVCC -I"C:\Projects\blender-git\build_windows_x64_vc17_Release\bin\Release\4.0\scripts\addons\cycles\source" -DWITH_NANOVDB -I"C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.3.0\include"
+		kernel.cu
+		this might take a few minutes
