@@ -1,4 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* SPDX-FileCopyrightText: 2023 Blender Authors
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include <cstdint>
 #include <memory>
@@ -86,12 +88,24 @@ class GPUShaderCreator : public OCIO::GpuShaderCreator {
   }
 
   /* This is ignored since we query using our own GPU capabilities system. */
-  void setTextureMaxWidth(unsigned max_width) override {}
+  void setTextureMaxWidth(uint /*max_width*/) override {}
 
-  unsigned getTextureMaxWidth() const noexcept override
+  uint getTextureMaxWidth() const noexcept override
   {
     return GPU_max_texture_size();
   }
+
+#  if OCIO_VERSION_HEX >= 0x02030000
+  void setAllowTexture1D(bool allowed) override
+  {
+    allow_texture_1D_ = allowed;
+  }
+
+  bool getAllowTexture1D() const override
+  {
+    return allow_texture_1D_;
+  }
+#  endif
 
   bool addUniform(const char *name, const DoubleGetter &get_double) override
   {
@@ -196,9 +210,12 @@ class GPUShaderCreator : public OCIO::GpuShaderCreator {
 
   void addTexture(const char *texture_name,
                   const char *sampler_name,
-                  unsigned width,
-                  unsigned height,
+                  uint width,
+                  uint height,
                   TextureType channel,
+#  if OCIO_VERSION_HEX >= 0x02030000
+                  OCIO::GpuShaderDesc::TextureDimensions dimensions,
+#  endif
                   OCIO::Interpolation interpolation,
                   const float *values) override
   {
@@ -214,7 +231,11 @@ class GPUShaderCreator : public OCIO::GpuShaderCreator {
     GPUTexture *texture;
     eGPUTextureFormat texture_format = (channel == TEXTURE_RGB_CHANNEL) ? GPU_RGB16F : GPU_R16F;
     /* A height of 1 indicates a 1D texture according to the OCIO API. */
+#  if OCIO_VERSION_HEX >= 0x02030000
+    if (dimensions == OCIO::GpuShaderDesc::TEXTURE_1D) {
+#  else
     if (height == 1) {
+#  endif
       texture = GPU_texture_create_1d(
           texture_name, width, 1, texture_format, GPU_TEXTURE_USAGE_SHADER_READ, values);
       shader_create_info_.sampler(textures_.size() + 1, ImageType::FLOAT_1D, resource_name);
@@ -231,7 +252,7 @@ class GPUShaderCreator : public OCIO::GpuShaderCreator {
 
   void add3DTexture(const char *texture_name,
                     const char *sampler_name,
-                    unsigned size,
+                    uint size,
                     OCIO::Interpolation interpolation,
                     const float *values) override
   {
@@ -255,7 +276,7 @@ class GPUShaderCreator : public OCIO::GpuShaderCreator {
   /* This gets called before the finalize() method to construct the shader code. We just
    * concatenate the code except for the declarations section. That's because the ShaderCreateInfo
    * will add the declaration itself. */
-  void createShaderText(const char *declarations,
+  void createShaderText(const char * /*declarations*/,
                         const char *helper_methods,
                         const char *function_header,
                         const char *function_body,
@@ -396,6 +417,11 @@ class GPUShaderCreator : public OCIO::GpuShaderCreator {
   /* A vectors that stores the created uniform buffers when bind_shader_and_resources() is called,
    * so that they can be properly unbound and freed in the unbind_shader_and_resources() method. */
   Vector<GPUUniformBuf *> uniform_buffers_;
+
+#  if OCIO_VERSION_HEX >= 0x02030000
+  /* Allow creating 1D textures, or only use 2D textures. */
+  bool allow_texture_1D_ = true;
+#  endif
 };
 
 #else
