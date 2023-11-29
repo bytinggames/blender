@@ -464,6 +464,7 @@ set(ICON_NAMES
   mod_instance
   mod_time
   mod_opacity
+  mod_quarterpipe
   rec
   play
   ff

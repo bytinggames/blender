@@ -322,6 +322,7 @@ SDNA_DEFAULT_DECL_STRUCT(DashGpencilModifierData);
 SDNA_DEFAULT_DECL_STRUCT(DashGpencilModifierSegment);
 SDNA_DEFAULT_DECL_STRUCT(ShrinkwrapGpencilModifierData);
 SDNA_DEFAULT_DECL_STRUCT(EnvelopeGpencilModifierData);
+SDNA_DEFAULT_DECL_STRUCT(QuarterPipeModifierData);
 
 #undef SDNA_DEFAULT_DECL_STRUCT
 

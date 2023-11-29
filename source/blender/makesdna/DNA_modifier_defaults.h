@@ -801,4 +801,10 @@
     .mat_ofs = 0, \
   }
 
+#define _DNA_DEFAULT_QuarterPipeModifierData \
+  { \
+    .num_olives = 4, \
+    ._pad0 = 0, \
+  }
+
 /* clang-format off */
