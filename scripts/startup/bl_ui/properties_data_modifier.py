@@ -206,6 +206,8 @@ class OBJECT_MT_modifier_add_physics(ModifierAddMenu, Menu):
             self.operator_modifier_add(layout, 'PARTICLE_SYSTEM')
         if ob_type in {'MESH', 'CURVE', 'FONT', 'SURFACE', 'LATTICE'}:
             self.operator_modifier_add(layout, 'SOFT_BODY')
+        if ob_type in {'MESH'}:
+            self.operator_modifier_add(layout, 'QUARTERPIPE')
         layout.template_modifier_asset_menu_items(catalog_path=self.bl_label)
 
 
